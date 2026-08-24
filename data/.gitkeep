@@ -1,0 +1,2 @@
+# 占位文件，保证 data/ 目录存在供 docker-compose 挂载。
+# SQLite 数据库 sponsors.db 运行时生成在此目录。

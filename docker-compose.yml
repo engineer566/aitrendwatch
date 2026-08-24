@@ -1,0 +1,34 @@
+services:
+  hot-aggregator:
+    image: python:3.13-slim
+    container_name: hot-aggregator
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./app.py:/app/app.py:ro
+      - ./config.py:/app/config.py:ro
+      - ./store.py:/app/store.py:ro
+      - ./tracker.py:/app/tracker.py:ro
+      - ./templates:/app/templates:ro
+      - ./vendor:/app/vendor:ro
+      - ./cache:/app/cache:rw
+      - ./data:/app/data:rw
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONPATH=/app/vendor
+      - SECRET_KEY=${SECRET_KEY:-please-change-me-in-production}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - SITE_NAME=${SITE_NAME:-ModelRadar}
+      - BASE_URL=${BASE_URL:-}
+      - DATA_DIR=/app/data
+      - CACHE_DIR=/app/cache
+      - ANALYTICS_ENABLED=${ANALYTICS_ENABLED:-true}
+    command: ["python", "-m", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "60", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

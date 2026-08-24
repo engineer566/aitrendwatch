@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ site_name }} · AI 热词追踪 · 7 日趋势 / 热度榜</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg-card: #1a1d27;
+    --bg-hover: #232734;
+    --border: #2a2f3c;
+    --text: #e6e8ee;
+    --text-dim: #8b91a3;
+    --accent: #4f8cff;
+    --accent-2: #ff5d8f;
+    --green: #3ecf8e;
+    --orange: #ffa940;
+    --purple: #a78bfa;
+    --cyan: #22d3ee;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(15,17,23,.85); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 14px 24px;
+  }
+  .header-inner {
+    max-width: 1100px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+  }
+  h1 {
+    font-size: 20px; font-weight: 700;
+    background: linear-gradient(90deg, var(--accent), var(--purple));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header-right { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text-dim); }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; box-shadow: 0 0 0 0 rgba(62,207,142,.7); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(62,207,142,.6)} 70%{box-shadow:0 0 0 8px rgba(62,207,142,0)} 100%{box-shadow:0 0 0 0 rgba(62,207,142,0)} }
+  button { cursor: pointer; border: none; background: none; color: inherit; font: inherit; }
+  .btn { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; color: var(--text-dim); transition: all .15s; }
+  .btn:hover { color: var(--text); border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover { opacity: .9; }
+
+  .controls {
+    max-width: 1100px; margin: 20px auto 0; padding: 0 24px;
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  }
+  .seg { display: flex; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 3px; }
+  .seg button { padding: 7px 16px; border-radius: 16px; color: var(--text-dim); font-size: 14px; transition: all .15s; white-space: nowrap; }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .demo-banner { max-width: 1100px; margin: 14px auto 0; padding: 0 24px; }
+  .demo-banner .pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--orange); background: rgba(255,169,64,.1);
+    border: 1px solid rgba(255,169,64,.3); border-radius: 16px; padding: 4px 12px;
+  }
+
+  main { max-width: 1100px; margin: 16px auto 40px; padding: 0 24px; }
+  .list { display: flex; flex-direction: column; gap: 12px; }
+
+  .term-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px; transition: border-color .15s;
+  }
+  .term-card:hover { border-color: var(--accent); }
+  .term-row { display: flex; align-items: flex-start; gap: 16px; }
+  .rank {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 800; color: var(--text-dim);
+    background: rgba(255,255,255,.04);
+  }
+  .rank.top1 { background: linear-gradient(135deg,#ff5d8f,#ff8a5d); color: #fff; }
+  .rank.top2 { background: linear-gradient(135deg,#ffa940,#ff8a5d); color: #fff; }
+  .rank.top3 { background: linear-gradient(135deg,#ffc94d,#ffa940); color: #fff; }
+  .term-main { flex: 1; min-width: 0; }
+  .term-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .term-name { font-size: 17px; font-weight: 700; word-break: break-all; }
+  .term-name a { color: var(--text); text-decoration: none; }
+  .term-name a:hover { color: var(--accent); }
+  .type-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; background: rgba(34,211,238,.15); color: var(--cyan); }
+  .author-tag { font-size: 12px; color: var(--text-dim); }
+  .term-meta { font-size: 13px; color: var(--text-dim); margin-top: 5px; }
+  .term-meta .score-up { color: var(--green); font-weight: 600; }
+  .term-meta .score-hot { color: var(--orange); font-weight: 600; }
+
+  .tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 8px; background: rgba(255,255,255,.04); color: var(--text-dim); }
+
+  .links { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .link-btn {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
+    padding: 6px 12px; border-radius: 8px; text-decoration: none;
+    border: 1px solid var(--border); color: var(--text-dim); transition: all .15s;
+  }
+  .link-btn:hover { color: var(--text); border-color: var(--accent); background: var(--bg-hover); }
+  .link-btn.official { color: var(--accent); border-color: rgba(79,140,255,.4); }
+  .link-btn.official:hover { background: rgba(79,140,255,.1); }
+
+  .papers { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
+  .papers-title { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .paper { font-size: 13px; padding: 4px 0; }
+  .paper a { color: var(--purple); text-decoration: none; }
+  .paper a:hover { text-decoration: underline; }
+  .paper .pm { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
+
+  .state { padding: 60px 20px; text-align: center; color: var(--text-dim); font-size: 14px; }
+  .state.error { color: var(--accent-2); }
+  .spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer { text-align: center; padding: 24px; color: var(--text-dim); font-size: 12px; }
+
+  .sponsor-card {
+    background: linear-gradient(135deg, rgba(79,140,255,.08), rgba(167,139,250,.08));
+    border: 1px solid rgba(79,140,255,.35); border-radius: var(--radius);
+    padding: 14px 20px; position: relative; overflow: hidden;
+  }
+  .sponsor-card:hover { border-color: var(--accent); }
+  .sponsor-badge {
+    position: absolute; top: 0; right: 0; font-size: 10px; font-weight: 700;
+    color: var(--text-dim); background: rgba(255,255,255,.06);
+    padding: 2px 8px; border-bottom-left-radius: 8px; letter-spacing: .5px;
+  }
+  .sponsor-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .sponsor-name { font-size: 15px; font-weight: 700; color: var(--text); }
+  .sponsor-text { font-size: 14px; color: var(--text); flex: 1; min-width: 0; }
+  .sponsor-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .sponsor-cta {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
+    padding: 6px 14px; border-radius: 8px; text-decoration: none; white-space: nowrap;
+    background: var(--accent); color: #fff; border: 1px solid var(--accent); transition: opacity .15s;
+  }
+  .sponsor-cta:hover { opacity: .9; }
+  .sponsor-banner {
+    max-width: 1100px; margin: 14px auto 0; padding: 0 24px;
+  }
+  .sponsor-banner .sponsor-card { padding: 12px 18px; }
+  .sponsor-footer { max-width: 1100px; margin: 0 auto 16px; padding: 0 24px; }
+
+  @media (max-width: 640px) {
+    header { padding: 12px 16px; }
+    .controls, main, .demo-banner, .sponsor-banner, .sponsor-footer { padding-left: 16px; padding-right: 16px; }
+    .term-row { gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1>🤖 {{ site_name }}</h1>
+    <div class="header-right">
+      <span><span class="live-dot"></span> 实时更新</span>
+      <span id="last-update">—</span>
+      <button class="btn primary" id="refresh-btn">刷新</button>
+    </div>
+  </div>
+</header>
+
+<div class="demo-banner"><span class="pill" id="demo-pill">⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据</span></div>
+
+<div class="controls">
+  <div class="seg" id="sort-seg">
+    <button class="active" data-sort="trending">📈 7日上升最快</button>
+    <button data-sort="top">🔥 热度最高</button>
+  </div>
+</div>
+
+<main><div class="list" id="list"></div></main>
+
+<div class="sponsor-footer" id="sponsor-footer"></div>
+
+<footer>
+  数据来源：HuggingFace（模型趋势）· arXiv（相关论文）· 知乎/B站/GitHub（社区讨论）<br>
+  纯程序聚合，零 LLM · 缓存 5 分钟
+</footer>
+
+<script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
+<script>
+const listEl = document.getElementById("list");
+const lastUpdateEl = document.getElementById("last-update");
+const refreshBtn = document.getElementById("refresh-btn");
+const demoPill = document.getElementById("demo-pill");
+
+let currentSort = "trending";
+let currentData = [];
+
+// ---------- 赞助位 ----------
+// 服务端通过 JSON island 注入；JS 按 slot_id 分流到 top-banner / inline / footer。
+let SPONSORS = [];
+try {
+  const raw = document.getElementById("sponsor-data").textContent.trim();
+  SPONSORS = raw ? JSON.parse(raw) : [];
+} catch (e) { SPONSORS = []; }
+
+const INLINE_EVERY_N = 8;
+
+function sponsorCardHTML(s) {
+  const click = `/api/click/${encodeURIComponent(s.slot_id)}`;
+  // banner_html 优先（服务端已净化）；否则用结构化字段拼
+  if (s.banner_html) {
+    return `<div class="sponsor-card"><span class="sponsor-badge">赞助</span>${s.banner_html}</div>`;
+  }
+  const img = s.image_url
+    ? `<img src="${escapeHtml(s.image_url)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover">` : "";
+  return `<div class="sponsor-card">
+    <span class="sponsor-badge">赞助</span>
+    <div class="sponsor-row">
+      ${img}
+      <div style="flex:1;min-width:0">
+        <div class="sponsor-name">${escapeHtml(s.name||"")}</div>
+        <div class="sponsor-text">${escapeHtml(s.text||"")}</div>
+        ${s.subtext ? `<div class="sponsor-sub">${escapeHtml(s.subtext)}</div>` : ""}
+      </div>
+      <a class="sponsor-cta" href="${click}" target="_blank" rel="noopener sponsored">${escapeHtml(s.cta_text||"了解")} →</a>
+    </div>
+  </div>`;
+}
+
+function renderTopBanner() {
+  // 有 top-banner 赞助 → 替换 demo pill；否则保留 demo pill
+  const top = SPONSORS.find(s => s.slot_id === "top-banner");
+  if (!top) return;
+  const banner = document.querySelector(".demo-banner");
+  if (banner) banner.innerHTML = `<div class="sponsor-banner" style="margin:0;padding:0">${sponsorCardHTML(top)}</div>`;
+  if (demoPill) demoPill.style.display = "none";
+}
+
+function renderFooterSponsor() {
+  const foot = document.getElementById("sponsor-footer");
+  if (!foot) return;
+  const f = SPONSORS.find(s => s.slot_id === "footer");
+  foot.innerHTML = f ? sponsorCardHTML(f) : "";
+}
+
+function inlineSponsors() {
+  return SPONSORS.filter(s => /^inline-\d+$/.test(s.slot_id));
+}
+
+// 排序切换
+document.getElementById("sort-seg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.sort === currentSort) return;   // 同一 Tab 不重复请求
+  document.querySelectorAll("#sort-seg button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  currentSort = b.dataset.sort;
+  fetchAll();   // 切 Tab 必须重新拉对应排序的数据，否则只重渲染同一份旧数据
+});
+
+function fmtNum(n) {
+  if (n === undefined || n === null || n === "") return "";
+  n = Number(n);
+  if (isNaN(n)) return String(n);
+  if (n >= 1e8) return (n/1e8).toFixed(1) + "亿";
+  if (n >= 1e4) return (n/1e4).toFixed(1) + "万";
+  return n.toLocaleString();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderCard(t, i) {
+  const rankClass = i === 0 ? "top1" : i === 1 ? "top2" : i === 2 ? "top3" : "";
+  const scoreHtml = currentSort === "trending"
+    ? `<span class="score-up">📈 趋势分 ${fmtNum(t.trending_score)}</span> · ❤ ${fmtNum(t.likes)} · ↓ ${fmtNum(t.downloads)}`
+    : `<span class="score-hot">❤ ${fmtNum(t.likes)}</span> · ↓ ${fmtNum(t.downloads)} · 📈 ${fmtNum(t.trending_score)}`;
+  const tagsHtml = (t.tags||[]).map(tg => `<span class="tag">${escapeHtml(tg)}</span>`).join("");
+  const commHtml = (t.community||[]).map(c =>
+    `<a class="link-btn" href="${c.url}" target="_blank" rel="noopener">💬 ${escapeHtml(c.site)}</a>`).join("");
+  const papersHtml = (t.papers&&t.papers.length) ? `
+    <div class="papers">
+      <div class="papers-title">📄 相关论文（arXiv 近 7 日）</div>
+      ${t.papers.map(p => `<div class="paper"><a href="${p.url}" target="_blank" rel="noopener">${escapeHtml(p.title)}</a><span class="pm">${p.published}</span></div>`).join("")}
+    </div>` : "";
+  return `<div class="term-card">
+    <div class="term-row">
+      <div class="rank ${rankClass}">${i+1}</div>
+      <div class="term-main">
+        <div class="term-head">
+          <span class="term-name"><a href="${t.official_url}" target="_blank" rel="noopener">${escapeHtml(t.term)}</a></span>
+          <span class="type-tag">${escapeHtml(t.type)}</span>
+          ${t.author ? `<span class="author-tag">@${escapeHtml(t.author)}</span>` : ""}
+        </div>
+        <div class="term-meta">${scoreHtml} · 📅 ${escapeHtml(t.created_at||"")}</div>
+        ${tagsHtml ? `<div class="tags">${tagsHtml}</div>` : ""}
+        <div class="links">
+          <a class="link-btn official" href="${t.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(t.official_label||"官方")}</a>
+          ${commHtml}
+        </div>
+        ${papersHtml}
+      </div>
+    </div>
+  </div>`;
+}
+
+function render() {
+  if (!currentData.length) {
+    listEl.innerHTML = `<div class="state"><div class="spinner"></div>加载中…</div>`;
+    return;
+  }
+  if (currentData[0] && currentData[0]._error) {
+    listEl.innerHTML = `<div class="state error">${escapeHtml(currentData[0]._error)}</div>`;
+    return;
+  }
+  // 每 N 张热词卡后插一张 inline 赞助卡（轮流用 inline-1/inline-2）
+  const inline = inlineSponsors();
+  let html = "";
+  currentData.forEach((t, i) => {
+    html += renderCard(t, i);
+    if (inline.length && (i + 1) % INLINE_EVERY_N === 0) {
+      const s = inline[Math.floor((i + 1) / INLINE_EVERY_N - 1) % inline.length];
+      html += sponsorCardHTML(s);
+    }
+  });
+  listEl.innerHTML = html;
+}
+
+let fetching = false;
+async function fetchAll() {
+  if (fetching) return;
+  fetching = true; refreshBtn.disabled = true; refreshBtn.textContent = "刷新中…";
+  lastUpdateEl.textContent = "加载中…";
+  listEl.innerHTML = `<div class="state"><div class="spinner"></div>加载中…</div>`;
+
+  let data = null;
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 25000);
+    const res = await fetch(`/api/${currentSort}`, { signal: ctrl.signal });
+    clearTimeout(to);
+    if (res.ok) data = await res.json();
+  } catch (e) {}
+
+  // 后端未就绪 → Mock 回退
+  if (!data || data.ok === false) {
+    data = MOCK_DATA(currentSort);
+    if (demoPill) demoPill.style.display = "inline-flex";
+  } else {
+    if (demoPill) demoPill.style.display = "none";
+  }
+
+  currentData = data.terms || [];
+  render();
+  lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
+  fetching = false; refreshBtn.disabled = false; refreshBtn.textContent = "刷新";
+}
+
+refreshBtn.addEventListener("click", fetchAll);
+renderTopBanner();
+renderFooterSponsor();
+fetchAll();
+setInterval(fetchAll, 10 * 60 * 1000);
+
+// ============ Mock 数据（后端就绪后自动失效）============
+function MOCK_DATA(sort) {
+  const base = [
+    {term:"Qwen3.8-27B", full_id:"Qwen/Qwen3.8-27B", author:"Qwen", type:"模型",
+     official_url:"https://huggingface.co/Qwen/Qwen3.8-27B", official_label:"HuggingFace · Qwen/Qwen3.8-27B",
+     trending_score:1990, likes:12117, downloads:2090699, created_at:"2026-08-05",
+     tags:["transformers","safetensors","qwen3_5","image-text-to-text"], pipeline_tag:"image-text-to-text",
+     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Qwen3.8-27B"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Qwen3.8-27B"},{site:"GitHub",url:"https://github.com/search?q=Qwen3.8-27B"}],
+     papers:[{title:"Qwen3.8 Technical Report: Multimodal Reasoning at Scale",url:"http://arxiv.org/abs/2608.20001",published:"2026-08-19"}]},
+    {term:"DeepSeek-V4-Flash", full_id:"deepseek-ai/DeepSeek-V4-Flash", author:"deepseek-ai", type:"模型",
+     official_url:"https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash", official_label:"HuggingFace · deepseek-ai/DeepSeek-V4-Flash",
+     trending_score:1740, likes:13200, downloads:8800000, created_at:"2026-08-11",
+     tags:["transformers","deepseek","moe"], pipeline_tag:"text-generation",
+     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=DeepSeek-V4-Flash"},{site:"B站",url:"https://search.bilibili.com/all?keyword=DeepSeek-V4-Flash"},{site:"GitHub",url:"https://github.com/search?q=DeepSeek-V4-Flash"}],
+     papers:[]},
+    {term:"Kimi-K3", full_id:"moonshotai/Kimi-K3", author:"moonshotai", type:"模型",
+     official_url:"https://huggingface.co/moonshotai/Kimi-K3", official_label:"HuggingFace · moonshotai/Kimi-K3",
+     trending_score:1520, likes:10923, downloads:2612739, created_at:"2026-06-13",
+     tags:["transformers","moonshot","long-context"], pipeline_tag:"text-generation",
+     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Kimi-K3"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Kimi-K3"},{site:"GitHub",url:"https://github.com/search?q=Kimi-K3"}],
+     papers:[]},
+    {term:"FLUX.1-dev", full_id:"black-forest-labs/FLUX.1-dev", author:"black-forest-labs", type:"模型",
+     official_url:"https://huggingface.co/black-forest-labs/FLUX.1-dev", official_label:"HuggingFace · black-forest-labs/FLUX.1-dev",
+     trending_score:980, likes:14223, downloads:631339, created_at:"2024-07-31",
+     tags:["diffusers","flux","text-to-image"], pipeline_tag:"text-to-image",
+     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=FLUX.1"},{site:"B站",url:"https://search.bilibili.com/all?keyword=FLUX.1"},{site:"GitHub",url:"https://github.com/search?q=FLUX.1"}],
+     papers:[]},
+    {term:"whisper-large-v4", full_id:"openai/whisper-large-v4", author:"openai", type:"模型",
+     official_url:"https://huggingface.co/openai/whisper-large-v4", official_label:"HuggingFace · openai/whisper-large-v4",
+     trending_score:760, likes:12033, downloads:4500000, created_at:"2026-07-20",
+     tags:["transformers","whisper","speech-recognition"], pipeline_tag:"automatic-speech-recognition",
+     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=whisper-large-v4"},{site:"B站",url:"https://search.bilibili.com/all?keyword=whisper-large-v4"},{site:"GitHub",url:"https://github.com/search?q=whisper-large-v4"}],
+     papers:[]},
+  ];
+  // 两个视图同一份数据，排序键不同
+  const sorted = [...base].sort((a,b) =>
+    sort === "trending" ? b.trending_score - a.trending_score : b.likes - a.likes);
+  return {ok:true, sort, count:sorted.length, terms:sorted};
+}
+</script>
+</body>
+</html>
