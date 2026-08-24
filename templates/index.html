@@ -147,12 +147,23 @@
   .sponsor-banner .sponsor-card { padding: 12px 18px; }
   .sponsor-footer { max-width: 1100px; margin: 0 auto 16px; padding: 0 24px; }
 
+  /* 联盟广告槽（AdSense / 百度联盟补位） */
+  .ads-slot { max-width: 1100px; margin: 14px auto 0; padding: 0 24px; min-height: 0; }
+  .ads-slot.empty { display: none; }
+  .ads-slot .adsbygoogle { display: block; margin: 0 auto; }
+  .ads-slot ins.adsbygoogle { background: transparent; }
+  .ads-footer-slot { max-width: 1100px; margin: 0 auto 16px; padding: 0 24px; }
+
   @media (max-width: 640px) {
     header { padding: 12px 16px; }
-    .controls, main, .demo-banner, .sponsor-banner, .sponsor-footer { padding-left: 16px; padding-right: 16px; }
+    .controls, main, .demo-banner, .sponsor-banner, .sponsor-footer, .ads-slot, .ads-footer-slot { padding-left: 16px; padding-right: 16px; }
     .term-row { gap: 10px; }
   }
 </style>
+{% if adsense_enabled and adsense_client %}
+<!-- Google AdSense 全站库（审核需脚本已部署） -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}" crossorigin="anonymous"></script>
+{% endif %}
 </head>
 <body>
 <header>
@@ -168,6 +179,9 @@
 
 <div class="demo-banner"><span class="pill" id="demo-pill">⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据</span></div>
 
+<!-- 联盟广告槽：自建 top-banner 不存在时由 JS 填充 AdSense / 百度联盟 -->
+<div class="ads-slot empty" id="ads-top"></div>
+
 <div class="controls">
   <div class="seg" id="sort-seg">
     <button class="active" data-sort="trending">📈 7日上升最快</button>
@@ -179,6 +193,9 @@
 
 <div class="sponsor-footer" id="sponsor-footer"></div>
 
+<!-- 联盟广告槽：自建 footer 不存在时由 JS 填充 AdSense / 百度联盟 -->
+<div class="ads-footer-slot empty" id="ads-footer"></div>
+
 <footer>
   数据来源：HuggingFace（模型趋势）· arXiv（相关论文）· 知乎/B站/GitHub（社区讨论）<br>
   纯程序聚合，零 LLM · 缓存 5 分钟
@@ -186,6 +203,11 @@
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
 <script>
+const ADSENSE_ENABLED = {{ adsense_enabled | tojson }};
+const ADSENSE_CLIENT = {{ adsense_client | tojson }};
+const BAIDU_ADS_ENABLED = {{ baidu_ads_enabled | tojson }};
+const BAIDU_CPRO_ID = {{ baidu_cpro_id | tojson }};
+
 const listEl = document.getElementById("list");
 const lastUpdateEl = document.getElementById("last-update");
 const refreshBtn = document.getElementById("refresh-btn");
@@ -203,6 +225,34 @@ try {
 } catch (e) { SPONSORS = []; }
 
 const INLINE_EVERY_N = 8;
+
+// ---------- 联盟广告补位 ----------
+// 自建赞助位优先；缺失槽位用 AdSense / 百度联盟补位。
+function adsenseInsHtml(format) {
+  // format: { slot?: "123...", layout?: "in-article" }。无 slot → 自动广告占位。
+  const slot = format.slot ? ` data-ad-slot="${escapeHtml(format.slot)}"` : "";
+  const layout = format.layout ? ` data-ad-format="${escapeHtml(format.layout)}"` : ' data-ad-format="auto"';
+  const full = format.layout ? ` data-ad-layout="${escapeHtml(format.layout)}"` : "";
+  return `<ins class="adsbygoogle" style="display:block"${full}${layout}${slot}
+     data-full-width-responsive="true"></ins>`;
+}
+
+function fillAdsSlot(elId, kind) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  // AdSense 优先；未启用则百度联盟
+  if (ADSENSE_ENABLED && ADSENSE_CLIENT) {
+    el.classList.remove("empty");
+    el.innerHTML = adsenseInsHtml({});
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) {}
+  } else if (BAIDU_ADS_ENABLED && BAIDU_CPRO_ID) {
+    el.classList.remove("empty");
+    el.innerHTML = `<div class="cpro" data-cpro-id="${escapeHtml(BAIDU_CPRO_ID)}"></div>`;
+    try {
+      (window.cproArray = window.cproArray || []).push({ id: BAIDU_CPRO_ID });
+    } catch (e) {}
+  }
+}
 
 function sponsorCardHTML(s) {
   const click = `/api/click/${encodeURIComponent(s.slot_id)}`;
@@ -227,19 +277,27 @@ function sponsorCardHTML(s) {
 }
 
 function renderTopBanner() {
-  // 有 top-banner 赞助 → 替换 demo pill；否则保留 demo pill
+  // 有 top-banner 赞助 → 替换 demo pill；否则联盟广告补位
   const top = SPONSORS.find(s => s.slot_id === "top-banner");
-  if (!top) return;
-  const banner = document.querySelector(".demo-banner");
-  if (banner) banner.innerHTML = `<div class="sponsor-banner" style="margin:0;padding:0">${sponsorCardHTML(top)}</div>`;
-  if (demoPill) demoPill.style.display = "none";
+  if (top) {
+    const banner = document.querySelector(".demo-banner");
+    if (banner) banner.innerHTML = `<div class="sponsor-banner" style="margin:0;padding:0">${sponsorCardHTML(top)}</div>`;
+    if (demoPill) demoPill.style.display = "none";
+    return;
+  }
+  // 无自建顶部赞助 → 联盟广告补位
+  fillAdsSlot("ads-top", "top");
 }
 
 function renderFooterSponsor() {
   const foot = document.getElementById("sponsor-footer");
-  if (!foot) return;
   const f = SPONSORS.find(s => s.slot_id === "footer");
-  foot.innerHTML = f ? sponsorCardHTML(f) : "";
+  if (f) {
+    foot.innerHTML = sponsorCardHTML(f);
+  } else {
+    foot.innerHTML = "";
+    fillAdsSlot("ads-footer", "footer");
+  }
 }
 
 function inlineSponsors() {
@@ -313,16 +371,31 @@ function render() {
     return;
   }
   // 每 N 张热词卡后插一张 inline 赞助卡（轮流用 inline-1/inline-2）
+  // 无自建 inline 卡时，用联盟广告补位（每个槽位 push 一次）
   const inline = inlineSponsors();
+  const useAdsInline = !inline.length && (ADSENSE_ENABLED && ADSENSE_CLIENT || BAIDU_ADS_ENABLED && BAIDU_CPRO_ID);
+  let adsInlineCount = 0;
   let html = "";
   currentData.forEach((t, i) => {
     html += renderCard(t, i);
-    if (inline.length && (i + 1) % INLINE_EVERY_N === 0) {
-      const s = inline[Math.floor((i + 1) / INLINE_EVERY_N - 1) % inline.length];
-      html += sponsorCardHTML(s);
+    if ((i + 1) % INLINE_EVERY_N === 0) {
+      if (inline.length) {
+        const s = inline[Math.floor((i + 1) / INLINE_EVERY_N - 1) % inline.length];
+        html += sponsorCardHTML(s);
+      } else if (useAdsInline) {
+        // 联盟 inline 补位：给唯一 id，渲染后 push
+        const sid = `ads-inline-${adsInlineCount++}`;
+        html += `<div class="ads-slot" id="${sid}" style="max-width:1100px;margin:14px auto 0;padding:0 24px"></div>`;
+      }
     }
   });
   listEl.innerHTML = html;
+  // 联盟 inline 槽位渲染后初始化（innerHTML 清空了，需重新 push）
+  if (useAdsInline) {
+    for (let k = 0; k < adsInlineCount; k++) {
+      fillAdsSlot(`ads-inline-${k}`, "inline");
+    }
+  }
 }
 
 let fetching = false;
@@ -401,5 +474,10 @@ function MOCK_DATA(sort) {
   return {ok:true, sort, count:sorted.length, terms:sorted};
 }
 </script>
+
+{% if baidu_ads_enabled and baidu_cpro_id %}
+<!-- 百度联盟（union.baidu.com，需 ICP 备案后审核通过） -->
+<script type="text/javascript" src="//cpro.baidustatic.com/cpro/ui/cm.js" async></script>
+{% endif %}
 </body>
 </html>

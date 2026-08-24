@@ -343,7 +343,11 @@ def index():
     for s in sponsors:
         store.record_impression(s.get("slot_id"))
     return render_template("index.html", sources=SOURCE_META,
-                           sponsors=sponsors, site_name=config.SITE_NAME)
+                           sponsors=sponsors, site_name=config.SITE_NAME,
+                           adsense_enabled=config.ADSENSE_ENABLED,
+                           adsense_client=config.ADSENSE_CLIENT,
+                           baidu_ads_enabled=config.BAIDU_ADS_ENABLED,
+                           baidu_cpro_id=config.BAIDU_ADS_CPRO_ID)
 
 
 @app.route("/api/sources")

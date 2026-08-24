@@ -38,6 +38,16 @@ def _as_bool(v, default=True):
 
 ANALYTICS_ENABLED = _as_bool(os.environ.get("ANALYTICS_ENABLED", "true"))
 
+# ---------- 第三方广告联盟 ----------
+# 与自建赞助位并存；自建优先，联盟广告作为补位/默认填充。
+# Google AdSense：未备案也能申请，审核需脚本已部署。
+ADSENSE_ENABLED = _as_bool(os.environ.get("ADSENSE_ENABLED", "false"))
+ADSENSE_CLIENT = os.environ.get("ADSENSE_CLIENT", "").strip()  # ca-pub-xxxxxxxxxxxxxxxx
+
+# 百度联盟：硬门槛 ICP 备案，备案通过后申请 union.baidu.com。
+BAIDU_ADS_ENABLED = _as_bool(os.environ.get("BAIDU_ADS_ENABLED", "false"))
+BAIDU_ADS_CPRO_ID = os.environ.get("BAIDU_ADS_CPRO_ID", "").strip()
+
 # ---------- 赞助位展示 ----------
 # 热词卡之间每 N 张插一张 inline 赞助卡。
 INLINE_SLOT_EVERY_N = int(os.environ.get("INLINE_SLOT_EVERY_N", "8") or 8)
