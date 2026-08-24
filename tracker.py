@@ -35,8 +35,9 @@ ARXIV_ENRICH_LIMIT = 8   # 只对榜单前 N 个热词做 arXiv 检索，避免�
 # 改为后台线程定时预热 → 写文件；4 个 gunicorn worker 都读同一份文件，请求秒回。
 CACHE_DIR = os.environ.get("CACHE_DIR", "/app/cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "terms.json")
-REFRESH_INTERVAL = 600   # 后台预热周期：10 分钟（HF 模型榜单变化没那么快）
-CACHE_TTL = 3600         # 文件缓存兜底有效期：1 小时（即便预热失败，旧缓存最多服务 1 小时）
+REFRESH_INTERVAL = 21600   # 后台预热周期：6 小时（榜单更新没那么快，省资源）
+RETRY_INTERVAL = 300       # 预热失败后快速重试间隔：5 分钟
+CACHE_TTL = 86400          # 文件缓存兜底有效期：24 小时（即便预热连续失败，旧缓存最多服务 24 小时）
 
 # ---------- 内存缓存（进程内，兜底）----------
 _cache = {}
@@ -423,27 +424,43 @@ _refresher_start_lock = threading.Lock()
 
 
 def _refresh_once(sort):
-    """预热单个 sort：完整抓取 + 写文件缓存。失败保留旧缓存。"""
+    """预热单个 sort：完整抓取 + 写文件缓存。失败保留旧缓存。
+
+    返回 True 表示成功，False 表示失败（调用方据此决定下次重试间隔）。
+    """
     if not _refresh_lock.acquire(blocking=False):
-        return   # 已有 worker 在预热，跳过（省 arXiv 配额）
+        return True   # 已有 worker 在预热，视为已处理，跳过（省 arXiv 配额）
     try:
         data = _fetch_terms_raw(sort)
         _file_cache_set(sort, data, data["fetched_at"])
+        return True
     except Exception:
-        pass     # 失败不抛——保留上一份热缓存继续服务
+        return False  # 失败不抛——保留上一份热缓存继续服务；由后台重试
     finally:
         _refresh_lock.release()
 
 
 def _bg_refresher():
-    """后台循环：启动立即预热一次，之后每 REFRESH_INTERVAL 秒一次。"""
+    """后台循环：启动立即预热一次，之后每 REFRESH_INTERVAL 秒一次。
+
+    重试策略：某次预热失败 → 隔 RETRY_INTERVAL（5 分钟）后重试，而非干等
+    6 小时。任一 sort 成功即把该 sort 的文件缓存更新好；失败的 sort 在下个
+    重试点再来。所有 sort 都成功后，回到正常 REFRESH_INTERVAL（6 小时）周期。
+    """
     # 首次立即预热（不等第一个周期），让服务起来后尽快有热缓存
     for sort in ("trending", "top"):
         _refresh_once(sort)
+
+    next_wait = REFRESH_INTERVAL   # 距离下一次预热的睡眠时长
     while True:
-        time.sleep(REFRESH_INTERVAL)
+        time.sleep(next_wait)
+        any_failed = False
         for sort in ("trending", "top"):
-            _refresh_once(sort)
+            ok = _refresh_once(sort)
+            if not ok:
+                any_failed = True
+        # 有失败 → 缩短到重试间隔尽快重试；全部成功 → 回到正常周期
+        next_wait = RETRY_INTERVAL if any_failed else REFRESH_INTERVAL
 
 
 def start_background_refresher():
