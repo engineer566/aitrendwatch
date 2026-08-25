@@ -27,6 +27,13 @@ BASE_URL = os.environ.get("BASE_URL", "").strip()  # 如 https://modelradar.ai
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 DB_PATH = os.path.join(DATA_DIR, "sponsors.db")
 
+# GeoLite2 离线国家库（监控页 IP 地域兜底；缺失则地域为 Unknown，不影响服务）。
+# 反代头（CF-IPCountry / X-Country-Code）优先，无头时才查此库。
+GEOIP_DB_PATH = os.environ.get(
+    "GEOIP_DB_PATH",
+    os.path.join(DATA_DIR, "GeoLite2-Country.mmdb"),
+)
+
 # 向后兼容：tracker.py 仍直接读 CACHE_DIR，这里同步暴露一份。
 CACHE_DIR = os.environ.get("CACHE_DIR", "/app/cache")
 

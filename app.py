@@ -14,6 +14,7 @@ import hmac
 import threading
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import quote
 
 import requests
 from flask import (Flask, jsonify, render_template, request, Response,
@@ -286,6 +287,28 @@ def detect_region():
     return "zh" if al.startswith("zh") or ",zh" in al or ";zh" in al else "global"
 
 
+def _client_ip():
+    """取真实客户端 IP。信任自建 Nginx 注入的 X-Forwarded-For（取最左一跳）。"""
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return (request.remote_addr or "").strip()
+
+
+def _client_country(ip):
+    """地域判定：反代头优先（CF-IPCountry / X-Country-Code），GeoLite2 兜底。
+
+    Cloudflare 与带 ngx_http_geoip2_module 的 Nginx 会直接注入国家码头，
+    优先采信；否则用本地 GeoLite2 离线库查（无库返回 Unknown）。
+    XX / T1 等为反代表示「未知」的占位码，忽略后走兜底。
+    """
+    for h in ("CF-IPCountry", "X-Country-Code"):
+        c = (request.headers.get(h) or "").strip()
+        if c and c.upper() not in ("XX", "T1"):
+            return c.upper()
+    return store.geoip_country(ip)
+
+
 def get_source(source):
     """带缓存的单源抓取，超时快速失败"""
     if source not in SOURCES:
@@ -340,6 +363,9 @@ def index():
     sponsors = store.list_slots(region=region, active_only=True)
     # 服务端记曝光 + PV（best-effort，失败静默）
     store.record_pageview()
+    # 记录访问明细（IP + 地域），供监控页统计 PV / 独立 IP / 地域分布
+    cip = _client_ip()
+    store.record_visit(cip, _client_country(cip))
     for s in sponsors:
         store.record_impression(s.get("slot_id"))
     return render_template("index.html", sources=SOURCE_META,
@@ -421,9 +447,10 @@ def admin_required(f):
                  or request.args.get("token", "").strip()
                  or session.get("admin_token", ""))
         if not token or not hmac.compare_digest(token, config.ADMIN_TOKEN):
-            # 未登录 → 登录页（仅页面请求）；API 请求返 401
-            if request.path == "/admin" and request.method == "GET" and "application/json" not in request.headers.get("Accept", ""):
-                return redirect("/admin/login", code=302)
+            # 未登录 → 登录页（仅页面请求，带 next 回跳）；API 请求返 401
+            if request.method == "GET" and "application/json" not in request.headers.get("Accept", ""):
+                nxt = quote(request.path, safe="")
+                return redirect(f"/admin/login?next={nxt}", code=302)
             abort(401)
         return f(*args, **kwargs)
     return wrapper
@@ -437,7 +464,11 @@ def admin_login():
         token = (request.form.get("token") or "").strip()
         if token and hmac.compare_digest(token, config.ADMIN_TOKEN):
             session["admin_token"] = token
-            return redirect("/admin", code=302)
+            nxt = request.args.get("next") or "/admin"
+            # 只允许站内相对路径回跳，防开放重定向
+            if not nxt.startswith("/") or nxt.startswith("//"):
+                nxt = "/admin"
+            return redirect(nxt, code=302)
         return render_template("admin_login.html", error="令牌错误"), 401
     return render_template("admin_login.html", error=None)
 
@@ -487,6 +518,24 @@ def admin_delete_sponsor(slot_id):
 @admin_required
 def admin_stats():
     return jsonify(store.stats_30d())
+
+
+# ---------- 流量监控页（仅管理员，只看访问量 + 独立 IP + 地域，不含广告）----------
+@app.route("/monitor")
+@admin_required
+def monitor():
+    return render_template("monitor.html", site_name=config.SITE_NAME)
+
+
+@app.route("/monitor/api")
+@admin_required
+def monitor_api():
+    days = request.args.get("days", "30")
+    try:
+        days = max(1, min(int(days), 90))
+    except ValueError:
+        days = 30
+    return jsonify(store.monitor_stats(days))
 
 
 if __name__ == "__main__":
