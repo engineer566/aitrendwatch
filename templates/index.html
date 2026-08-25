@@ -4,6 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ site_name }} · AI 热点聚合</title>
+<meta name="description" content="{{ site_desc }}">
+<link rel="icon" href="/favicon.ico">
+{% if seo_enabled %}
+<meta name="robots" content="index,follow">
+{% if canonical %}<link rel="canonical" href="{{ canonical }}">{% endif %}
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{{ site_name }}">
+<meta property="og:title" content="{{ site_name }} · AI 热点聚合">
+<meta property="og:description" content="{{ site_desc }}">
+<meta property="og:locale" content="zh_CN">
+{% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ site_name }} · AI 热点聚合">
+<meta name="twitter:description" content="{{ site_desc }}">
+{% else %}
+<meta name="robots" content="noindex,nofollow">
+{% endif %}
 <script>
 // 主题初始化须在 CSS 生效前执行，避免闪烁
 (function () {
@@ -219,6 +238,34 @@
     .header-right #last-update { display: none; }
   }
 </style>
+{% if seo_enabled and initial_terms %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": {{ site_name | tojson }},
+  "description": {{ site_desc | tojson }},
+  "url": {{ (canonical or '') | tojson }}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "AI 热点榜 · 上升最快",
+  "itemListElement": [
+    {% for t in initial_terms %}
+    {
+      "@type": "ListItem",
+      "position": {{ loop.index }},
+      "name": {{ (t.term or '') | tojson }},
+      "url": {{ (t.official_url or '') | tojson }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+</script>
+{% endif %}
 {% if adsense_enabled and adsense_client %}
 <!-- Google AdSense 全站库（审核需脚本已部署） -->
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}" crossorigin="anonymous"></script>
@@ -241,7 +288,7 @@
   </div>
 </header>
 
-<div class="demo-banner"><span class="pill" id="demo-pill">⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据</span></div>
+<div class="demo-banner"><span class="pill" id="demo-pill" {% if initial_terms %}style="display:none"{% endif %}>⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据</span></div>
 
 <!-- 联盟广告槽：自建 top-banner 不存在时由 JS 填充 AdSense / 百度联盟 -->
 <div class="ads-slot empty" id="ads-top"></div>
@@ -257,7 +304,35 @@
   </div>
 </div>
 
-<main><div class="list" id="list"></div></main>
+<main><div class="list" id="list">
+{% if seo_enabled and initial_terms %}
+{# ===== SSR 首屏热词卡（爬虫可见，JS 启动后接管） ===== #}
+{% for t in initial_terms %}
+<div class="term-card" style="--cat-color:#4f8cff">
+  <div class="term-head">
+    <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
+    <span class="cat-badge">🧠 模型</span>
+    <span class="term-name">
+      {% if t.author %}<span class="author">{{ t.author }} / </span>{% endif %}<a href="{{ t.official_url }}" target="_blank" rel="noopener">{{ t.term }}</a>
+    </span>
+    <span class="head-right"><span>{{ t.created_at or '' }}</span></span>
+  </div>
+  {% if t.trending_score != none %}<div class="term-meta"><span class="m-up">📈 趋势 <span class="num">{{ t.trending_score }}</span></span>{% if t.likes != none %}<span class="m-hot">❤ <span class="num">{{ t.likes }}</span></span>{% endif %}{% if t.downloads != none %}<span>↓ <span class="num">{{ t.downloads }}</span></span>{% endif %}</div>{% endif %}
+  {% if t.tags %}<div class="tags">{% for tg in t.tags[:5] %}<span class="tag">{{ tg }}</span>{% endfor %}</div>{% endif %}
+  <div class="links">
+    <a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.official_label or '官方' }}</a>
+    {% for c in (t.community or []) %}<a class="link-btn" href="{{ c.url }}" target="_blank" rel="noopener">💬 {{ c.site }}</a>{% endfor %}
+  </div>
+  {% if t.papers %}
+  <div class="papers">
+    <div class="papers-title">📄 相关论文（arXiv）</div>
+    {% for p in t.papers %}<div class="paper"><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a><span class="pm">{{ p.published or '' }}</span></div>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+</div></main>
 
 <div class="sponsor-footer" id="sponsor-footer"></div>
 
@@ -270,6 +345,7 @@
 </footer>
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
+<script id="initial-terms-data" type="application/json">{{ initial_terms|tojson }}</script>
 <script>
 const ADSENSE_ENABLED = {{ adsense_enabled | tojson }};
 const ADSENSE_CLIENT = {{ adsense_client | tojson }};
@@ -639,7 +715,23 @@ async function fetchAll() {
   if (fetching) return;
   fetching = true;
   lastUpdateEl.textContent = "加载中…";
-  listEl.innerHTML = skeletonHTML();
+  // 首屏：优先用 SSR 注入的数据，避免空骨架闪烁与重复请求
+  if (!allData.length) {
+    try {
+      const raw = document.getElementById("initial-terms-data").textContent.trim();
+      if (raw) {
+        const ssr = JSON.parse(raw);
+        if (Array.isArray(ssr) && ssr.length) {
+          allData = ssr;
+          render();
+          lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
+          fetching = false;
+          return;
+        }
+      }
+    } catch (e) {}
+    listEl.innerHTML = skeletonHTML();
+  }
 
   const [tr, tp] = await Promise.all([fetchJSON("/api/trending"), fetchJSON("/api/top")]);
 

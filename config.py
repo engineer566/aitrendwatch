@@ -38,6 +38,14 @@ def _as_bool(v, default=True):
 
 ANALYTICS_ENABLED = _as_bool(os.environ.get("ANALYTICS_ENABLED", "true"))
 
+# ---------- SEO ----------
+# 关闭后不输出 canonical/OG/JSON-LD，robots 禁止索引，sitemap 仅含首页。
+SEO_ENABLED = _as_bool(os.environ.get("SEO_ENABLED", "true"))
+# sitemap.xml 最多输出的 <url> 条数（首页 + 各热词详情页）。
+SITEMAP_MAX_URLS = int(os.environ.get("SITEMAP_MAX_URLS", "200") or 200)
+# 单热词详情页进程内缓存 TTL（秒）。get_term_detail 是 live HF + 同步 arXiv（~1-4s）。
+TERM_DETAIL_CACHE_TTL = int(os.environ.get("TERM_DETAIL_CACHE_TTL", "1800") or 1800)
+
 # ---------- 第三方广告联盟 ----------
 # 与自建赞助位并存；自建优先，联盟广告作为补位/默认填充。
 # Google AdSense：未备案也能申请，审核需脚本已部署。

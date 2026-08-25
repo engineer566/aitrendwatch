@@ -12,8 +12,10 @@ import json
 import time
 import hmac
 import threading
+import hashlib
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import quote, urljoin
 
 import requests
 from flask import (Flask, jsonify, render_template, request, Response,
@@ -60,6 +62,88 @@ def _cached(source):
 def _set_cache(source, data):
     with _cache_lock:
         _cache[source] = (time.time(), data)
+
+
+# ---------- SEO 辅助 ----------
+# 详情页进程内缓存：get_term_detail 是 live HF + 同步 arXiv（~1-4s），
+# 用 TTL 缓存避免每次请求都打上游。key = term_name（小写归一）。
+_detail_cache = {}
+_detail_cache_lock = threading.Lock()
+
+def _detail_cached(name):
+    with _detail_cache_lock:
+        ent = _detail_cache.get(name)
+        if ent and time.time() - ent[0] < config.TERM_DETAIL_CACHE_TTL:
+            return ent[1]
+    return None
+
+def _detail_set_cache(name, data):
+    with _detail_cache_lock:
+        _detail_cache[name] = (time.time(), data)
+
+
+def _base_url():
+    """站点根 URL（末尾无斜杠）。BASE_URL 未设 → 返回 ''，调用方据此降级。"""
+    return (config.BASE_URL or "").rstrip("/")
+
+def _abs(path):
+    """拼绝对 URL。BASE_URL 未设时返回 None（模板据此跳过 canonical/OG url）。"""
+    base = _base_url()
+    if not base:
+        return None
+    return base + path
+
+def _seo_enabled():
+    return bool(config.SEO_ENABLED)
+
+# 首页 SSR 渲染的热词条数（Top-N）。读文件缓存，秒回。
+SSR_INITIAL_LIMIT = 20
+
+
+def _initial_terms_for_ssr():
+    """首页 SSR 用的首屏热词：双榜合并去重取 Top-N。
+
+    读 tracker 文件缓存（不触发 arXiv）；任何失败返回 []，模板兜底骨架屏。
+    """
+    try:
+        terms = []
+        seen = set()
+        for sort in ("trending", "top"):
+            d = tracker.get_terms(sort=sort)
+            for t in (d.get("terms") or []):
+                tid = t.get("full_id") or t.get("term")
+                if tid and tid not in seen:
+                    seen.add(tid)
+                    terms.append(t)
+                if len(terms) >= SSR_INITIAL_LIMIT:
+                    break
+            if len(terms) >= SSR_INITIAL_LIMIT:
+                break
+        return terms[:SSR_INITIAL_LIMIT]
+    except Exception:
+        return []
+
+
+def _sitemap_terms():
+    """sitemap.xml 用热词列表：双榜合并去重，受 SITEMAP_MAX_URLS 限制。"""
+    try:
+        terms = []
+        seen = set()
+        for sort in ("trending", "top"):
+            d = tracker.get_terms(sort=sort)
+            for t in (d.get("terms") or []):
+                tid = t.get("full_id") or t.get("term")
+                if tid and tid not in seen:
+                    seen.add(tid)
+                    terms.append(t)
+        return terms[:max(0, config.SITEMAP_MAX_URLS - 1)]
+    except Exception:
+        return []
+
+
+# 站点级元信息（描述等），集中维护。
+SITE_DESC = "AI 热点聚合 · 实时追踪 HuggingFace 模型趋势、arXiv 相关论文与社区讨论。上升最快、最热、最新 AI 模型一页尽览。"
+
 
 
 # ---------- 各数据源抓取函数 ----------
@@ -342,8 +426,13 @@ def index():
     store.record_pageview()
     for s in sponsors:
         store.record_impression(s.get("slot_id"))
+    initial_terms = _initial_terms_for_ssr() if _seo_enabled() else []
     return render_template("index.html", sources=SOURCE_META,
                            sponsors=sponsors, site_name=config.SITE_NAME,
+                           site_desc=SITE_DESC,
+                           base_url=_base_url(), canonical=_abs("/"),
+                           seo_enabled=_seo_enabled(),
+                           initial_terms=initial_terms,
                            adsense_enabled=config.ADSENSE_ENABLED,
                            adsense_client=config.ADSENSE_CLIENT,
                            baidu_ads_enabled=config.BAIDU_ADS_ENABLED,
@@ -395,9 +484,108 @@ def api_term(term_name):
     return jsonify(tracker.get_term_detail(term_name))
 
 
+@app.route("/term/<path:term_name>")
+def term_detail(term_name):
+    """单个热词 HTML 详情页（SEO 可索引长尾页）。
+
+    走进程内 TTL 缓存（get_term_detail 是 live HF + 同步 arXiv，~1-4s）。
+    未找到 → 404 HTML + noindex。
+    """
+    key = term_name.lower()
+    data = _detail_cached(key)
+    if data is None:
+        data = tracker.get_term_detail(term_name)
+        # 无论成败都缓存，避免未命中的 term 被反复打上游
+        _detail_set_cache(key, data)
+
+    if not data.get("ok"):
+        abort(404)
+
+    term = data.get("term") or {}
+    # 详情页 canonical：用短名（term），URL 更友好
+    slug = term.get("term") or term_name
+    canonical = _abs(f"/term/{quote(slug)}")
+    desc = (f"{term.get('term','')} — {term.get('author','')} · "
+            f"{term.get('official_label','HuggingFace')} · "
+            f"趋势 {term.get('trending_score','-')} · ❤ {term.get('likes','-')}")
+    return render_template("term_detail.html", term=term, site_name=config.SITE_NAME,
+                           site_desc=desc[:160], base_url=_base_url(),
+                           canonical=canonical, seo_enabled=_seo_enabled())
+
+
+@app.errorhandler(404)
+def not_found(e):
+    """404 → 简单 HTML（noindex），避免爬虫索引不存在的 term 详情页。"""
+    html = (
+        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
+        "<meta name=\"robots\" content=\"noindex,nofollow\">"
+        "<title>404 · 未找到</title></head>"
+        "<body style=\"font-family:sans-serif;text-align:center;padding:60px\">"
+        "<h1>404</h1><p>未找到该热词。</p>"
+        "<p><a href=\"/\">← 返回首页</a></p></body></html>"
+    )
+    return Response(html, status=404, mimetype="text/html; charset=utf-8")
+
+
 @app.route("/health")
 def health():
     return jsonify({"ok": True})
+
+
+# ---------- SEO 路由：robots / sitemap / favicon ----------
+
+@app.route("/robots.txt")
+def robots():
+    base = _base_url()
+    lines = []
+    if _seo_enabled():
+        lines.extend([
+            "User-agent: *",
+            "Allow: /",
+            "Disallow: /admin",
+            "Disallow: /api/",
+        ])
+        if base:
+            lines.append(f"Sitemap: {base}/sitemap.xml")
+    else:
+        # SEO 关闭 → 全站禁止索引
+        lines.extend(["User-agent: *", "Disallow: /"])
+    lines.append("")
+    return Response("\n".join(lines), mimetype="text/plain; charset=utf-8")
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    base = _base_url()
+    # BASE_URL 未设 → 无法生成绝对 URL，sitemap 退化为仅首页（相对也无意义，返回空集）
+    urls = []
+    if base:
+        urls.append(base + "/")
+        if _seo_enabled():
+            for t in _sitemap_terms():
+                slug = t.get("term")
+                if not slug:
+                    continue
+                urls.append(f"{base}/term/{quote(slug)}")
+                if len(urls) >= config.SITEMAP_MAX_URLS:
+                    break
+    now = time.strftime("%Y-%m-%d", time.gmtime())
+    body = ['<?xml version="1.0" encoding="UTF-8"?>',
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for u in urls:
+        body.append(f"  <url><loc>{u}</loc><lastmod>{now}</lastmod></url>")
+    body.append("</urlset>")
+    return Response("\n".join(body), mimetype="application/xml")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    # 内联最小 SVG（以 image/svg+xml 提供），避免 404 噪声。无需静态目录。
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+           '<rect width="32" height="32" rx="7" fill="#4f8cff"/>'
+           '<text x="16" y="23" font-size="20" text-anchor="middle" '
+           'fill="#fff" font-family="sans-serif">🤖</text></svg>')
+    return Response(svg, mimetype="image/svg+xml")
 
 
 # ---------- 赞助位点击跳转 ----------
