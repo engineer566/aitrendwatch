@@ -3,7 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ site_name }} · AI 热词追踪 · 7 日趋势 / 热度榜</title>
+<title>{{ site_name }} · AI 热点聚合</title>
+<script>
+// 主题初始化须在 CSS 生效前执行，避免闪烁
+(function () {
+  const saved = localStorage.getItem("aitw_theme");
+  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  document.documentElement.dataset.theme = saved || sys;
+})();
+</script>
 <style>
   :root {
     --bg: #0f1117;
@@ -18,117 +26,172 @@
     --orange: #ffa940;
     --purple: #a78bfa;
     --cyan: #22d3ee;
+    --shadow: 0 1px 3px rgba(0,0,0,.3);
     --radius: 12px;
+  }
+  [data-theme="light"] {
+    --bg: #f5f6f8;
+    --bg-card: #ffffff;
+    --bg-hover: #eef0f4;
+    --border: #e3e6ec;
+    --text: #1c2130;
+    --text-dim: #6b7280;
+    --accent: #3b76e1;
+    --accent-2: #e0457a;
+    --green: #18a568;
+    --orange: #d9820f;
+    --purple: #7c5ce0;
+    --cyan: #0e9db8;
+    --shadow: 0 1px 3px rgba(20,25,40,.08);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                  "Microsoft YaHei", sans-serif;
     background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5;
+    transition: background .2s, color .2s;
   }
+  .num { font-variant-numeric: tabular-nums; }
+
   header {
     position: sticky; top: 0; z-index: 10;
-    background: rgba(15,17,23,.85); backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border); padding: 14px 24px;
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 12px 24px;
   }
   .header-inner {
-    max-width: 1100px; margin: 0 auto;
-    display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; gap: 12px;
+    max-width: 860px; margin: 0 auto;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   }
   h1 {
-    font-size: 20px; font-weight: 700;
+    font-size: 19px; font-weight: 700; white-space: nowrap;
     background: linear-gradient(90deg, var(--accent), var(--purple));
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
-  .header-right { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text-dim); }
+  .search-box {
+    flex: 1; min-width: 140px; display: flex; align-items: center; gap: 7px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 12px; color: var(--text-dim); transition: border-color .15s;
+  }
+  .search-box:focus-within { border-color: var(--accent); }
+  .search-box input {
+    flex: 1; min-width: 0; border: none; outline: none; background: none;
+    color: var(--text); font: inherit; font-size: 13px;
+  }
+  .search-box kbd {
+    font-family: inherit; font-size: 11px; border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 5px; color: var(--text-dim);
+  }
+  .header-right { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); }
   .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; box-shadow: 0 0 0 0 rgba(62,207,142,.7); animation: pulse 2s infinite; }
   @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(62,207,142,.6)} 70%{box-shadow:0 0 0 8px rgba(62,207,142,0)} 100%{box-shadow:0 0 0 0 rgba(62,207,142,0)} }
   button { cursor: pointer; border: none; background: none; color: inherit; font: inherit; }
-  .btn { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; color: var(--text-dim); transition: all .15s; }
+  .btn { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--text-dim); transition: all .15s; font-size: 13px; }
   .btn:hover { color: var(--text); border-color: var(--accent); }
-  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn.primary:hover { opacity: .9; }
 
-  .controls {
-    max-width: 1100px; margin: 20px auto 0; padding: 0 24px;
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  /* ---- 分类 + 排序 控制条 ---- */
+  .controls { max-width: 860px; margin: 16px auto 0; padding: 0 24px; }
+  .cat-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .cat-bar::-webkit-scrollbar { display: none; }
+  .cat-pill {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    font-size: 13px; padding: 6px 14px; border-radius: 16px;
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text-dim);
+    transition: all .15s;
   }
-  .seg { display: flex; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 3px; }
-  .seg button { padding: 7px 16px; border-radius: 16px; color: var(--text-dim); font-size: 14px; transition: all .15s; white-space: nowrap; }
+  .cat-pill:hover { color: var(--text); border-color: var(--pill-color, var(--accent)); }
+  .cat-pill.active {
+    color: #fff; background: var(--pill-color, var(--accent));
+    border-color: var(--pill-color, var(--accent));
+  }
+  .cat-pill .cnt { font-size: 11px; opacity: .75; }
+  .sort-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .seg { display: flex; gap: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: 3px; }
+  .seg button { padding: 5px 14px; border-radius: 14px; color: var(--text-dim); font-size: 13px; transition: all .15s; white-space: nowrap; }
   .seg button.active { background: var(--accent); color: #fff; }
-  .demo-banner { max-width: 1100px; margin: 14px auto 0; padding: 0 24px; }
+  .demo-banner { max-width: 860px; margin: 12px auto 0; padding: 0 24px; }
   .demo-banner .pill {
     display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
-    color: var(--orange); background: rgba(255,169,64,.1);
-    border: 1px solid rgba(255,169,64,.3); border-radius: 16px; padding: 4px 12px;
+    color: var(--orange); background: color-mix(in srgb, var(--orange) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--orange) 30%, transparent);
+    border-radius: 16px; padding: 4px 12px;
   }
 
-  main { max-width: 1100px; margin: 16px auto 40px; padding: 0 24px; }
-  .list { display: flex; flex-direction: column; gap: 12px; }
+  /* ---- 信息流 ---- */
+  main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
+  .list { display: flex; flex-direction: column; gap: 10px; }
 
   .term-card {
     background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 16px 20px; transition: border-color .15s;
+    border-radius: var(--radius); padding: 14px 18px; box-shadow: var(--shadow);
+    transition: border-color .15s;
   }
   .term-card:hover { border-color: var(--accent); }
-  .term-row { display: flex; align-items: flex-start; gap: 16px; }
-  .rank {
-    flex-shrink: 0; width: 34px; height: 34px; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 15px; font-weight: 800; color: var(--text-dim);
-    background: rgba(255,255,255,.04);
+  .term-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .rank { font-size: 13px; font-weight: 800; color: var(--text-dim); min-width: 20px; }
+  .rank.top { color: var(--accent-2); }
+  .cat-badge {
+    font-size: 11px; padding: 1px 8px; border-radius: 9px; font-weight: 600;
+    color: var(--cat-color); background: color-mix(in srgb, var(--cat-color) 14%, transparent);
+    white-space: nowrap;
   }
-  .rank.top1 { background: linear-gradient(135deg,#ff5d8f,#ff8a5d); color: #fff; }
-  .rank.top2 { background: linear-gradient(135deg,#ffa940,#ff8a5d); color: #fff; }
-  .rank.top3 { background: linear-gradient(135deg,#ffc94d,#ffa940); color: #fff; }
-  .term-main { flex: 1; min-width: 0; }
-  .term-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .term-name { font-size: 17px; font-weight: 700; word-break: break-all; }
+  .term-name { font-size: 16px; font-weight: 700; word-break: break-all; }
   .term-name a { color: var(--text); text-decoration: none; }
   .term-name a:hover { color: var(--accent); }
-  .type-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; background: rgba(34,211,238,.15); color: var(--cyan); }
-  .author-tag { font-size: 12px; color: var(--text-dim); }
-  .term-meta { font-size: 13px; color: var(--text-dim); margin-top: 5px; }
-  .term-meta .score-up { color: var(--green); font-weight: 600; }
-  .term-meta .score-hot { color: var(--orange); font-weight: 600; }
+  .term-name .author { color: var(--text-dim); font-weight: 500; font-size: 13px; }
+  .head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+  .new-badge {
+    font-size: 10px; font-weight: 700; color: #fff; background: var(--accent-2);
+    border-radius: 8px; padding: 1px 6px; letter-spacing: .5px;
+  }
+  .delta { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
+  .delta.up { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
+  .delta.down { color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 12%, transparent); }
 
-  .tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-  .tag { font-size: 11px; padding: 2px 8px; border-radius: 8px; background: rgba(255,255,255,.04); color: var(--text-dim); }
+  .term-meta { font-size: 13px; color: var(--text-dim); margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .term-meta .m-up { color: var(--green); font-weight: 600; }
+  .term-meta .m-hot { color: var(--orange); font-weight: 600; }
 
-  .links { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tags { margin-top: 7px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 8px; background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text-dim); }
+
+  .links { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .link-btn {
     display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
-    padding: 6px 12px; border-radius: 8px; text-decoration: none;
+    padding: 5px 11px; border-radius: 8px; text-decoration: none;
     border: 1px solid var(--border); color: var(--text-dim); transition: all .15s;
   }
   .link-btn:hover { color: var(--text); border-color: var(--accent); background: var(--bg-hover); }
-  .link-btn.official { color: var(--accent); border-color: rgba(79,140,255,.4); }
-  .link-btn.official:hover { background: rgba(79,140,255,.1); }
+  .link-btn.official { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .link-btn.official:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 
-  .papers { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
-  .papers-title { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
-  .paper { font-size: 13px; padding: 4px 0; }
+  .papers { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
+  .papers-title { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .paper { font-size: 13px; padding: 3px 0; }
   .paper a { color: var(--purple); text-decoration: none; }
   .paper a:hover { text-decoration: underline; }
   .paper .pm { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
 
+  /* ---- 骨架屏 ---- */
+  .sk-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; }
+  .sk { border-radius: 6px; background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border) 50%, var(--bg-hover) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
   .state { padding: 60px 20px; text-align: center; color: var(--text-dim); font-size: 14px; }
   .state.error { color: var(--accent-2); }
-  .spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 12px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
   footer { text-align: center; padding: 24px; color: var(--text-dim); font-size: 12px; }
 
+  /* ---- 赞助位 ---- */
   .sponsor-card {
-    background: linear-gradient(135deg, rgba(79,140,255,.08), rgba(167,139,250,.08));
-    border: 1px solid rgba(79,140,255,.35); border-radius: var(--radius);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), color-mix(in srgb, var(--purple) 8%, transparent));
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: var(--radius);
     padding: 14px 20px; position: relative; overflow: hidden;
   }
   .sponsor-card:hover { border-color: var(--accent); }
   .sponsor-badge {
     position: absolute; top: 0; right: 0; font-size: 10px; font-weight: 700;
-    color: var(--text-dim); background: rgba(255,255,255,.06);
+    color: var(--text-dim); background: color-mix(in srgb, var(--text) 6%, transparent);
     padding: 2px 8px; border-bottom-left-radius: 8px; letter-spacing: .5px;
   }
   .sponsor-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
@@ -141,23 +204,19 @@
     background: var(--accent); color: #fff; border: 1px solid var(--accent); transition: opacity .15s;
   }
   .sponsor-cta:hover { opacity: .9; }
-  .sponsor-banner {
-    max-width: 1100px; margin: 14px auto 0; padding: 0 24px;
-  }
-  .sponsor-banner .sponsor-card { padding: 12px 18px; }
-  .sponsor-footer { max-width: 1100px; margin: 0 auto 16px; padding: 0 24px; }
+  .sponsor-footer { max-width: 860px; margin: 0 auto 16px; padding: 0 24px; }
 
   /* 联盟广告槽（AdSense / 百度联盟补位） */
-  .ads-slot { max-width: 1100px; margin: 14px auto 0; padding: 0 24px; min-height: 0; }
+  .ads-slot { max-width: 860px; margin: 14px auto 0; padding: 0 24px; min-height: 0; }
   .ads-slot.empty { display: none; }
   .ads-slot .adsbygoogle { display: block; margin: 0 auto; }
   .ads-slot ins.adsbygoogle { background: transparent; }
-  .ads-footer-slot { max-width: 1100px; margin: 0 auto 16px; padding: 0 24px; }
+  .ads-footer-slot { max-width: 860px; margin: 0 auto 16px; padding: 0 24px; }
 
   @media (max-width: 640px) {
-    header { padding: 12px 16px; }
-    .controls, main, .demo-banner, .sponsor-banner, .sponsor-footer, .ads-slot, .ads-footer-slot { padding-left: 16px; padding-right: 16px; }
-    .term-row { gap: 10px; }
+    header { padding: 10px 16px; }
+    .controls, main, .demo-banner, .sponsor-footer, .ads-slot, .ads-footer-slot { padding-left: 16px; padding-right: 16px; }
+    .header-right #last-update { display: none; }
   }
 </style>
 {% if adsense_enabled and adsense_client %}
@@ -169,10 +228,15 @@
 <header>
   <div class="header-inner">
     <h1>🤖 {{ site_name }}</h1>
+    <div class="search-box">
+      <span>🔍</span>
+      <input id="search-input" type="text" placeholder="搜索热点 / 作者…" autocomplete="off">
+      <kbd>/</kbd>
+    </div>
     <div class="header-right">
-      <span><span class="live-dot"></span> 实时更新</span>
+      <span><span class="live-dot"></span> 实时</span>
       <span id="last-update">—</span>
-      <button class="btn primary" id="refresh-btn">刷新</button>
+      <button class="btn" id="theme-btn" title="切换深浅色">🌙</button>
     </div>
   </div>
 </header>
@@ -183,9 +247,13 @@
 <div class="ads-slot empty" id="ads-top"></div>
 
 <div class="controls">
-  <div class="seg" id="sort-seg">
-    <button class="active" data-sort="trending">📈 7日上升最快</button>
-    <button data-sort="top">🔥 热度最高</button>
+  <div class="cat-bar" id="cat-bar"></div>
+  <div class="sort-row">
+    <div class="seg" id="sort-seg">
+      <button class="active" data-sort="rise">📈 上升最快</button>
+      <button data-sort="hot">🔥 最热</button>
+      <button data-sort="new">🕒 最新</button>
+    </div>
   </div>
 </div>
 
@@ -198,7 +266,7 @@
 
 <footer>
   数据来源：HuggingFace（模型趋势）· arXiv（相关论文）· 知乎/B站/GitHub（社区讨论）<br>
-  纯程序聚合，零 LLM · 缓存 5 分钟
+  纯程序聚合，零 LLM · 分类体系持续扩展中（模型 / Agent / 产品 / 投融资…）
 </footer>
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
@@ -208,16 +276,98 @@ const ADSENSE_CLIENT = {{ adsense_client | tojson }};
 const BAIDU_ADS_ENABLED = {{ baidu_ads_enabled | tojson }};
 const BAIDU_CPRO_ID = {{ baidu_cpro_id | tojson }};
 
+// ==================== 分类体系（数据驱动，后端加 category 字段即自动出现） ====================
+// key → 展示配置。匹配顺序：条目自带 category 字段 > 按 type 推断 > other
+const CATEGORIES = {
+  model:   { label: "模型",   icon: "🧠", color: "#4f8cff" },
+  agent:   { label: "Agent",  icon: "🤖", color: "#a78bfa" },
+  product: { label: "产品",   icon: "📱", color: "#3ecf8e" },
+  funding: { label: "投融资", icon: "💰", color: "#ffa940" },
+  paper:   { label: "论文",   icon: "📄", color: "#22d3ee" },
+  other:   { label: "其他",   icon: "✨", color: "#8b91a3" },
+};
+// type/category 别名 → 标准 key（后端未来新 tag 在这里登记或直接下发标准 key）
+const CATEGORY_ALIAS = {
+  "模型": "model", "model": "model",
+  "agent": "agent", "Agent": "agent", "智能体": "agent",
+  "产品": "product", "product": "product",
+  "投融资": "funding", "funding": "funding", "融资": "funding",
+  "论文": "paper", "paper": "paper",
+};
+function catOf(t) {
+  const raw = t.category || t.type || "";
+  return CATEGORIES[raw] ? raw : (CATEGORY_ALIAS[raw] || "other");
+}
+
+// ==================== 状态 ====================
 const listEl = document.getElementById("list");
 const lastUpdateEl = document.getElementById("last-update");
-const refreshBtn = document.getElementById("refresh-btn");
 const demoPill = document.getElementById("demo-pill");
+const searchInput = document.getElementById("search-input");
+const catBar = document.getElementById("cat-bar");
 
-let currentSort = "trending";
-let currentData = [];
+let allData = [];            // 双源合并后的全量热点
+let currentCat = "all";
+let currentSort = "rise";
+let query = "";
 
-// ---------- 赞助位 ----------
-// 服务端通过 JSON island 注入；JS 按 slot_id 分流到 top-banner / inline / footer。
+// URL 参数恢复状态（?cat=&sort= 可分享）
+(function initFromURL() {
+  const p = new URLSearchParams(location.search);
+  if (p.get("sort") && ["rise","hot","new"].includes(p.get("sort"))) currentSort = p.get("sort");
+  if (p.get("cat")) currentCat = p.get("cat");
+})();
+function syncURL() {
+  const p = new URLSearchParams();
+  if (currentCat !== "all") p.set("cat", currentCat);
+  if (currentSort !== "rise") p.set("sort", currentSort);
+  const qs = p.toString();
+  history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+}
+
+// ==================== 主题切换 ====================
+const themeBtn = document.getElementById("theme-btn");
+function paintThemeBtn() {
+  themeBtn.textContent = document.documentElement.dataset.theme === "light" ? "☀️" : "🌙";
+}
+themeBtn.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("aitw_theme", next);
+  paintThemeBtn();
+});
+paintThemeBtn();
+
+// ==================== 搜索 ====================
+searchInput.addEventListener("input", () => { query = searchInput.value.trim().toLowerCase(); render(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== searchInput) {
+    e.preventDefault(); searchInput.focus();
+  } else if (e.key === "Escape" && document.activeElement === searchInput) {
+    searchInput.value = ""; query = ""; render(); searchInput.blur();
+  }
+});
+
+// ==================== 排名变化追踪（localStorage 存上次榜单） ====================
+const RANK_KEY = s => `aitw_prev_rank_${s}`;
+function rankDelta(t, rankIdx) {
+  if (currentSort === "new") return null;   // 最新排序无排名概念
+  try {
+    const prev = JSON.parse(localStorage.getItem(RANK_KEY(currentSort)) || "{}");
+    const id = t.full_id || t.term;
+    if (!(id in prev)) return "new";
+    const d = prev[id] - rankIdx;   // 正 = 上升
+    return d === 0 ? null : d;
+  } catch (e) { return null; }
+}
+function saveRanks(items) {
+  if (currentSort === "new") return;
+  const m = {};
+  items.forEach((t, i) => { m[t.full_id || t.term] = i; });
+  try { localStorage.setItem(RANK_KEY(currentSort), JSON.stringify(m)); } catch (e) {}
+}
+
+// ==================== 赞助位 / 联盟广告（逻辑不变） ====================
 let SPONSORS = [];
 try {
   const raw = document.getElementById("sponsor-data").textContent.trim();
@@ -226,10 +376,7 @@ try {
 
 const INLINE_EVERY_N = 8;
 
-// ---------- 联盟广告补位 ----------
-// 自建赞助位优先；缺失槽位用 AdSense / 百度联盟补位。
 function adsenseInsHtml(format) {
-  // format: { slot?: "123...", layout?: "in-article" }。无 slot → 自动广告占位。
   const slot = format.slot ? ` data-ad-slot="${escapeHtml(format.slot)}"` : "";
   const layout = format.layout ? ` data-ad-format="${escapeHtml(format.layout)}"` : ' data-ad-format="auto"';
   const full = format.layout ? ` data-ad-layout="${escapeHtml(format.layout)}"` : "";
@@ -240,7 +387,6 @@ function adsenseInsHtml(format) {
 function fillAdsSlot(elId, kind) {
   const el = document.getElementById(elId);
   if (!el) return;
-  // AdSense 优先；未启用则百度联盟
   if (ADSENSE_ENABLED && ADSENSE_CLIENT) {
     el.classList.remove("empty");
     el.innerHTML = adsenseInsHtml({});
@@ -248,15 +394,12 @@ function fillAdsSlot(elId, kind) {
   } else if (BAIDU_ADS_ENABLED && BAIDU_CPRO_ID) {
     el.classList.remove("empty");
     el.innerHTML = `<div class="cpro" data-cpro-id="${escapeHtml(BAIDU_CPRO_ID)}"></div>`;
-    try {
-      (window.cproArray = window.cproArray || []).push({ id: BAIDU_CPRO_ID });
-    } catch (e) {}
+    try { (window.cproArray = window.cproArray || []).push({ id: BAIDU_CPRO_ID }); } catch (e) {}
   }
 }
 
 function sponsorCardHTML(s) {
   const click = `/api/click/${encodeURIComponent(s.slot_id)}`;
-  // banner_html 优先（服务端已净化）；否则用结构化字段拼
   if (s.banner_html) {
     return `<div class="sponsor-card"><span class="sponsor-badge">赞助</span>${s.banner_html}</div>`;
   }
@@ -277,15 +420,13 @@ function sponsorCardHTML(s) {
 }
 
 function renderTopBanner() {
-  // 有 top-banner 赞助 → 替换 demo pill；否则联盟广告补位
   const top = SPONSORS.find(s => s.slot_id === "top-banner");
   if (top) {
     const banner = document.querySelector(".demo-banner");
-    if (banner) banner.innerHTML = `<div class="sponsor-banner" style="margin:0;padding:0">${sponsorCardHTML(top)}</div>`;
+    if (banner) banner.innerHTML = `<div style="margin:0;padding:0">${sponsorCardHTML(top)}</div>`;
     if (demoPill) demoPill.style.display = "none";
     return;
   }
-  // 无自建顶部赞助 → 联盟广告补位
   fillAdsSlot("ads-top", "top");
 }
 
@@ -304,16 +445,40 @@ function inlineSponsors() {
   return SPONSORS.filter(s => /^inline-\d+$/.test(s.slot_id));
 }
 
-// 排序切换
+// ==================== 分类条 & 排序 ====================
+function renderCatBar() {
+  // 只展示数据中实际出现的分类；分类由数据驱动，新增 tag 自动出现
+  const counts = {};
+  allData.forEach(t => { const c = catOf(t); counts[c] = (counts[c] || 0) + 1; });
+  const keys = Object.keys(CATEGORIES).filter(k => counts[k]);
+  if (!keys.includes(currentCat)) currentCat = "all";
+  let html = `<button class="cat-pill ${currentCat==="all"?"active":""}" data-cat="all"
+    style="--pill-color:var(--accent)">全部 <span class="cnt num">${allData.length}</span></button>`;
+  keys.forEach(k => {
+    const c = CATEGORIES[k];
+    html += `<button class="cat-pill ${currentCat===k?"active":""}" data-cat="${k}"
+      style="--pill-color:${c.color}">${c.icon} ${c.label} <span class="cnt num">${counts[k]}</span></button>`;
+  });
+  catBar.innerHTML = html;
+}
+catBar.addEventListener("click", e => {
+  const b = e.target.closest(".cat-pill"); if (!b) return;
+  currentCat = b.dataset.cat; syncURL(); render();
+});
+
 document.getElementById("sort-seg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.sort === currentSort) return;   // 同一 Tab 不重复请求
+  if (b.dataset.sort === currentSort) return;
   document.querySelectorAll("#sort-seg button").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
   currentSort = b.dataset.sort;
-  fetchAll();   // 切 Tab 必须重新拉对应排序的数据，否则只重渲染同一份旧数据
+  syncURL(); render();
 });
+// 初始排序按钮状态（可能被 URL 参数改过）
+document.querySelectorAll("#sort-seg button").forEach(x =>
+  x.classList.toggle("active", x.dataset.sort === currentSort));
 
+// ==================== 工具 ====================
 function fmtNum(n) {
   if (n === undefined || n === null || n === "") return "";
   n = Number(n);
@@ -327,151 +492,225 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function relTime(iso) {
+  if (!iso) return "";
+  const t = new Date(iso);
+  if (isNaN(t)) return iso;
+  const diff = Date.now() - t.getTime();
+  const d = Math.floor(diff / 86400000);
+  if (d <= 0) return "今天";
+  if (d === 1) return "昨天";
+  if (d < 30) return `${d} 天前`;
+  if (d < 365) return `${Math.floor(d/30)} 个月前`;
+  return `${Math.floor(d/365)} 年前`;
+}
+function isFresh(iso) {
+  const t = new Date(iso);
+  return !isNaN(t) && (Date.now() - t.getTime()) < 14 * 86400000;   // 14 天内算 NEW
+}
+
+// ==================== 渲染 ====================
+// 指标行按分类差异化渲染：模型看趋势/赞/下载，投融资看金额，其余有多少显示多少
+function metricsHTML(t, cat) {
+  const m = [];
+  if (cat === "funding") {
+    if (t.amount) m.push(`<span class="m-hot">💰 ${escapeHtml(t.amount)}</span>`);
+    if (t.round) m.push(`<span>${escapeHtml(t.round)}</span>`);
+  }
+  if (t.trending_score != null) m.push(`<span class="m-up">📈 趋势 <span class="num">${fmtNum(t.trending_score)}</span></span>`);
+  if (t.likes != null) m.push(`<span class="m-hot">❤ <span class="num">${fmtNum(t.likes)}</span></span>`);
+  if (t.downloads != null) m.push(`<span>↓ <span class="num">${fmtNum(t.downloads)}</span></span>`);
+  if (t.discussion_count != null) m.push(`<span>💬 讨论 <span class="num">${fmtNum(t.discussion_count)}</span></span>`);
+  return m.length ? `<div class="term-meta">${m.join("")}</div>` : "";
+}
+
 function renderCard(t, i) {
-  const rankClass = i === 0 ? "top1" : i === 1 ? "top2" : i === 2 ? "top3" : "";
-  const scoreHtml = currentSort === "trending"
-    ? `<span class="score-up">📈 趋势分 ${fmtNum(t.trending_score)}</span> · ❤ ${fmtNum(t.likes)} · ↓ ${fmtNum(t.downloads)}`
-    : `<span class="score-hot">❤ ${fmtNum(t.likes)}</span> · ↓ ${fmtNum(t.downloads)} · 📈 ${fmtNum(t.trending_score)}`;
-  const tagsHtml = (t.tags||[]).map(tg => `<span class="tag">${escapeHtml(tg)}</span>`).join("");
-  const commHtml = (t.community||[]).map(c =>
-    `<a class="link-btn" href="${c.url}" target="_blank" rel="noopener">💬 ${escapeHtml(c.site)}</a>`).join("");
-  const papersHtml = (t.papers&&t.papers.length) ? `
+  const cat = catOf(t);
+  const c = CATEGORIES[cat];
+  const d = rankDelta(t, i);
+  const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
+    : d ? `<span class="delta ${d>0?"up":"down"}">${d>0?"↑":"↓"}${Math.abs(d)}</span>` : "";
+  const tagsHtml = (t.tags||[]).slice(0, 5).map(tg => `<span class="tag">${escapeHtml(tg)}</span>`).join("");
+  const commHtml = (t.community||[]).map(c2 =>
+    `<a class="link-btn" href="${c2.url}" target="_blank" rel="noopener">💬 ${escapeHtml(c2.site)}</a>`).join("");
+  const papersHtml = (t.papers && t.papers.length) ? `
     <div class="papers">
-      <div class="papers-title">📄 相关论文（arXiv 近 7 日）</div>
-      ${t.papers.map(p => `<div class="paper"><a href="${p.url}" target="_blank" rel="noopener">${escapeHtml(p.title)}</a><span class="pm">${p.published}</span></div>`).join("")}
+      <div class="papers-title">📄 相关论文（arXiv）</div>
+      ${t.papers.map(p => `<div class="paper"><a href="${p.url}" target="_blank" rel="noopener">${escapeHtml(p.title)}</a><span class="pm">${escapeHtml(p.published||"")}</span></div>`).join("")}
     </div>` : "";
-  return `<div class="term-card">
-    <div class="term-row">
-      <div class="rank ${rankClass}">${i+1}</div>
-      <div class="term-main">
-        <div class="term-head">
-          <span class="term-name"><a href="${t.official_url}" target="_blank" rel="noopener">${escapeHtml(t.term)}</a></span>
-          <span class="type-tag">${escapeHtml(t.type)}</span>
-          ${t.author ? `<span class="author-tag">@${escapeHtml(t.author)}</span>` : ""}
-        </div>
-        <div class="term-meta">${scoreHtml} · 📅 ${escapeHtml(t.created_at||"")}</div>
-        ${tagsHtml ? `<div class="tags">${tagsHtml}</div>` : ""}
-        <div class="links">
-          <a class="link-btn official" href="${t.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(t.official_label||"官方")}</a>
-          ${commHtml}
-        </div>
-        ${papersHtml}
-      </div>
+  return `<div class="term-card" style="--cat-color:${c.color}">
+    <div class="term-head">
+      <span class="rank ${i<3?"top":""} num">${i+1}</span>
+      <span class="cat-badge">${c.icon} ${c.label}</span>
+      <span class="term-name">
+        ${t.author ? `<span class="author">${escapeHtml(t.author)} / </span>` : ""}<a href="${t.official_url}" target="_blank" rel="noopener">${escapeHtml(t.term)}</a>
+      </span>
+      <span class="head-right">
+        ${deltaHtml}
+        ${isFresh(t.created_at) ? `<span class="new-badge">NEW</span>` : ""}
+        <span>${relTime(t.created_at)}</span>
+      </span>
     </div>
+    ${metricsHTML(t, cat)}
+    ${tagsHtml ? `<div class="tags">${tagsHtml}</div>` : ""}
+    <div class="links">
+      <a class="link-btn official" href="${t.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(t.official_label||"官方")}</a>
+      ${commHtml}
+    </div>
+    ${papersHtml}
   </div>`;
 }
 
+function skeletonHTML() {
+  const card = `<div class="sk-card">
+    <div class="sk" style="height:18px;width:55%;margin-bottom:10px"></div>
+    <div class="sk" style="height:13px;width:35%;margin-bottom:10px"></div>
+    <div class="sk" style="height:13px;width:70%"></div>
+  </div>`;
+  return card.repeat(6);
+}
+
+function visibleData() {
+  let items = allData;
+  if (currentCat !== "all") items = items.filter(t => catOf(t) === currentCat);
+  if (query) items = items.filter(t =>
+    (t.term||"").toLowerCase().includes(query) || (t.author||"").toLowerCase().includes(query));
+  const key = { rise: "trending_score", hot: "likes", new: "created_at" }[currentSort];
+  return [...items].sort((a, b) => {
+    const va = a[key], vb = b[key];
+    if (key === "created_at") return String(vb||"").localeCompare(String(va||""));
+    return (Number(vb)||0) - (Number(va)||0);
+  });
+}
+
 function render() {
-  if (!currentData.length) {
-    listEl.innerHTML = `<div class="state"><div class="spinner"></div>加载中…</div>`;
+  renderCatBar();
+  if (!allData.length) {
+    listEl.innerHTML = skeletonHTML();
     return;
   }
-  if (currentData[0] && currentData[0]._error) {
-    listEl.innerHTML = `<div class="state error">${escapeHtml(currentData[0]._error)}</div>`;
+  if (allData[0] && allData[0]._error) {
+    listEl.innerHTML = `<div class="state error">${escapeHtml(allData[0]._error)}</div>`;
     return;
   }
-  // 每 N 张热词卡后插一张 inline 赞助卡（轮流用 inline-1/inline-2）
-  // 无自建 inline 卡时，用联盟广告补位（每个槽位 push 一次）
+  const items = visibleData();
+  if (!items.length) {
+    listEl.innerHTML = `<div class="state">没有匹配的热点${query ? `（搜索「${escapeHtml(query)}」）` : ""}</div>`;
+    return;
+  }
+  // 每 N 张热点卡后插一张 inline 赞助卡；无自建 inline 时联盟广告补位
   const inline = inlineSponsors();
   const useAdsInline = !inline.length && (ADSENSE_ENABLED && ADSENSE_CLIENT || BAIDU_ADS_ENABLED && BAIDU_CPRO_ID);
   let adsInlineCount = 0;
   let html = "";
-  currentData.forEach((t, i) => {
+  items.forEach((t, i) => {
     html += renderCard(t, i);
     if ((i + 1) % INLINE_EVERY_N === 0) {
       if (inline.length) {
         const s = inline[Math.floor((i + 1) / INLINE_EVERY_N - 1) % inline.length];
         html += sponsorCardHTML(s);
       } else if (useAdsInline) {
-        // 联盟 inline 补位：给唯一 id，渲染后 push
         const sid = `ads-inline-${adsInlineCount++}`;
-        html += `<div class="ads-slot" id="${sid}" style="max-width:1100px;margin:14px auto 0;padding:0 24px"></div>`;
+        html += `<div class="ads-slot" id="${sid}" style="max-width:860px;margin:14px auto 0;padding:0 24px"></div>`;
       }
     }
   });
   listEl.innerHTML = html;
-  // 联盟 inline 槽位渲染后初始化（innerHTML 清空了，需重新 push）
   if (useAdsInline) {
-    for (let k = 0; k < adsInlineCount; k++) {
-      fillAdsSlot(`ads-inline-${k}`, "inline");
-    }
+    for (let k = 0; k < adsInlineCount; k++) fillAdsSlot(`ads-inline-${k}`, "inline");
   }
+  saveRanks(items);
+}
+
+// ==================== 数据拉取：trending + top 双源合并 ====================
+async function fetchJSON(url) {
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 25000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(to);
+    if (res.ok) return await res.json();
+  } catch (e) {}
+  return null;
 }
 
 let fetching = false;
 async function fetchAll() {
   if (fetching) return;
-  fetching = true; refreshBtn.disabled = true; refreshBtn.textContent = "刷新中…";
+  fetching = true;
   lastUpdateEl.textContent = "加载中…";
-  listEl.innerHTML = `<div class="state"><div class="spinner"></div>加载中…</div>`;
+  listEl.innerHTML = skeletonHTML();
 
-  let data = null;
-  try {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 25000);
-    const res = await fetch(`/api/${currentSort}`, { signal: ctrl.signal });
-    clearTimeout(to);
-    if (res.ok) data = await res.json();
-  } catch (e) {}
+  const [tr, tp] = await Promise.all([fetchJSON("/api/trending"), fetchJSON("/api/top")]);
 
-  // 后端未就绪 → Mock 回退
-  if (!data || data.ok === false) {
-    data = MOCK_DATA(currentSort);
-    if (demoPill) demoPill.style.display = "inline-flex";
-  } else {
+  let terms = null;
+  if ((tr && tr.ok !== false) || (tp && tp.ok !== false)) {
+    // 双榜合并去重（trending 优先），覆盖「上升快但 likes 少」和「老牌热门」两类
+    const seen = new Map();
+    [tr, tp].forEach(d => (d && d.terms || []).forEach(t => {
+      const id = t.full_id || t.term;
+      if (!seen.has(id)) seen.set(id, t);
+    }));
+    terms = [...seen.values()];
     if (demoPill) demoPill.style.display = "none";
+  } else {
+    terms = MOCK_DATA().terms;   // 后端未就绪 → Mock 回退
+    if (demoPill) demoPill.style.display = "inline-flex";
   }
 
-  currentData = data.terms || [];
+  allData = terms;
   render();
   lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
-  fetching = false; refreshBtn.disabled = false; refreshBtn.textContent = "刷新";
+  fetching = false;
 }
 
-refreshBtn.addEventListener("click", fetchAll);
 renderTopBanner();
 renderFooterSponsor();
 fetchAll();
-setInterval(fetchAll, 10 * 60 * 1000);
+// 后端底层 6 小时预热一次榜单数据，前端对齐该节奏，避免无意义轮询拿到相同数据
+setInterval(fetchAll, 6 * 60 * 60 * 1000);
 
-// ============ Mock 数据（后端就绪后自动失效）============
-function MOCK_DATA(sort) {
+// ============ Mock 数据（后端就绪后自动失效；含多分类预览分类徽章体系） ============
+function MOCK_DATA() {
   const base = [
     {term:"Qwen3.8-27B", full_id:"Qwen/Qwen3.8-27B", author:"Qwen", type:"模型",
      official_url:"https://huggingface.co/Qwen/Qwen3.8-27B", official_label:"HuggingFace · Qwen/Qwen3.8-27B",
      trending_score:1990, likes:12117, downloads:2090699, created_at:"2026-08-05",
-     tags:["transformers","safetensors","qwen3_5","image-text-to-text"], pipeline_tag:"image-text-to-text",
+     tags:["transformers","safetensors","qwen3_5","image-text-to-text"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Qwen3.8-27B"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Qwen3.8-27B"},{site:"GitHub",url:"https://github.com/search?q=Qwen3.8-27B"}],
      papers:[{title:"Qwen3.8 Technical Report: Multimodal Reasoning at Scale",url:"http://arxiv.org/abs/2608.20001",published:"2026-08-19"}]},
     {term:"DeepSeek-V4-Flash", full_id:"deepseek-ai/DeepSeek-V4-Flash", author:"deepseek-ai", type:"模型",
      official_url:"https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash", official_label:"HuggingFace · deepseek-ai/DeepSeek-V4-Flash",
      trending_score:1740, likes:13200, downloads:8800000, created_at:"2026-08-11",
-     tags:["transformers","deepseek","moe"], pipeline_tag:"text-generation",
+     tags:["transformers","deepseek","moe"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=DeepSeek-V4-Flash"},{site:"B站",url:"https://search.bilibili.com/all?keyword=DeepSeek-V4-Flash"},{site:"GitHub",url:"https://github.com/search?q=DeepSeek-V4-Flash"}],
+     papers:[]},
+    {term:"某 Agent 框架单周 Star 破万", full_id:"agent-demo-1", author:"", type:"Agent", category:"agent",
+     official_url:"https://github.com/search?q=agent", official_label:"GitHub",
+     discussion_count:342, created_at:"2026-08-22",
+     tags:["multi-agent","tool-use"],
+     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=agent"},{site:"B站",url:"https://search.bilibili.com/all?keyword=agent"}],
+     papers:[]},
+    {term:"某 AI 编程产品完成 B 轮融资", full_id:"funding-demo-1", author:"", type:"投融资", category:"funding",
+     official_url:"https://www.zhihu.com/search?q=AI%E8%9E%8D%E8%B5%84", official_label:"报道",
+     amount:"$50M", round:"B 轮 · 红杉领投", discussion_count:128, created_at:"2026-08-20",
+     tags:["AI Coding"],
+     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=AI%E8%9E%8D%E8%B5%84"}],
      papers:[]},
     {term:"Kimi-K3", full_id:"moonshotai/Kimi-K3", author:"moonshotai", type:"模型",
      official_url:"https://huggingface.co/moonshotai/Kimi-K3", official_label:"HuggingFace · moonshotai/Kimi-K3",
      trending_score:1520, likes:10923, downloads:2612739, created_at:"2026-06-13",
-     tags:["transformers","moonshot","long-context"], pipeline_tag:"text-generation",
+     tags:["transformers","moonshot","long-context"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Kimi-K3"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Kimi-K3"},{site:"GitHub",url:"https://github.com/search?q=Kimi-K3"}],
      papers:[]},
     {term:"FLUX.1-dev", full_id:"black-forest-labs/FLUX.1-dev", author:"black-forest-labs", type:"模型",
      official_url:"https://huggingface.co/black-forest-labs/FLUX.1-dev", official_label:"HuggingFace · black-forest-labs/FLUX.1-dev",
      trending_score:980, likes:14223, downloads:631339, created_at:"2024-07-31",
-     tags:["diffusers","flux","text-to-image"], pipeline_tag:"text-to-image",
+     tags:["diffusers","flux","text-to-image"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=FLUX.1"},{site:"B站",url:"https://search.bilibili.com/all?keyword=FLUX.1"},{site:"GitHub",url:"https://github.com/search?q=FLUX.1"}],
      papers:[]},
-    {term:"whisper-large-v4", full_id:"openai/whisper-large-v4", author:"openai", type:"模型",
-     official_url:"https://huggingface.co/openai/whisper-large-v4", official_label:"HuggingFace · openai/whisper-large-v4",
-     trending_score:760, likes:12033, downloads:4500000, created_at:"2026-07-20",
-     tags:["transformers","whisper","speech-recognition"], pipeline_tag:"automatic-speech-recognition",
-     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=whisper-large-v4"},{site:"B站",url:"https://search.bilibili.com/all?keyword=whisper-large-v4"},{site:"GitHub",url:"https://github.com/search?q=whisper-large-v4"}],
-     papers:[]},
   ];
-  // 两个视图同一份数据，排序键不同
-  const sorted = [...base].sort((a,b) =>
-    sort === "trending" ? b.trending_score - a.trending_score : b.likes - a.likes);
-  return {ok:true, sort, count:sorted.length, terms:sorted};
+  return { ok: true, count: base.length, terms: base };
 }
 </script>
 
