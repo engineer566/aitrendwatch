@@ -22,13 +22,16 @@ from flask import (Flask, jsonify, render_template, request, Response,
                    redirect, session, abort)
 
 import tracker
+import dims
 import config
 import store
 
 # 启动后台预热线程：定时抓取 HF + arXiv 写文件缓存，请求路径只读缓存秒回。
-# 每个 gunicorn worker 各起一个 daemon 线程，但通过 tracker._refresh_lock 串行化，
-# 实际只有一个 worker 在打 arXiv，其余跳过（省配额）。
+# 每个 gunicorn worker 各起一个 daemon 线程；通过 fcntl 跨进程文件锁串行化，
+# 整个容器内任意时刻只有一个 worker 在抓取（省 arXiv 配额 + 防多 worker 并发撑爆内存）。
 tracker.start_background_refresher()
+# 维度热词后台预热：RSS + HN + DeepSeek 打标，独立跨进程文件锁串行化。
+dims.start_background_dims_refresher()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = config.SECRET_KEY
@@ -436,7 +439,8 @@ def index():
                            adsense_enabled=config.ADSENSE_ENABLED,
                            adsense_client=config.ADSENSE_CLIENT,
                            baidu_ads_enabled=config.BAIDU_ADS_ENABLED,
-                           baidu_cpro_id=config.BAIDU_ADS_CPRO_ID)
+                           baidu_cpro_id=config.BAIDU_ADS_CPRO_ID,
+                           default_lang="zh" if region == "zh" else "en")
 
 
 @app.route("/api/sources")
@@ -525,6 +529,54 @@ def not_found(e):
         "<p><a href=\"/\">← 返回首页</a></p></body></html>"
     )
     return Response(html, status=404, mimetype="text/html; charset=utf-8")
+
+
+@app.route("/api/dims")
+def api_dims():
+    """维度热词：按 AI 维度（模型发布/产品发布/投融资/...）分组的热点卡。
+    可选 ?dimension=模型发布 只返回该维度；?lang=zh/en 投影对应语言（默认 zh）。
+    每张卡含 official_url 直链官方原文。"""
+    lang = request.args.get("lang", "zh")
+    return jsonify(dims.get_dims(dimension=request.args.get("dimension"), lang=lang))
+
+
+@app.route("/api/stream")
+def api_stream():
+    """统一卡片流：合并 model 卡（tracker）+ news 卡（dims）为一个扁平列表。
+
+    参数：
+      lang：默认按 Accept-Language（detect_region → zh/global → zh/en）。
+      sort：rise（上升最快，按 trend 降序）/ hot（最热，按 score 降序）/
+            new（最新，按 published 降序），默认 rise。
+    返回 {ok, fetched_at, count, dimension_list, terms}。
+    两类卡只读各自文件缓存，秒回，无需并发。
+    """
+    region = detect_region()
+    lang = request.args.get("lang", "zh" if region == "zh" else "en")
+    if lang not in ("zh", "en"):
+        lang = "zh" if region == "zh" else "en"
+    sort = request.args.get("sort", "rise")
+    if sort not in ("rise", "hot", "new"):
+        sort = "rise"
+
+    model_cards, m_at = tracker.get_model_cards(lang)
+    news_cards, n_at = dims.get_news_cards(lang)
+    cards = model_cards + news_cards
+
+    # 排序键：rise→trend, hot→score, new→published（统一字段）
+    sort_key = {"rise": lambda x: x.get("trend", 0),
+                "hot":  lambda x: x.get("score", 0),
+                "new":  lambda x: x.get("published", "") or ""}[sort]
+    cards.sort(key=sort_key, reverse=True)
+
+    fetched_at = max(m_at, n_at)
+    return jsonify({
+        "ok": True,
+        "fetched_at": fetched_at,
+        "count": len(cards),
+        "dimension_list": dims.DIMENSIONS,
+        "terms": cards,
+    })
 
 
 @app.route("/health")

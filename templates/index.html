@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ 'zh-CN' if (default_lang or 'zh') == 'zh' else 'en' }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -102,6 +102,7 @@
     border-radius: 4px; padding: 0 5px; color: var(--text-dim);
   }
   .header-right { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); }
+
   .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; box-shadow: 0 0 0 0 rgba(62,207,142,.7); animation: pulse 2s infinite; }
   @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(62,207,142,.6)} 70%{box-shadow:0 0 0 8px rgba(62,207,142,0)} 100%{box-shadow:0 0 0 0 rgba(62,207,142,0)} }
   button { cursor: pointer; border: none; background: none; color: inherit; font: inherit; }
@@ -110,8 +111,10 @@
 
   /* ---- 分类 + 排序 控制条 ---- */
   .controls { max-width: 860px; margin: 16px auto 0; padding: 0 24px; }
-  .cat-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
-  .cat-bar::-webkit-scrollbar { display: none; }
+  .cat-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-behavior: smooth; scrollbar-width: thin; }
+  .cat-bar::-webkit-scrollbar { height: 4px; }
+  .cat-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .cat-bar::-webkit-scrollbar-track { background: transparent; }
   .cat-pill {
     display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
     font-size: 13px; padding: 6px 14px; border-radius: 16px;
@@ -281,8 +284,9 @@
       <kbd>/</kbd>
     </div>
     <div class="header-right">
-      <span><span class="live-dot"></span> 实时</span>
+      <span><span class="live-dot"></span> <span class="live-label">实时</span></span>
       <span id="last-update">—</span>
+      <button class="btn" id="lang-btn" title="切换语言 / Toggle language">EN</button>
       <button class="btn" id="theme-btn" title="切换深浅色">🌙</button>
     </div>
   </div>
@@ -340,8 +344,9 @@
 <div class="ads-footer-slot empty" id="ads-footer"></div>
 
 <footer>
-  数据来源：HuggingFace（模型趋势）· arXiv（相关论文）· 知乎/B站/GitHub（社区讨论）<br>
-  纯程序聚合，零 LLM · 分类体系持续扩展中（模型 / Agent / 产品 / 投融资…）
+  统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论<br>
+  新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）<br>
+  分类：模型发布 / 产品发布 / 研究论文 / 投融资 / 行业动态 / 其他
 </footer>
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
@@ -352,28 +357,46 @@ const ADSENSE_CLIENT = {{ adsense_client | tojson }};
 const BAIDU_ADS_ENABLED = {{ baidu_ads_enabled | tojson }};
 const BAIDU_CPRO_ID = {{ baidu_cpro_id | tojson }};
 
-// ==================== 分类体系（数据驱动，后端加 category 字段即自动出现） ====================
-// key → 展示配置。匹配顺序：条目自带 category 字段 > 按 type 推断 > other
-const CATEGORIES = {
-  model:   { label: "模型",   icon: "🧠", color: "#4f8cff" },
-  agent:   { label: "Agent",  icon: "🤖", color: "#a78bfa" },
-  product: { label: "产品",   icon: "📱", color: "#3ecf8e" },
-  funding: { label: "投融资", icon: "💰", color: "#ffa940" },
-  paper:   { label: "论文",   icon: "📄", color: "#22d3ee" },
-  other:   { label: "其他",   icon: "✨", color: "#8b91a3" },
+// ==================== i18n（中/英双版本）====================
+const I18N = {
+  zh: {
+    site_subtitle: "AI 热点聚合",
+    search_ph: "搜索热点 / 作者…",
+    live: "实时",
+    all: "全部",
+    sort_rise: "📈 上升最快", sort_hot: "🔥 最热", sort_new: "🕒 最新",
+    loading: "加载中…",
+    updated: "更新于 ",
+    empty: "没有匹配的热点",
+    empty_q: "（搜索「",
+    official_default: "官方原文",
+    demo_pill: "⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据",
+    footer_l1: "统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论",
+    footer_l2: "新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）",
+    footer_l3: "分类：模型发布 / 产品发布 / 研究论文 / 投融资 / 行业动态 / 其他",
+    today: "今天", yesterday: "昨天", days_ago: " 天前", months_ago: " 个月前", years_ago: " 年前",
+    warming: "维度热词预热中，请稍后刷新",
+  },
+  en: {
+    site_subtitle: "AI Trend Aggregator",
+    search_ph: "Search trends / authors…",
+    live: "Live",
+    all: "All",
+    sort_rise: "📈 Trending", sort_hot: "🔥 Hottest", sort_new: "🕒 Newest",
+    loading: "Loading…",
+    updated: "Updated ",
+    empty: "No matching trends",
+    empty_q: " (search: «",
+    official_default: "Source",
+    demo_pill: "⚠ Demo preview · built-in mock data; switches to real data once backend is ready",
+    footer_l1: "Unified feed: HuggingFace models (trends/likes/downloads) · arXiv papers · Zhihu/Bilibili/GitHub discussion",
+    footer_l2: "News: OpenAI/TechCrunch/HF/arXiv/QbitAI etc. official RSS · Hacker News + Reddit community heat · DeepSeek tagging (links go to official sources)",
+    footer_l3: "Categories: Model Releases / Product Launches / Research Papers / Funding / Industry News / Other",
+    today: "Today", yesterday: "Yesterday", days_ago: " days ago", months_ago: " months ago", years_ago: " years ago",
+    warming: "Warming up trends, please refresh shortly",
+  },
 };
-// type/category 别名 → 标准 key（后端未来新 tag 在这里登记或直接下发标准 key）
-const CATEGORY_ALIAS = {
-  "模型": "model", "model": "model",
-  "agent": "agent", "Agent": "agent", "智能体": "agent",
-  "产品": "product", "product": "product",
-  "投融资": "funding", "funding": "funding", "融资": "funding",
-  "论文": "paper", "paper": "paper",
-};
-function catOf(t) {
-  const raw = t.category || t.type || "";
-  return CATEGORIES[raw] ? raw : (CATEGORY_ALIAS[raw] || "other");
-}
+function t(k) { return (I18N[LANG] && I18N[LANG][k]) || I18N.zh[k] || k; }
 
 // ==================== 状态 ====================
 const listEl = document.getElementById("list");
@@ -381,25 +404,65 @@ const lastUpdateEl = document.getElementById("last-update");
 const demoPill = document.getElementById("demo-pill");
 const searchInput = document.getElementById("search-input");
 const catBar = document.getElementById("cat-bar");
+const sortSeg = document.getElementById("sort-seg");
 
-let allData = [];            // 双源合并后的全量热点
-let currentCat = "all";
-let currentSort = "rise";
+let allData = [];            // 统一卡片流全量数据（model + news）
+let currentCat = "all";      // 当前维度筛选：all 或维度中文 key
+let currentSort = "rise";    // rise / hot / new
 let query = "";
+let LANG = "{{ default_lang or 'zh' }}";   // zh | en（SSR 注入默认，可被 localStorage / ?lang= 覆盖）
+let dimensionList = [];      // 后端下发的维度顺序
 
-// URL 参数恢复状态（?cat=&sort= 可分享）
+// URL 参数恢复状态（?cat=&sort=&lang= 可分享）
 (function initFromURL() {
   const p = new URLSearchParams(location.search);
+  const lp = p.get("lang");
+  if (lp === "zh" || lp === "en") LANG = lp;
   if (p.get("sort") && ["rise","hot","new"].includes(p.get("sort"))) currentSort = p.get("sort");
   if (p.get("cat")) currentCat = p.get("cat");
 })();
+// localStorage 优先级高于 SSR 默认（用户上次手动切过则记住）
+try {
+  const saved = localStorage.getItem("aitw_lang");
+  if (saved === "zh" || saved === "en") LANG = saved;
+} catch (e) {}
 function syncURL() {
   const p = new URLSearchParams();
+  if (LANG !== "zh") p.set("lang", LANG);
   if (currentCat !== "all") p.set("cat", currentCat);
   if (currentSort !== "rise") p.set("sort", currentSort);
   const qs = p.toString();
   history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
 }
+
+// ==================== 语言切换 ====================
+const langBtn = document.getElementById("lang-btn");
+function localizeStatic() {
+  document.title = `{{ site_name }} · ${t("site_subtitle")}`;
+  searchInput.placeholder = t("search_ph");
+  document.querySelector(".live-label").textContent = t("live");
+  document.querySelectorAll("#sort-seg button").forEach(b => {
+    if (b.dataset.sort === "rise") b.textContent = t("sort_rise");
+    if (b.dataset.sort === "hot")  b.textContent = t("sort_hot");
+    if (b.dataset.sort === "new")  b.textContent = t("sort_new");
+  });
+  if (demoPill) demoPill.textContent = t("demo_pill");
+  const f = document.querySelector("footer");
+  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}`;
+}
+function applyLang() {
+  document.documentElement.lang = LANG === "en" ? "en" : "zh-CN";
+  langBtn.textContent = LANG === "en" ? "中" : "EN";
+  localizeStatic();
+  render();
+}
+langBtn.addEventListener("click", () => {
+  LANG = LANG === "zh" ? "en" : "zh";
+  try { localStorage.setItem("aitw_lang", LANG); } catch (e) {}
+  syncURL();
+  applyLang();
+  fetchAll();   // 切语言后重拉（后端按 lang 投影）
+});
 
 // ==================== 主题切换 ====================
 const themeBtn = document.getElementById("theme-btn");
@@ -430,7 +493,7 @@ function rankDelta(t, rankIdx) {
   if (currentSort === "new") return null;   // 最新排序无排名概念
   try {
     const prev = JSON.parse(localStorage.getItem(RANK_KEY(currentSort)) || "{}");
-    const id = t.full_id || t.term;
+    const id = t.id || t.full_id || t.term || t.official_url;
     if (!(id in prev)) return "new";
     const d = prev[id] - rankIdx;   // 正 = 上升
     return d === 0 ? null : d;
@@ -439,7 +502,7 @@ function rankDelta(t, rankIdx) {
 function saveRanks(items) {
   if (currentSort === "new") return;
   const m = {};
-  items.forEach((t, i) => { m[t.full_id || t.term] = i; });
+  items.forEach((t, i) => { m[t.id || t.full_id || t.term || t.official_url] = i; });
   try { localStorage.setItem(RANK_KEY(currentSort), JSON.stringify(m)); } catch (e) {}
 }
 
@@ -522,27 +585,43 @@ function inlineSponsors() {
 }
 
 // ==================== 分类条 & 排序 ====================
+// 维度分类映射：dims.py 的中文维度 → 前端展示配置（统一卡片流主分类）
+const DIMS_CATEGORY = {
+  "模型发布": { label: "模型发布", label_en: "Model Releases", icon: "🧠", color: "#4f8cff", key: "模型发布" },
+  "产品发布": { label: "产品发布", label_en: "Product Launches", icon: "📱", color: "#3ecf8e", key: "产品发布" },
+  "研究论文": { label: "研究论文", label_en: "Research Papers", icon: "📄", color: "#22d3ee", key: "研究论文" },
+  "投融资":   { label: "投融资",   label_en: "Funding", icon: "💰", color: "#ffa940", key: "投融资" },
+  "行业动态": { label: "行业动态", label_en: "Industry News", icon: "📰", color: "#8b91a3", key: "行业动态" },
+  "其他":     { label: "其他",     label_en: "Other", icon: "✨", color: "#8b91a3", key: "其他" },
+};
+function dimLabel(dim) {
+  const c = DIMS_CATEGORY[dim] || { icon: "•", label: dim, label_en: dim };
+  return { icon: c.icon, lbl: LANG === "en" ? (c.label_en || c.label) : c.label, color: c.color };
+}
+
+// 统一卡片流分类条：按 dimension 计数，用后端 dimensionList 顺序展示
 function renderCatBar() {
-  // 只展示数据中实际出现的分类；分类由数据驱动，新增 tag 自动出现
+  const order = dimensionList.length ? dimensionList : Object.keys(DIMS_CATEGORY);
   const counts = {};
-  allData.forEach(t => { const c = catOf(t); counts[c] = (counts[c] || 0) + 1; });
-  const keys = Object.keys(CATEGORIES).filter(k => counts[k]);
-  if (!keys.includes(currentCat)) currentCat = "all";
+  allData.forEach(t => { const d = t.dimension || "其他"; counts[d] = (counts[d] || 0) + 1; });
+  const keys = order.filter(k => counts[k]);
+  if (!keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
   let html = `<button class="cat-pill ${currentCat==="all"?"active":""}" data-cat="all"
-    style="--pill-color:var(--accent)">全部 <span class="cnt num">${allData.length}</span></button>`;
+    style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${allData.length}</span></button>`;
   keys.forEach(k => {
-    const c = CATEGORIES[k];
+    const m = dimLabel(k);
     html += `<button class="cat-pill ${currentCat===k?"active":""}" data-cat="${k}"
-      style="--pill-color:${c.color}">${c.icon} ${c.label} <span class="cnt num">${counts[k]}</span></button>`;
+      style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${counts[k]}</span></button>`;
   });
   catBar.innerHTML = html;
 }
 catBar.addEventListener("click", e => {
   const b = e.target.closest(".cat-pill"); if (!b) return;
-  currentCat = b.dataset.cat; syncURL(); render();
+  currentCat = b.dataset.cat;
+  syncURL(); render();
 });
 
-document.getElementById("sort-seg").addEventListener("click", e => {
+sortSeg.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.sort === currentSort) return;
   document.querySelectorAll("#sort-seg button").forEach(x => x.classList.remove("active"));
@@ -559,6 +638,12 @@ function fmtNum(n) {
   if (n === undefined || n === null || n === "") return "";
   n = Number(n);
   if (isNaN(n)) return String(n);
+  if (LANG === "en") {
+    if (n >= 1e9) return (n/1e9).toFixed(1) + "B";
+    if (n >= 1e6) return (n/1e6).toFixed(1) + "M";
+    if (n >= 1e3) return (n/1e3).toFixed(1) + "K";
+    return n.toLocaleString();
+  }
   if (n >= 1e8) return (n/1e8).toFixed(1) + "亿";
   if (n >= 1e4) return (n/1e4).toFixed(1) + "万";
   return n.toLocaleString();
@@ -570,15 +655,15 @@ function escapeHtml(s) {
 
 function relTime(iso) {
   if (!iso) return "";
-  const t = new Date(iso);
-  if (isNaN(t)) return iso;
-  const diff = Date.now() - t.getTime();
+  const tm = new Date(iso);
+  if (isNaN(tm)) return iso;
+  const diff = Date.now() - tm.getTime();
   const d = Math.floor(diff / 86400000);
-  if (d <= 0) return "今天";
-  if (d === 1) return "昨天";
-  if (d < 30) return `${d} 天前`;
-  if (d < 365) return `${Math.floor(d/30)} 个月前`;
-  return `${Math.floor(d/365)} 年前`;
+  if (d <= 0) return t("today");
+  if (d === 1) return t("yesterday");
+  if (d < 30) return `${d}${t("days_ago")}`;
+  if (d < 365) return `${Math.floor(d/30)}${t("months_ago")}`;
+  return `${Math.floor(d/365)}${t("years_ago")}`;
 }
 function isFresh(iso) {
   const t = new Date(iso);
@@ -586,26 +671,55 @@ function isFresh(iso) {
 }
 
 // ==================== 渲染 ====================
-// 指标行按分类差异化渲染：模型看趋势/赞/下载，投融资看金额，其余有多少显示多少
-function metricsHTML(t, cat) {
+// 统一卡片渲染：同时吃 model 卡和 news 卡，按 kind 分支显示指标
+function metricsHTML(t) {
   const m = [];
-  if (cat === "funding") {
-    if (t.amount) m.push(`<span class="m-hot">💰 ${escapeHtml(t.amount)}</span>`);
-    if (t.round) m.push(`<span>${escapeHtml(t.round)}</span>`);
+  if (t.kind === "news") {
+    // 新闻卡：热度分（复合分）+ HN 分 + Reddit 赞
+    if (t.hot != null && t.hot > 0) m.push(`<span class="m-hot">🔥 <span class="num">${fmtNum(t.hot)}</span></span>`);
+    if (t.hn_points > 0) m.push(`<span>HN <span class="num">${fmtNum(t.hn_points)}</span></span>`);
+    if (t.reddit_score > 0) m.push(`<span>Reddit ❤ <span class="num">${fmtNum(t.reddit_score)}</span></span>`);
+  } else {
+    // model 卡：趋势/赞/下载
+    if (t.trending_score != null) m.push(`<span class="m-up">📈 趋势 <span class="num">${fmtNum(t.trending_score)}</span></span>`);
+    if (t.likes != null) m.push(`<span class="m-hot">❤ <span class="num">${fmtNum(t.likes)}</span></span>`);
+    if (t.downloads != null) m.push(`<span>↓ <span class="num">${fmtNum(t.downloads)}</span></span>`);
   }
-  if (t.trending_score != null) m.push(`<span class="m-up">📈 趋势 <span class="num">${fmtNum(t.trending_score)}</span></span>`);
-  if (t.likes != null) m.push(`<span class="m-hot">❤ <span class="num">${fmtNum(t.likes)}</span></span>`);
-  if (t.downloads != null) m.push(`<span>↓ <span class="num">${fmtNum(t.downloads)}</span></span>`);
-  if (t.discussion_count != null) m.push(`<span>💬 讨论 <span class="num">${fmtNum(t.discussion_count)}</span></span>`);
   return m.length ? `<div class="term-meta">${m.join("")}</div>` : "";
 }
 
 function renderCard(t, i) {
-  const cat = catOf(t);
-  const c = CATEGORIES[cat];
+  const dim = t.dimension || (t.kind === "model" ? "模型发布" : "其他");
+  const dInfo = dimLabel(dim);
   const d = rankDelta(t, i);
   const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
     : d ? `<span class="delta ${d>0?"up":"down"}">${d>0?"↑":"↓"}${Math.abs(d)}</span>` : "";
+  const published = t.published || t.created_at || "";
+
+  if (t.kind === "news") {
+    // —— 新闻卡 ——
+    return `<div class="term-card" style="--cat-color:${dInfo.color}">
+      <div class="term-head">
+        <span class="rank ${i<3?"top":""} num">${i+1}</span>
+        <span class="cat-badge">${dInfo.icon} ${escapeHtml(dInfo.lbl)}</span>
+        <span class="term-name">
+          <a href="${t.official_url}" target="_blank" rel="noopener">${escapeHtml(t.title)}</a>
+        </span>
+        <span class="head-right">
+          ${deltaHtml}
+          ${isFresh(published) ? `<span class="new-badge">NEW</span>` : ""}
+          ${published ? `<span>${escapeHtml(published)}</span>` : ""}
+        </span>
+      </div>
+      ${metricsHTML(t)}
+      ${t.summary ? `<div class="term-meta"><span>${escapeHtml(t.summary)}</span></div>` : ""}
+      <div class="links">
+        <a class="link-btn official" href="${t.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(t.source||t("official_default"))}</a>
+      </div>
+    </div>`;
+  }
+
+  // —— 模型卡 ——
   const tagsHtml = (t.tags||[]).slice(0, 5).map(tg => `<span class="tag">${escapeHtml(tg)}</span>`).join("");
   const commHtml = (t.community||[]).map(c2 =>
     `<a class="link-btn" href="${c2.url}" target="_blank" rel="noopener">💬 ${escapeHtml(c2.site)}</a>`).join("");
@@ -614,20 +728,20 @@ function renderCard(t, i) {
       <div class="papers-title">📄 相关论文（arXiv）</div>
       ${t.papers.map(p => `<div class="paper"><a href="${p.url}" target="_blank" rel="noopener">${escapeHtml(p.title)}</a><span class="pm">${escapeHtml(p.published||"")}</span></div>`).join("")}
     </div>` : "";
-  return `<div class="term-card" style="--cat-color:${c.color}">
+  return `<div class="term-card" style="--cat-color:${dInfo.color}">
     <div class="term-head">
       <span class="rank ${i<3?"top":""} num">${i+1}</span>
-      <span class="cat-badge">${c.icon} ${c.label}</span>
+      <span class="cat-badge">${dInfo.icon} ${escapeHtml(dInfo.lbl)}</span>
       <span class="term-name">
         ${t.author ? `<span class="author">${escapeHtml(t.author)} / </span>` : ""}<a href="${t.official_url}" target="_blank" rel="noopener">${escapeHtml(t.term)}</a>
       </span>
       <span class="head-right">
         ${deltaHtml}
-        ${isFresh(t.created_at) ? `<span class="new-badge">NEW</span>` : ""}
-        <span>${relTime(t.created_at)}</span>
+        ${isFresh(published) ? `<span class="new-badge">NEW</span>` : ""}
+        <span>${relTime(published)}</span>
       </span>
     </div>
-    ${metricsHTML(t, cat)}
+    ${metricsHTML(t)}
     ${tagsHtml ? `<div class="tags">${tagsHtml}</div>` : ""}
     <div class="links">
       <a class="link-btn official" href="${t.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(t.official_label||"官方")}</a>
@@ -648,13 +762,21 @@ function skeletonHTML() {
 
 function visibleData() {
   let items = allData;
-  if (currentCat !== "all") items = items.filter(t => catOf(t) === currentCat);
-  if (query) items = items.filter(t =>
-    (t.term||"").toLowerCase().includes(query) || (t.author||"").toLowerCase().includes(query));
-  const key = { rise: "trending_score", hot: "likes", new: "created_at" }[currentSort];
+  if (currentCat !== "all") items = items.filter(t => (t.dimension || "其他") === currentCat);
+  if (query) {
+    const q = query.toLowerCase();
+    items = items.filter(t =>
+      (t.title||"").toLowerCase().includes(q) ||
+      (t.term||"").toLowerCase().includes(q) ||
+      (t.summary||"").toLowerCase().includes(q) ||
+      (t.source||"").toLowerCase().includes(q) ||
+      (t.author||"").toLowerCase().includes(q));
+  }
+  // 统一排序键：rise→trend, hot→score, new→published
+  const key = { rise: "trend", hot: "score", new: "published" }[currentSort];
   return [...items].sort((a, b) => {
     const va = a[key], vb = b[key];
-    if (key === "created_at") return String(vb||"").localeCompare(String(va||""));
+    if (key === "published") return String(vb||"").localeCompare(String(va||""));
     return (Number(vb)||0) - (Number(va)||0);
   });
 }
@@ -671,7 +793,7 @@ function render() {
   }
   const items = visibleData();
   if (!items.length) {
-    listEl.innerHTML = `<div class="state">没有匹配的热点${query ? `（搜索「${escapeHtml(query)}」）` : ""}</div>`;
+    listEl.innerHTML = `<div class="state">${t("empty")}${query ? `${t("empty_q")}${escapeHtml(query)}」)` : ""}</div>`;
     return;
   }
   // 每 N 张热点卡后插一张 inline 赞助卡；无自建 inline 时联盟广告补位
@@ -698,7 +820,7 @@ function render() {
   saveRanks(items);
 }
 
-// ==================== 数据拉取：trending + top 双源合并 ====================
+// ==================== 数据拉取：统一卡片流（/api/stream） ====================
 async function fetchJSON(url) {
   try {
     const ctrl = new AbortController();
@@ -714,7 +836,7 @@ let fetching = false;
 async function fetchAll() {
   if (fetching) return;
   fetching = true;
-  lastUpdateEl.textContent = "加载中…";
+  lastUpdateEl.textContent = t("loading");
   // 首屏：优先用 SSR 注入的数据，避免空骨架闪烁与重复请求
   if (!allData.length) {
     try {
@@ -724,7 +846,7 @@ async function fetchAll() {
         if (Array.isArray(ssr) && ssr.length) {
           allData = ssr;
           render();
-          lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
+          lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
           fetching = false;
           return;
         }
@@ -733,17 +855,12 @@ async function fetchAll() {
     listEl.innerHTML = skeletonHTML();
   }
 
-  const [tr, tp] = await Promise.all([fetchJSON("/api/trending"), fetchJSON("/api/top")]);
+  const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}`);
 
   let terms = null;
-  if ((tr && tr.ok !== false) || (tp && tp.ok !== false)) {
-    // 双榜合并去重（trending 优先），覆盖「上升快但 likes 少」和「老牌热门」两类
-    const seen = new Map();
-    [tr, tp].forEach(d => (d && d.terms || []).forEach(t => {
-      const id = t.full_id || t.term;
-      if (!seen.has(id)) seen.set(id, t);
-    }));
-    terms = [...seen.values()];
+  if (d && d.ok !== false && Array.isArray(d.terms)) {
+    terms = d.terms;
+    if (d.dimension_list) dimensionList = d.dimension_list;
     if (demoPill) demoPill.style.display = "none";
   } else {
     terms = MOCK_DATA().terms;   // 后端未就绪 → Mock 回退
@@ -752,12 +869,13 @@ async function fetchAll() {
 
   allData = terms;
   render();
-  lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
+  lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
   fetching = false;
 }
 
 renderTopBanner();
 renderFooterSponsor();
+applyLang();          // 首屏按 LANG 本地化静态文案 + 设 <html lang> + 语言按钮 label
 fetchAll();
 // 后端底层 6 小时预热一次榜单数据，前端对齐该节奏，避免无意义轮询拿到相同数据
 setInterval(fetchAll, 6 * 60 * 60 * 1000);
@@ -765,37 +883,37 @@ setInterval(fetchAll, 6 * 60 * 60 * 1000);
 // ============ Mock 数据（后端就绪后自动失效；含多分类预览分类徽章体系） ============
 function MOCK_DATA() {
   const base = [
-    {term:"Qwen3.8-27B", full_id:"Qwen/Qwen3.8-27B", author:"Qwen", type:"模型",
+    {kind:"model", id:"Qwen/Qwen3.8-27B", term:"Qwen3.8-27B", full_id:"Qwen/Qwen3.8-27B", author:"Qwen",
+     dimension:"模型发布", published:"2026-08-05", score:12117, trend:1990, hot:12117,
      official_url:"https://huggingface.co/Qwen/Qwen3.8-27B", official_label:"HuggingFace · Qwen/Qwen3.8-27B",
      trending_score:1990, likes:12117, downloads:2090699, created_at:"2026-08-05",
      tags:["transformers","safetensors","qwen3_5","image-text-to-text"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Qwen3.8-27B"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Qwen3.8-27B"},{site:"GitHub",url:"https://github.com/search?q=Qwen3.8-27B"}],
      papers:[{title:"Qwen3.8 Technical Report: Multimodal Reasoning at Scale",url:"http://arxiv.org/abs/2608.20001",published:"2026-08-19"}]},
-    {term:"DeepSeek-V4-Flash", full_id:"deepseek-ai/DeepSeek-V4-Flash", author:"deepseek-ai", type:"模型",
+    {kind:"model", id:"deepseek-ai/DeepSeek-V4-Flash", term:"DeepSeek-V4-Flash", full_id:"deepseek-ai/DeepSeek-V4-Flash", author:"deepseek-ai",
+     dimension:"模型发布", published:"2026-08-11", score:13200, trend:1740, hot:13200,
      official_url:"https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash", official_label:"HuggingFace · deepseek-ai/DeepSeek-V4-Flash",
      trending_score:1740, likes:13200, downloads:8800000, created_at:"2026-08-11",
      tags:["transformers","deepseek","moe"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=DeepSeek-V4-Flash"},{site:"B站",url:"https://search.bilibili.com/all?keyword=DeepSeek-V4-Flash"},{site:"GitHub",url:"https://github.com/search?q=DeepSeek-V4-Flash"}],
      papers:[]},
-    {term:"某 Agent 框架单周 Star 破万", full_id:"agent-demo-1", author:"", type:"Agent", category:"agent",
-     official_url:"https://github.com/search?q=agent", official_label:"GitHub",
-     discussion_count:342, created_at:"2026-08-22",
-     tags:["multi-agent","tool-use"],
-     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=agent"},{site:"B站",url:"https://search.bilibili.com/all?keyword=agent"}],
-     papers:[]},
-    {term:"某 AI 编程产品完成 B 轮融资", full_id:"funding-demo-1", author:"", type:"投融资", category:"funding",
-     official_url:"https://www.zhihu.com/search?q=AI%E8%9E%8D%E8%B5%84", official_label:"报道",
-     amount:"$50M", round:"B 轮 · 红杉领投", discussion_count:128, created_at:"2026-08-20",
-     tags:["AI Coding"],
-     community:[{site:"知乎",url:"https://www.zhihu.com/search?q=AI%E8%9E%8D%E8%B5%84"}],
-     papers:[]},
-    {term:"Kimi-K3", full_id:"moonshotai/Kimi-K3", author:"moonshotai", type:"模型",
+    {kind:"news", id:"mock-agent-1", title:"某 Agent 框架单周 Star 破万",
+     dimension:"产品发布", published:"2026-08-22", score:342, trend:342, hot:342,
+     official_url:"https://github.com/search?q=agent", source:"GitHub",
+     summary:"开源多智能体框架本周 Star 破万，社区热度持续攀升。", hn_points:120, reddit_score:88, reddit_comments:34},
+    {kind:"news", id:"mock-funding-1", title:"某 AI 编程产品完成 B 轮融资",
+     dimension:"投融资", published:"2026-08-20", score:260, trend:260, hot:260,
+     official_url:"https://www.zhihu.com/search?q=AI%E8%9E%8D%E8%B5%84", source:"36氪",
+     summary:"AI 编程赛道再迎大额融资，红杉领投 5000 万美元 B 轮。", hn_points:0, reddit_score:40, reddit_comments:12},
+    {kind:"model", id:"moonshotai/Kimi-K3", term:"Kimi-K3", full_id:"moonshotai/Kimi-K3", author:"moonshotai",
+     dimension:"模型发布", published:"2026-06-13", score:10923, trend:1520, hot:10923,
      official_url:"https://huggingface.co/moonshotai/Kimi-K3", official_label:"HuggingFace · moonshotai/Kimi-K3",
      trending_score:1520, likes:10923, downloads:2612739, created_at:"2026-06-13",
      tags:["transformers","moonshot","long-context"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Kimi-K3"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Kimi-K3"},{site:"GitHub",url:"https://github.com/search?q=Kimi-K3"}],
      papers:[]},
-    {term:"FLUX.1-dev", full_id:"black-forest-labs/FLUX.1-dev", author:"black-forest-labs", type:"模型",
+    {kind:"model", id:"black-forest-labs/FLUX.1-dev", term:"FLUX.1-dev", full_id:"black-forest-labs/FLUX.1-dev", author:"black-forest-labs",
+     dimension:"模型发布", published:"2024-07-31", score:14223, trend:980, hot:14223,
      official_url:"https://huggingface.co/black-forest-labs/FLUX.1-dev", official_label:"HuggingFace · black-forest-labs/FLUX.1-dev",
      trending_score:980, likes:14223, downloads:631339, created_at:"2024-07-31",
      tags:["diffusers","flux","text-to-image"],

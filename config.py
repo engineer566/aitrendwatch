@@ -28,7 +28,15 @@ DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 DB_PATH = os.path.join(DATA_DIR, "sponsors.db")
 
 # 向后兼容：tracker.py 仍直接读 CACHE_DIR，这里同步暴露一份。
-CACHE_DIR = os.environ.get("CACHE_DIR", "/app/cache")
+# 容器内工作目录是 /app（挂载点 /app/cache）；本地裸跑没有 /app，
+# 退化到项目根的 ./cache，避免缓存写入静默失败。
+_cache_default = "/app/cache" if os.path.isdir("/app") else os.path.join(os.getcwd(), "cache")
+CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
+
+# ---------- DeepSeek LLM（维度热词打标）----------
+# 未配置 key → dims.py 的 LLM 打标降级到 RSS 源默认维度，热词仍可展示。
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
 # ---------- 分析开关 ----------
 def _as_bool(v, default=True):

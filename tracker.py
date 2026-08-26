@@ -15,6 +15,7 @@ import re
 import time
 import threading
 import fcntl
+from contextlib import contextmanager
 from urllib.parse import quote
 
 import requests
@@ -33,7 +34,10 @@ ARXIV_ENRICH_LIMIT = 8   # 只对榜单前 N 个热词做 arXiv 检索，避免�
 # ---------- 文件缓存（跨 worker 共享 + 持久化）----------
 # 关键：arXiv 串行检索慢（8 词 × 3s ≈ 24s），不能在请求路径做。
 # 改为后台线程定时预热 → 写文件；4 个 gunicorn worker 都读同一份文件，请求秒回。
-CACHE_DIR = os.environ.get("CACHE_DIR", "/app/cache")
+# 容器内工作目录 /app（挂载点 /app/cache）；本地裸跑没有 /app，
+# 退化到项目根 ./cache，避免后台预热写文件静默失败。
+_cache_default = "/app/cache" if os.path.isdir("/app") else os.path.join(os.getcwd(), "cache")
+CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
 CACHE_FILE = os.path.join(CACHE_DIR, "terms.json")
 REFRESH_INTERVAL = 21600   # 后台预热周期：6 小时（榜单更新没那么快，省资源）
 RETRY_INTERVAL = 300       # 预热失败后快速重试间隔：5 分钟
@@ -417,23 +421,93 @@ def get_terms(sort="trending"):
         return {"ok": False, "error": f"HF 抓取失败：{e}", "terms": []}
 
 
+def get_model_cards(lang="zh"):
+    """统一卡片流：返回 model 卡列表（统一 schema）。
+
+    供 app.py 的 /api/stream 调用。lang 仅保签名一致（模型名不翻译）。
+    读 trending sort 的文件缓存（每张 term 卡已含 trending_score 和 likes，
+    故一个 sort 缓存即可同时支撑 rise/hot/new 三种排序）。trending 缺失时
+    用 top sort 兜底；两者都缺失返回空列表（不触发 HF 抓取，请求路径秒回）。
+
+    每个 term 补统一 schema 字段：
+      kind=model / id=full_id / dimension=模型发布 / published=created_at /
+      score=likes / trend=trending_score / hot=likes / title=term /
+      title_zh=term / title_en=term / summary="" / official_label 透传。
+    原 term 卡其余字段（author/tags/pipeline_tag/community/papers/downloads）
+    原样透传，供前端 model 分支渲染。
+    """
+    data, fetched_at = _file_cache_get("trending")
+    if not data or not data.get("terms"):
+        data, fetched_at = _file_cache_get("top")
+    if not data or not data.get("terms"):
+        return [], fetched_at
+    cards = []
+    for t in data["terms"]:
+        c = {**t,
+             "kind": "model",
+             "id": t.get("full_id", t.get("term", "")),
+             "dimension": "模型发布",
+             "published": t.get("created_at", ""),
+             "score": t.get("likes", 0),
+             "trend": t.get("trending_score", 0),
+             "hot": t.get("likes", 0),
+             "title": t.get("term", ""),
+             "title_zh": t.get("term", ""),
+             "title_en": t.get("term", ""),
+             "summary": "",
+             "official_label": t.get("official_label", "HuggingFace")}
+        cards.append(c)
+    return cards, fetched_at
+
+
 # ---------- 后台预热线程 ----------
-_refresh_lock = threading.Lock()        # 串行化预热（多 worker 不会同时打 arXiv）
+# 串行化预热：跨进程文件锁。gunicorn 多 worker 是各自独立的进程，
+# threading.Lock 只在单进程内生效，会导致 N 个 worker 同时打 arXiv/HF。
+# 改用 fcntl 对锁文件加排他锁（非阻塞 trylock），确保整个容器内任意时刻
+# 只有一个 worker 在预热——既省 arXiv 配额，又避免多 worker 并发抓取撑爆内存。
+_refresh_lock = threading.Lock()        # 进程内串行（同 worker 的两 sort 不并发）
 _refresher_started = False
 _refresher_start_lock = threading.Lock()
+
+REFRESH_LOCKFILE = os.path.join(CACHE_DIR, ".tracker.refresh.lock")
+
+
+@contextmanager
+def _cross_proc_lock(path, timeout=0):
+    """跨进程文件锁（fcntl.LOCK_EX | LOCK_NB）。拿不到立即让出（timeout=0）。
+
+    with _cross_proc_lock(path): ...  → 拿到锁才执行，退出自动释放。
+    拿不到抛 BlockingIOError，由调用方 try/except 视为「别的 worker 在做，跳过」。
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def _refresh_once(sort):
     """预热单个 sort：完整抓取 + 写文件缓存。失败保留旧缓存。
 
     返回 True 表示成功，False 表示失败（调用方据此决定下次重试间隔）。
+    两层锁：进程内 threading.Lock 串行同 worker 的多个 sort；
+    跨进程 fcntl 文件锁确保多 worker 同一时刻只有一个在抓取。
     """
     if not _refresh_lock.acquire(blocking=False):
-        return True   # 已有 worker 在预热，视为已处理，跳过（省 arXiv 配额）
+        return True   # 同 worker 已有 sort 在预热，跳过
     try:
-        data = _fetch_terms_raw(sort)
-        _file_cache_set(sort, data, data["fetched_at"])
-        return True
+        try:
+            with _cross_proc_lock(REFRESH_LOCKFILE):
+                data = _fetch_terms_raw(sort)
+                _file_cache_set(sort, data, data["fetched_at"])
+                return True
+        except BlockingIOError:
+            return True   # 别的 worker 正在预热，视为已处理，跳过
     except Exception:
         return False  # 失败不抛——保留上一份热缓存继续服务；由后台重试
     finally:
