@@ -6,7 +6,7 @@
 - dims.py 覆盖 AI 科技圈全维度：模型发布 / 产品发布 / 研究论文 / 投融资 /
   行业动态 / 其他。数据源是各家官方 RSS + arXiv + Algolia HN + Reddit，
   天然带官方原文链接（如 OpenAI 发布 GPT-5 → openai.com/index/...）。
-- 维度打标用 DeepSeek LLM（轻量、批量、temperature=0），LLM 只负责分类，
+- 维度打标用 DeepSeek LLM（轻量、批量、temperature=0.3），LLM 只负责分类，
   不碰链接——链接来自 RSS 原文，保证「链接到官方原文」这一硬要求。
 
 设计原则（与 tracker.py 一致）：
@@ -24,14 +24,15 @@ import time
 import threading
 import fcntl
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-from config import CACHE_DIR
+from config import (CACHE_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL,
+                    DIMS_REFRESH_HOURS)
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -39,8 +40,8 @@ HEADERS = {"User-Agent": UA, "Accept": "application/json, text/plain, */*"}
 TIMEOUT = 10
 
 # ---------- DeepSeek LLM 配置 ----------
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+# 从 config 统一读取（消除重复定义，便于环境分层：worktree 不设 key 走 Mock 降级，
+# dev 回归 / 生产才设 key 真调 LLM）。
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
 # 固定维度枚举（LLM 只能从中选；LLM 失败时也用它做默认降级）
@@ -513,10 +514,16 @@ def _llm_classify_batch(batch):
     if not DEEPSEEK_API_KEY:
         raise RuntimeError("DEEPSEEK_API_KEY 未配置")
 
-    lines = []
-    for i, it in enumerate(batch):
-        lines.append(f"[{i}] ({it.get('lang','en')}) {it['title']} | {it['source']}")
-    user_msg = (
+    # ---- prompt 重组：最大化 DeepSeek 硬盘缓存命中 ----
+    # DeepSeek 缓存按前缀完整匹配，命中价是未命中的 1/30。把所有不变内容
+    # （身份 + JSON schema + 维度枚举 + 翻译规则）放到稳定的 system + user 前缀，
+    # 变化的事件条目放 user 末尾。同一规则文本跨多次调用复用，第三次起可命中缓存。
+    sys_msg = (
+        "你是AI热点分类器+双语翻译器。对输入的AI事件做维度分类并产出中英双标题+双摘要。"
+        "只输出JSON数组，不要任何解释或前后缀。"
+    )
+    # user 前缀：逐字稳定（规则全在这），构成缓存前缀单元。
+    _USER_PREFIX = (
         "对以下AI事件分类并产出中英双标题+双摘要，输出JSON数组，每项"
         '{"idx","dimension","title_zh","title_en","summary_zh","summary_en"}。规则：\n'
         "- dimension 从 " + json.dumps(DIMENSIONS, ensure_ascii=False) + " 选。\n"
@@ -524,10 +531,13 @@ def _llm_classify_batch(batch):
         "summary_en=一句英文<=30词概括，summary_zh=该概括的中文翻译<=30字。\n"
         "- 标注 (zh) 的条目：title_zh=原标题照抄，title_en=英文翻译；"
         "summary_zh=一句中文<=30字概括，summary_en=该概括的英文翻译<=30词。\n"
-        "- 只输出JSON数组，不要解释：\n" + "\n".join(lines)
+        "- 只输出JSON数组，不要解释：\n"
     )
-
-    sys_msg = "AI热点分类器+双语翻译器。只输出JSON数组。"
+    # 变化部分：事件条目放尾部，不影响前缀缓存。
+    lines = []
+    for i, it in enumerate(batch):
+        lines.append(f"[{i}] ({it.get('lang','en')}) {it['title']} | {it['source']}")
+    user_msg = _USER_PREFIX + "\n".join(lines)
 
     def _post(max_tokens):
         """单次 DeepSeek 调用，带瞬态重试（连接重置/超时最多重试 3 次）。
@@ -535,13 +545,17 @@ def _llm_classify_batch(batch):
         云主机到 api.deepseek.com 偶发 ConnectionReset / read timeout（推理模型
         响应慢，长连接易被中间设备掐断）。重试可让整批翻译不至于因一次网络抖动
         全部降级为未翻译。失败仍向上抛，由 enrich_with_llm 降级兜底。
+
+        顺带解析 usage 的缓存命中字段，best-effort 打日志便于核算缓存效果。
+        temperature=0.3：分类/翻译这种结构化任务用低温度控制输出长度与随机性，
+        又避免 temperature=0 的复读机问题。温度只影响输出，不影响输入缓存命中。
         """
         payload = {
             "model": DEEPSEEK_MODEL,
             "messages": [{"role": "system", "content": sys_msg},
                          {"role": "user", "content": user_msg}],
             "max_tokens": max_tokens,
-            "temperature": 0,
+            "temperature": 0.3,
         }
         hdrs = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}",
                 "Content-Type": "application/json"}
@@ -551,7 +565,18 @@ def _llm_classify_batch(batch):
                 resp = requests.post(DEEPSEEK_URL, headers=hdrs, json=payload,
                                      timeout=(15, 90))  # 连接 15s，读 90s（推理慢）
                 resp.raise_for_status()
-                ch = resp.json()["choices"][0]
+                body = resp.json()
+                # 缓存命中监控（best-effort，任何异常都忽略，不影响主流程）
+                try:
+                    usage = body.get("usage") or {}
+                    hit = usage.get("prompt_cache_hit_tokens", 0)
+                    miss = usage.get("prompt_cache_miss_tokens", 0)
+                    if hit or miss:
+                        print(f"[dims][llm] cache hit={hit} miss={miss} "
+                              f"batch={len(batch)}", flush=True)
+                except Exception:
+                    pass
+                ch = body["choices"][0]
                 msg = ch["message"]
                 content = (msg.get("content") or "").strip()
                 finish = ch.get("finish_reason")
@@ -835,13 +860,50 @@ def _dims_refresh_once():
         _dims_refresh_lock.release()
 
 
+def _seconds_until_next_refresh_hour():
+    """到下一个 DIMS_REFRESH_HOURS 整点的秒数（Asia/Shanghai 本地时间）。
+
+    容器已设 TZ=Asia/Shanghai，datetime.now() 即本地时区。
+    算法：从当前时刻起逐小时向后扫，命中第一个在目标小时集合里的整点。
+    退路：目标集合为空或解析异常 → 退回 DIMS_REFRESH_INTERVAL 固定间隔。
+    """
+    try:
+        hours = set(DIMS_REFRESH_HOURS) if DIMS_REFRESH_HOURS else set()
+        if not hours:
+            return DIMS_REFRESH_INTERVAL
+        now = datetime.now().replace(minute=0, second=0, microsecond=0)
+        for step in range(1, 25):  # 最多 24 小时内必命中
+            cand = now + timedelta(hours=step)
+            if cand.hour in hours:
+                target = cand
+                break
+        else:
+            return DIMS_REFRESH_INTERVAL
+        return max(1, int((target - datetime.now()).total_seconds()))
+    except Exception:
+        return DIMS_REFRESH_INTERVAL
+
+
 def _bg_dims_refresher():
+    """后台循环：启动立即预热一次，之后在定点时刻（DIMS_REFRESH_HOURS）刷新。
+
+    生产定点 13/19/01/07（一天 4 次，6 小时一档）：
+    - 避开 DeepSeek 高峰段（工作日 9-12 / 14-18），多落空闲档半价；
+    - 6 小时一档压在硬盘缓存 TTL 内，规则前缀跨次复用命中缓存（命中价 1/30）。
+    定点时刻 4 个 worker 同时醒，fcntl 跨进程锁保证只有一个真抓取。
+
+    失败重试：某次刷新失败 → 隔 DIMS_RETRY_INTERVAL（5 分钟）重试，而非干等到
+    下一个定点；成功后回到定点调度。
+    """
     _dims_refresh_once()
-    next_wait = DIMS_REFRESH_INTERVAL
     while True:
+        next_wait = _seconds_until_next_refresh_hour()
         time.sleep(next_wait)
         ok = _dims_refresh_once()
-        next_wait = DIMS_RETRY_INTERVAL if not ok else DIMS_REFRESH_INTERVAL
+        if not ok:
+            # 失败 → 快速重试间隔，成功后回到定点调度
+            time.sleep(DIMS_RETRY_INTERVAL)
+            _dims_refresh_once()
 
 
 def start_background_dims_refresher():

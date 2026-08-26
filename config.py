@@ -48,6 +48,15 @@ CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
+# ---------- dims 生产定点预热（Asia/Shanghai 24h 制）----------
+# 一天 4 次：13/19/01/07，6 小时一档。
+# 选点理由：① 避开 DeepSeek 高峰段（工作日 9-12 / 14-18），多落空闲档（半价）；
+# ② 6 小时一档压在 DeepSeek 硬盘缓存 TTL（几小时到几天）内，规则前缀跨次复用
+#   可命中缓存（命中价是未命中的 1/30）。
+DIMS_REFRESH_HOURS = tuple(
+    int(h) for h in os.environ.get("DIMS_REFRESH_HOURS", "1,7,13,19").split(",")
+)
+
 # ---------- 分析开关 ----------
 def _as_bool(v, default=True):
     if v is None or v == "":
