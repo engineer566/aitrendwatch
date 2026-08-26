@@ -111,6 +111,16 @@ def init_db():
             CREATE TABLE IF NOT EXISTS pageviews (
                 date TEXT PRIMARY KEY, count INTEGER DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS visits (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip      TEXT NOT NULL,
+                country TEXT,             -- ISO 国家码（CN/US…）或 "Unknown"
+                path    TEXT,             -- 访问路径，默认 "/"
+                ts      TEXT NOT NULL,    -- 完整时间戳 ISO，用于时序
+                date    TEXT NOT NULL     -- YYYY-MM-DD，索引化便于按日聚合
+            );
+            CREATE INDEX IF NOT EXISTS idx_visits_date ON visits(date);
+            CREATE INDEX IF NOT EXISTS idx_visits_ip_date ON visits(ip, date);
         """)
         conn.commit()
         _DB_OK = True
@@ -338,6 +348,108 @@ def stats_30d():
         }
     except Exception:
         return {"pageviews": 0, "sponsors": []}
+
+
+# ---------- GeoLite2 离线地域查询（懒加载，缺失即降级）----------
+_geoip_reader = None
+_geoip_lock = threading.Lock()
+_geoip_unavailable = False   # 一旦确认不可用，后续直接跳过，避免每次请求都 try import
+
+
+def geoip_country(ip):
+    """返回 ISO 国家码（如 'CN'），失败/无库返回 'Unknown'。线程安全、懒加载。
+
+    geoip2 在函数内懒导入：未装 / 无 mmdb → 置 _geoip_unavailable=True，
+    后续请求直接返回 Unknown，全程不抛、不阻塞服务（与 store 整体降级哲学一致）。
+    """
+    global _geoip_reader, _geoip_unavailable
+    if _geoip_unavailable or not ip:
+        return "Unknown"
+    with _geoip_lock:
+        if _geoip_reader is None:
+            try:
+                import geoip2.database
+                _geoip_reader = geoip2.database.Reader(config.GEOIP_DB_PATH)
+            except Exception:
+                _geoip_unavailable = True
+                return "Unknown"
+    try:
+        resp = _geoip_reader.country(ip)
+        return (resp.country.iso_code or "Unknown").upper()
+    except Exception:
+        return "Unknown"
+
+
+# ---------- 访问记录（监控页数据源）----------
+def record_visit(ip, country, path="/"):
+    """记录一次访问到 visits 表。best-effort，失败静默（与 record_pageview 同模式）。
+
+    每次访问一行：PV = 行数，UV = COUNT(DISTINCT ip)。
+    存完整 IP（用户决策）以便去重与未来细查；country 来自反代头 / GeoLite2。
+    """
+    if not _DB_OK or not config.ANALYTICS_ENABLED or not ip:
+        return
+    now = datetime.datetime.now()
+    try:
+        with _db_lock:
+            conn = _conn()
+            conn.execute(
+                "INSERT INTO visits(ip, country, path, ts, date) VALUES(?,?,?,?,?)",
+                (ip, country or "Unknown", path,
+                 now.isoformat(timespec="seconds"), now.date().isoformat()))
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+
+def monitor_stats(days=30):
+    """返回监控页所需数据：总览 + 每日趋势 + 地域分布 + 近期明细。
+
+    DB 不可用返回零值，与 stats_30d() 同模式，绝不抛异常。
+    """
+    empty = {"total_pv": 0, "total_uv": 0, "today_pv": 0, "today_uv": 0,
+             "regions": [], "daily": [], "recent": []}
+    if not _DB_OK:
+        return empty
+    try:
+        conn = _conn()
+        today = _today()
+        since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+        # 总览（近 N 天 PV / UV）
+        agg = conn.execute(
+            "SELECT COUNT(*) AS pv, COUNT(DISTINCT ip) AS uv FROM visits WHERE date >= ?",
+            (since,)).fetchone()
+        td = conn.execute(
+            "SELECT COUNT(*) AS pv, COUNT(DISTINCT ip) AS uv FROM visits WHERE date = ?",
+            (today,)).fetchone()
+        # 地域分布（近 N 天，按独立 IP 数降序 —— 关注 IP 地域的核心指标）
+        regions_rows = conn.execute(
+            """SELECT country, COUNT(DISTINCT ip) AS c FROM visits
+               WHERE date >= ? GROUP BY country ORDER BY c DESC""", (since,)).fetchall()
+        total_region = sum(r["c"] for r in regions_rows) or 1
+        regions = [{"country": r["country"] or "Unknown",
+                    "count": r["c"],
+                    "pct": round(r["c"] * 100 / total_region, 1)} for r in regions_rows]
+        # 每日 PV / UV 时序
+        daily_rows = conn.execute(
+            """SELECT date, COUNT(*) AS pv, COUNT(DISTINCT ip) AS uv FROM visits
+               WHERE date >= ? GROUP BY date ORDER BY date ASC""", (since,)).fetchall()
+        daily = [{"date": r["date"], "pv": r["pv"], "uv": r["uv"]} for r in daily_rows]
+        # 近期访问明细（最近 30 条，体现存完整 IP + 关注地域）
+        recent_rows = conn.execute(
+            """SELECT ip, country, path, ts FROM visits
+               ORDER BY id DESC LIMIT 30""").fetchall()
+        recent = [{"ip": r["ip"], "country": r["country"] or "Unknown",
+                   "path": r["path"], "ts": r["ts"]} for r in recent_rows]
+        conn.close()
+        return {
+            "total_pv": agg["pv"], "total_uv": agg["uv"],
+            "today_pv": td["pv"], "today_uv": td["uv"],
+            "regions": regions, "daily": daily, "recent": recent,
+        }
+    except Exception:
+        return empty
 
 
 # ---------- 降级回退 ----------

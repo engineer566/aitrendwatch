@@ -43,7 +43,8 @@
 </style>
 </head>
 <body>
-<form class="card" method="post" action="/admin/login">
+{% set q = request.args %}
+<form class="card" method="post" action="/admin/login{% if q.next %}?next={{ q.next|urlencode }}{% endif %}">
   <h1>🛠 管理后台</h1>
   <p class="sub">请输入管理令牌（ADMIN_TOKEN）</p>
   <label for="token">令牌</label>
