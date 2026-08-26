@@ -375,8 +375,10 @@ def geoip_country(ip):
                 return "Unknown"
     try:
         resp = _geoip_reader.country(ip)
-        return (resp.country.iso_code or "Unknown").upper()
+        cc = (resp.country.iso_code or "").strip().upper()
+        return cc or "Unknown"
     except Exception:
+        # AddressNotFoundError（库内无此 IP，如 1.1.1.1 / 172.18.x 私网）→ 统一 Unknown。
         return "Unknown"
 
 
