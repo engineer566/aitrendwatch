@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms of Service · {{ site_name }}</title>
+<meta name="description" content="{{ site_name }} Terms of Service & Privacy Policy / 服务条款与隐私声明">
+<link rel="icon" href="/favicon.ico">
+{% if seo_enabled %}
+<meta name="robots" content="index,follow">
+{% if canonical %}<link rel="canonical" href="{{ canonical }}">{% endif %}
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="{{ site_name }}">
+<meta property="og:title" content="Terms of Service · {{ site_name }}">
+<meta property="og:description" content="{{ site_name }} Terms of Service & Privacy Policy">
+{% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+{% else %}
+<meta name="robots" content="noindex,nofollow">
+{% endif %}
+<script>
+(function () {
+  const saved = localStorage.getItem("aitw_theme");
+  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  document.documentElement.dataset.theme = saved || sys;
+})();
+</script>
+<style>
+  :root {
+    --bg: #0f1117; --bg-card: #1a1d27; --bg-hover: #232734; --border: #2a2f3c;
+    --text: #e6e8ee; --text-dim: #8b91a3; --accent: #4f8cff; --accent-2: #ff5d8f;
+    --green: #3ecf8e; --orange: #ffa940; --purple: #a78bfa; --cyan: #22d3ee;
+    --shadow: 0 1px 3px rgba(0,0,0,.3); --radius: 12px;
+  }
+  [data-theme="light"] {
+    --bg: #f5f6f8; --bg-card: #ffffff; --bg-hover: #eef0f4; --border: #e3e6ec;
+    --text: #1c2130; --text-dim: #6b7280; --accent: #3b76e1; --accent-2: #e0457a;
+    --green: #18a568; --orange: #d9820f; --purple: #7c5ce0; --cyan: #0e9db8;
+    --shadow: 0 1px 3px rgba(20,25,40,.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.7;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 12px 24px;
+  }
+  .header-inner { max-width: 860px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+  h1 { font-size: 19px; font-weight: 700; white-space: nowrap;
+       background: linear-gradient(90deg, var(--accent), var(--purple));
+       -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  h1 a { color: inherit; text-decoration: none; }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); }
+  .btn {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 12px; color: var(--text-dim); transition: all .15s; font-size: 13px;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  }
+  .btn:hover { color: var(--text); border-color: var(--accent); }
+  .btn.active { color: var(--accent); border-color: var(--accent); }
+  main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
+  .paper-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px 32px; box-shadow: var(--shadow);
+  }
+  .paper-card h2 { font-size: 22px; margin-bottom: 6px; color: var(--text); }
+  .updated { font-size: 13px; color: var(--text-dim); margin-bottom: 22px; }
+  .lang-switch { margin-bottom: 22px; display: flex; gap: 8px; }
+  .toc { background: color-mix(in srgb, var(--text) 4%, transparent); border-radius: 8px; padding: 14px 18px; margin-bottom: 24px; font-size: 13px; }
+  .toc strong { color: var(--text); display: block; margin-bottom: 6px; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { margin: 3px 0; }
+  .toc a { color: var(--text-dim); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .section { margin-bottom: 22px; }
+  .section h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+  .section p { font-size: 14px; color: var(--text); margin-bottom: 8px; }
+  .section ul { font-size: 14px; color: var(--text); margin: 6px 0 8px; padding-left: 22px; }
+  .section li { margin: 4px 0; }
+  .section a { color: var(--accent); }
+  .section strong { color: var(--text); }
+  .divider { border: none; border-top: 1px dashed var(--border); margin: 28px 0; }
+  footer { text-align: center; padding: 24px; color: var(--text-dim); font-size: 12px; }
+  .footer-link { color: var(--text-dim); text-decoration: none; border-bottom: 1px dashed var(--border); }
+  .footer-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  .hidden { display: none; }
+  @media (max-width: 640px) {
+    header { padding: 10px 16px; }
+    main { padding: 0 16px; }
+    .paper-card { padding: 20px 18px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1>🤖 <a href="/">{{ site_name }}</a></h1>
+    <div class="header-right">
+      <a class="btn" href="/">← Home</a>
+    </div>
+  </div>
+</header>
+
+<main>
+<div class="paper-card">
+
+  <!-- Language switch: English first (default), Chinese second -->
+  <div class="lang-switch">
+    <button class="btn active" id="btn-en" onclick="switchLang('en')">English</button>
+    <button class="btn" id="btn-zh" onclick="switchLang('zh')">中文</button>
+  </div>
+
+  <!-- ============ English version (default, shown first) ============ -->
+  <div id="lang-en">
+    <h2>Terms of Service &amp; Privacy Policy</h2>
+    <div class="updated">Last updated: {{ updated_at }}</div>
+
+    <div class="toc">
+      <strong>Contents</strong>
+      <ol>
+        <li><a href="#en-1">Acceptance of Terms</a></li>
+        <li><a href="#en-2">Service Description</a></li>
+        <li><a href="#en-3">Intellectual Property</a></li>
+        <li><a href="#en-4">Third-Party Sources &amp; Links</a></li>
+        <li><a href="#en-5">Advertising (Adsterra)</a></li>
+        <li><a href="#en-6">Privacy Policy</a></li>
+        <li><a href="#en-7">User Conduct</a></li>
+        <li><a href="#en-8">Disclaimer of Liability</a></li>
+        <li><a href="#en-9">DMCA / Copyright Takedown</a></li>
+        <li><a href="#en-10">Changes to Terms</a></li>
+        <li><a href="#en-11">Governing Law &amp; Contact</a></li>
+      </ol>
+    </div>
+
+    <div class="section" id="en-1">
+      <h3>1. Acceptance of Terms</h3>
+      <p>By accessing or using {{ site_name }} ("the Site", "we", "us"), you agree to be bound by these Terms of Service and the Privacy Policy incorporated herein. <strong>If you do not agree to any provision, you must stop using the Site immediately.</strong> Your continued use of the Site constitutes acceptance of any updated terms.</p>
+    </div>
+
+    <div class="section" id="en-2">
+      <h3>2. Service Description</h3>
+      <p>{{ site_name }} is an AI trend aggregation platform operated by an overseas individual entity. It automatically collects, organizes, and presents AI-related content — including model releases, product launches, research papers, funding events, and industry news — from public sources such as HuggingFace, arXiv, Hacker News, Reddit, OpenAI, TechCrunch, and others. The Site provides a one-stop browsing experience and does not host the original content itself.</p>
+    </div>
+
+    <div class="section" id="en-3">
+      <h3>3. Intellectual Property</h3>
+      <p>The Site's independently developed aggregation algorithm, user interface (UI) design, visual layout, and original trend analyses, summaries, and editorial commentary are the intellectual property of the Site operator and are protected by applicable copyright laws. You may not copy, redistribute, or create derivative works from these elements without prior written consent.</p>
+      <ul>
+        <li>Content fetched from third-party sources (e.g., HuggingFace, arXiv, news publishers) remains the property of its original authors or rights holders. The Site claims no ownership over such source material.</li>
+        <li>The Site performs lawful information aggregation only — collecting publicly available metadata and links, and directing users to original sources via direct links. It does not reproduce or rehost full original content.</li>
+        <li>AI-assisted dimension classification and summaries are generated by the Site's own processing of publicly available information and do not alter the ownership of the underlying content.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="en-4">
+      <h3>4. Third-Party Sources &amp; Links</h3>
+      <p>The Site contains numerous links to third-party websites and sources. These links are provided for your convenience and reference only. The Site does not control and is not responsible for the content, accuracy, privacy practices, or availability of any third-party website. You access third-party websites at your own risk and are subject to their respective terms and policies.</p>
+      <p>The Site does not guarantee the real-time accuracy, completeness, or timeliness of aggregated information. Always refer to the original source for authoritative details.</p>
+    </div>
+
+    <div class="section" id="en-5">
+      <h3>5. Advertising (Adsterra)</h3>
+      <p>The Site displays third-party advertisements served by <strong>Adsterra</strong> and/or similar advertising networks. Advertising content is provided by the respective advertisers and ad networks, not by the Site.</p>
+      <ul>
+        <li>The Site is <strong>not responsible for</strong> the quality, safety, legality, or performance of any advertised products or services. Any transaction or interaction with an advertiser is solely between you and the advertiser.</li>
+        <li>Advertisements are <strong>strictly separated</strong> from the Site's editorial and aggregated content. Ad placements are visually and structurally distinct and do not constitute endorsements by the Site.</li>
+        <li>Ad networks may use cookies and similar technologies to serve relevant ads. See the Privacy Policy below for details on data collection.</li>
+        <li>Clicking an advertisement constitutes your acceptance of that advertiser's and ad network's terms of service and privacy policy.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="en-6">
+      <h3>6. Privacy Policy</h3>
+      <p>This Privacy Policy describes how the Site handles information when you visit:</p>
+      <ul>
+        <li><strong>Traffic &amp; security analytics:</strong> The Site records page views, unique IP addresses, and approximate geographic location (country/region inferred from IP) for operational analytics, traffic monitoring, and security purposes (e.g., abuse prevention).</li>
+        <li><strong>Local storage:</strong> The Site uses your browser's localStorage to remember your language and theme preferences. This data stays on your device and is not transmitted to our servers.</li>
+        <li><strong>Advertising cookies:</strong> Third-party ad networks (such as Adsterra) may set cookies or use device identifiers to measure ad performance and deliver interest-based advertising. These are governed by the ad network's own privacy policy.</li>
+        <li><strong>No sale of data:</strong> The Site does not sell your personal information to third parties. Aggregated, non-identifiable statistics may be used internally or shared in anonymized form.</li>
+      </ul>
+      <p>As the Site is operated by an overseas entity and does not intentionally target users in any specific jurisdiction, you acknowledge that your data may be processed in a country other than your own. Most browsers allow you to refuse or delete cookies; doing so may affect ad delivery but will not prevent the Site from functioning.</p>
+    </div>
+
+    <div class="section" id="en-7">
+      <h3>7. User Conduct</h3>
+      <p>You agree not to:</p>
+      <ul>
+        <li>Scrape, crawl, or extract large-scale data from the Site's aggregated results, or redistribute the Site's aggregated datasets (including via API, bulk download, or automated harvesting) without authorization;</li>
+        <li>Reverse engineer, decompile, or otherwise attempt to derive the Site's source code, aggregation algorithm, or internal logic;</li>
+        <li>Use automated tools (bots, scripts) to send high-frequency requests that impair normal service or consume excessive resources;</li>
+        <li>Attempt to bypass security mechanisms, access unauthorized areas, or interfere with the Site's infrastructure;</li>
+        <li>Use the Site for any unlawful, abusive, or malicious purpose, or in violation of these Terms.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="en-8">
+      <h3>8. Disclaimer of Liability</h3>
+      <p>The Site is provided <strong>"as is" and "as available"</strong>, without warranties of any kind, express or implied, including but not limited to merchantability, fitness for a particular purpose, or non-infringement.</p>
+      <ul>
+        <li>The Site is <strong>not responsible</strong> for the content of third-party external links or the real-time accuracy of aggregated information.</li>
+        <li>The Site is <strong>not responsible</strong> for the products, services, or conduct of third-party advertisers (including Adsterra) and ad networks.</li>
+        <li>To the maximum extent permitted by law, the Site shall not be liable for any direct, indirect, incidental, consequential, or punitive damages arising from the use of or inability to use the Site, including but not limited to loss of data, revenue, or profits.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="en-9">
+      <h3>9. DMCA / Copyright Takedown</h3>
+      <p>The Site respects the intellectual property rights of others and responds to valid notices of alleged copyright infringement in accordance with the Digital Millennium Copyright Act (DMCA) and similar applicable laws.</p>
+      <p>If you believe that content linked from or aggregated on the Site infringes your copyright, please submit a takedown notice including: (a) identification of the copyrighted work; (b) identification of the allegedly infringing material and its location on the Site; (c) your contact information; (d) a statement that you have a good-faith belief that the use is unauthorized; and (e) a physical or electronic signature.</p>
+      <p>{% if contact_email %}Send notices to: <strong>{{ contact_email }}</strong>{% else %}Send notices through the contact channel posted on the Site.{% endif %}. Upon receipt of a valid notice, the Site will remove or disable access to the allegedly infringing material in a timely manner. The Site reserves the right to restore content upon receipt of a valid counter-notification.</p>
+    </div>
+
+    <div class="section" id="en-10">
+      <h3>10. Changes to Terms</h3>
+      <p>The Site reserves the right to modify these Terms of Service at any time. Modified terms take effect <strong>upon publication on this page</strong>. The updated date at the top of this page indicates the last revision. Continued use of the Site after changes are posted constitutes your acceptance of the modified terms. You are encouraged to review this page periodically.</p>
+    </div>
+
+    <div class="section" id="en-11">
+      <h3>11. Governing Law &amp; Contact</h3>
+      <p>These Terms shall be governed by and construed in accordance with the laws of the jurisdiction where the Site's server and the advertising network's principal entity are located, without regard to conflict-of-law principles. Any dispute arising out of or relating to these Terms or the Site shall be resolved through good-faith negotiation first; failing that, submitted to the competent court of the governing jurisdiction.</p>
+      <p>For any questions, privacy requests, or legal notices regarding these Terms, contact us{% if contact_email %} at <strong>{{ contact_email }}</strong>{% endif %}.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ============ 中文版 ============ -->
+  <div id="lang-zh" class="hidden">
+    <h2>服务条款与隐私声明</h2>
+    <div class="updated">最后更新：{{ updated_at }}</div>
+
+    <div class="toc">
+      <strong>目录</strong>
+      <ol>
+        <li><a href="#zh-1">接受条款</a></li>
+        <li><a href="#zh-2">服务说明</a></li>
+        <li><a href="#zh-3">知识产权</a></li>
+        <li><a href="#zh-4">第三方信源与链接</a></li>
+        <li><a href="#zh-5">广告（Adsterra）</a></li>
+        <li><a href="#zh-6">隐私声明</a></li>
+        <li><a href="#zh-7">用户行为</a></li>
+        <li><a href="#zh-8">免责声明</a></li>
+        <li><a href="#zh-9">DMCA / 版权侵权通知</a></li>
+        <li><a href="#zh-10">条款变更</a></li>
+        <li><a href="#zh-11">适用法律与联系</a></li>
+      </ol>
+    </div>
+
+    <div class="section" id="zh-1">
+      <h3>1. 接受条款</h3>
+      <p>访问或使用 {{ site_name }}（以下简称「本站」「我们」）即表示您同意接受本服务条款及此处纳入的隐私声明的约束。<strong>如果您不同意任何条款，请立即停止使用本站。</strong>您继续使用本站即视为接受更新后的条款。</p>
+    </div>
+
+    <div class="section" id="zh-2">
+      <h3>2. 服务说明</h3>
+      <p>本站是由境外个人主体运营的 AI 热点聚合平台，自动收集并整理来自 HuggingFace、arXiv、Hacker News、Reddit、OpenAI、TechCrunch 等公开来源的 AI 相关内容，涵盖模型发布、产品发布、研究论文、投融资及行业动态，为用户提供一站式浏览体验。本站不托管原始内容本身。</p>
+    </div>
+
+    <div class="section" id="zh-3">
+      <h3>3. 知识产权</h3>
+      <p>本站自研的聚合算法、用户界面（UI）设计、视觉排版及原创的趋势解读、摘要与编辑评论，其知识产权归本站运营者所有，受相关著作权法保护。未经事先书面许可，您不得复制、再分发或基于这些元素制作衍生作品。</p>
+      <ul>
+        <li>来自第三方信源（如 HuggingFace、arXiv、新闻媒体）的内容，其权利归原始作者或权利人所有，本站不主张该等原始内容的所有权。</li>
+        <li>本站仅进行合规的信息聚合——收集公开可得的元数据与链接，通过直链引导用户回到原始信源，不复制或再托管完整原始内容。</li>
+        <li>AI 辅助的维度分类与摘要是本站对公开信息自行处理的结果，不改变底层内容的权属。</li>
+      </ul>
+    </div>
+
+    <div class="section" id="zh-4">
+      <h3>4. 第三方信源与链接</h3>
+      <p>本站包含大量指向第三方网站与信源的链接，这些链接仅为方便您参考而提供。本站不控制、也不对任何第三方网站的内容、准确性、隐私做法或可用性负责。您访问第三方网站的风险由您自行承担，并受其各自条款与政策约束。</p>
+      <p>本站不保证聚合信息的实时准确性、完整性或时效性，权威细节请以原始信源为准。</p>
+    </div>
+
+    <div class="section" id="zh-5">
+      <h3>5. 广告（Adsterra）</h3>
+      <p>本站展示由 <strong>Adsterra</strong> 及/或类似广告联盟投放的第三方广告。广告内容由相应广告主及广告联盟提供，而非本站。</p>
+      <ul>
+        <li>本站<strong>不对</strong>任何广告产品或服务的质量、安全性、合法性或性能负责。您与广告主之间的任何交易或互动，仅发生在您与广告主之间。</li>
+        <li>广告与本站的编辑及聚合内容<strong>严格区分</strong>，广告位在视觉与结构上均有明显标识，不构成本站对广告内容的背书。</li>
+        <li>广告联盟可能使用 Cookie 及类似技术投放相关广告，数据收集详情见下方隐私声明。</li>
+        <li>点击广告即视为您接受该广告主及广告联盟的服务条款与隐私政策。</li>
+      </ul>
+    </div>
+
+    <div class="section" id="zh-6">
+      <h3>6. 隐私声明</h3>
+      <p>本隐私声明说明您访问本站时我们对信息的处理方式：</p>
+      <ul>
+        <li><strong>流量与安全统计：</strong>本站会记录访问页数、独立 IP 地址及大致地域信息（基于 IP 推断的国家/地区），用于运营分析、流量监控及安全目的（如防滥用）。</li>
+        <li><strong>本地存储：</strong>本站使用浏览器 localStorage 记住您的语言与主题偏好，该数据保留在您的设备上，不上传至服务器。</li>
+        <li><strong>广告 Cookie：</strong>第三方广告联盟（如 Adsterra）可能设置 Cookie 或使用设备标识符以衡量广告效果并投放基于兴趣的广告，受广告联盟自身隐私政策约束。</li>
+        <li><strong>不出售数据：</strong>本站不会将您的个人信息出售给第三方。聚合后的非可识别统计信息可能用于内部使用或以匿名形式分享。</li>
+      </ul>
+      <p>本站由境外主体运营，且不有意针对任何特定司法管辖区的用户。您知悉您的数据可能在您所在国家/地区以外的国家/地区处理。多数浏览器允许您拒绝或删除 Cookie，此举可能影响广告投放，但不会妨碍本站正常使用。</p>
+    </div>
+
+    <div class="section" id="zh-7">
+      <h3>7. 用户行为</h3>
+      <p>您同意不以任何方式：</p>
+      <ul>
+        <li>爬取、抓取或大规模提取本站的聚合结果，或在未经授权情况下再分发本站聚合数据集（包括通过 API、批量下载或自动化采集）；</li>
+        <li>对本站进行逆向工程、反编译或以其他方式试图推导本站源代码、聚合算法或内部逻辑；</li>
+        <li>使用自动化工具（机器人、脚本）发起高频请求，影响正常服务或消耗过量资源；</li>
+        <li>试图绕过安全机制、访问未授权区域或干扰本站基础设施；</li>
+        <li>将本站用于任何非法、滥用或恶意目的，或违反本条款的行为。</li>
+      </ul>
+    </div>
+
+    <div class="section" id="zh-8">
+      <h3>8. 免责声明</h3>
+      <p>本站按<strong>「现状」「按可用」</strong>提供，不附带任何形式的明示或暗示担保，包括但不限于适销性、特定用途适用性或不侵权。</p>
+      <ul>
+        <li>本站<strong>不对</strong>第三方外链内容或聚合信息的实时准确性负责。</li>
+        <li>本站<strong>不对</strong>第三方广告主（含 Adsterra）及广告联盟的产品、服务或行为负责。</li>
+        <li>在法律允许的最大范围内，本站不对因使用或无法使用本站而导致的任何直接、间接、附带、后果性或惩罚性损害承担责任，包括但不限于数据、收入或利润损失。</li>
+      </ul>
+    </div>
+
+    <div class="section" id="zh-9">
+      <h3>9. DMCA / 版权侵权通知</h3>
+      <p>本站尊重他人的知识产权，并依据《数字千年版权法》（DMCA）及类似适用法律响应有效的版权侵权通知。</p>
+      <p>若您认为本站链接或聚合的内容侵犯了您的版权，请提交包含以下内容的通知：(a) 受版权保护作品的标识；(b) 被指侵权材料及其在本站的位置标识；(c) 您的联系方式；(d) 您有善意理由相信该使用未获授权的声明；(e) 您的物理或电子签名。</p>
+      <p>请将通知发送至{% if contact_email %}：<strong>{{ contact_email }}</strong>{% else %}本站公示的联系渠道{% endif %}。收到有效通知后，本站将及时移除或禁用对涉嫌侵权材料的访问。本站保留在收到有效反通知后恢复内容的权利。</p>
+    </div>
+
+    <div class="section" id="zh-10">
+      <h3>10. 条款变更</h3>
+      <p>本站保留随时修改本服务条款的权利。修改后的条款<strong>自发布于本页之日起生效</strong>。页面顶部的更新日期标注最近一次修订。条款变更发布后，您继续使用本站即视为接受修改后的条款。建议您定期查阅本页。</p>
+    </div>
+
+    <div class="section" id="zh-11">
+      <h3>11. 适用法律与联系</h3>
+      <p>本条款受本站服务器及广告联盟主体所在司法管辖区的法律管辖并据此解释，不适用法律冲突原则。因本条款或本站引起的任何争议，应首先通过善意协商解决；协商不成的，提交管辖司法辖区的有管辖权法院裁决。</p>
+      <p>如对本条款有任何疑问、隐私请求或法律通知，请通过{% if contact_email %}<strong>{{ contact_email }}</strong>{% endif %}与我们联系。</p>
+    </div>
+  </div>
+
+</div>
+</main>
+
+<footer>
+  © <span id="footer-year"></span> {{ site_name }} · <a href="/" class="footer-link">Home</a>
+</footer>
+
+<script>
+function switchLang(lang) {
+  document.getElementById('lang-en').classList.toggle('hidden', lang !== 'en');
+  document.getElementById('lang-zh').classList.toggle('hidden', lang !== 'zh');
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  document.getElementById('btn-zh').classList.toggle('active', lang === 'zh');
+  document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+}
+document.getElementById('footer-year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

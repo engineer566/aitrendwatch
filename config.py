@@ -21,6 +21,9 @@ ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "").strip()
 # ---------- 站点信息 ----------
 SITE_NAME = os.environ.get("SITE_NAME", "ModelRadar")
 BASE_URL = os.environ.get("BASE_URL", "").strip()  # 如 https://modelradar.ai
+# 站点联系/DMCA 通知邮箱（服务条款、隐私声明、版权侵权通知统一入口）。
+# 未配置 → 条款页用占位文案，不影响功能。
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()
 
 # ---------- 数据存储 ----------
 # SQLite 数据库目录与路径（赞助位 + 统计）。

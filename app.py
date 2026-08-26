@@ -104,25 +104,44 @@ SSR_INITIAL_LIMIT = 20
 
 
 def _initial_terms_for_ssr():
-    """首页 SSR 用的首屏热词：双榜合并去重取 Top-N。
+    """首页 SSR 用的首屏热词：合并 model 卡 + news 卡，按热度取 Top-N。
 
-    读 tracker 文件缓存（不触发 arXiv）；任何失败返回 []，模板兜底骨架屏。
+    读 tracker / dims 文件缓存（不触发 arXiv），任何失败返回 []，模板兜底骨架屏。
+
+    关键：必须同时取 model 卡（模型发布）+ news 卡（产品发布/研究论文/投融资/
+    行业动态/其他），否则首屏 20 条全是模型发布，分类条只剩「全部」+「模型发布」
+    两个标签。前端的 fetchAll() 首屏短路逻辑（allData 非空就 return，不再请求
+    /api/stream）会固化这个首屏状态，用户看到的永远只有两类。
+
+    进一步：单纯按 score 取 Top-N 仍会被高分 model 卡垄断（model 卡 score 普遍
+    高于 news 卡），导致首屏仍只有「模型发布/行业动态/产品发布」三类可见，研究
+    论文、投融资等维度被挤出。这里改为「每维度配额」——各维度先各取 Top-Quota，
+    合并后再按 score 降序截断 SSR_INITIAL_LIMIT，保证 6 个维度都在首屏露出，
+    分类条即可渲染全部标签，爬虫也能索引各类内容。
     """
     try:
-        terms = []
-        seen = set()
-        for sort in ("trending", "top"):
-            d = tracker.get_terms(sort=sort)
-            for t in (d.get("terms") or []):
-                tid = t.get("full_id") or t.get("term")
-                if tid and tid not in seen:
-                    seen.add(tid)
-                    terms.append(t)
-                if len(terms) >= SSR_INITIAL_LIMIT:
-                    break
-            if len(terms) >= SSR_INITIAL_LIMIT:
-                break
-        return terms[:SSR_INITIAL_LIMIT]
+        region = "zh"  # SSR 无 request 上下文，默认中文；JS 接管后按用户语言重取
+        model_cards, _ = tracker.get_model_cards(region)
+        news_cards, _ = dims.get_news_cards(region)
+        cards = model_cards + news_cards
+        if not cards:
+            return []
+
+        # 按维度分桶，每桶按 score 降序
+        by_dim = {}
+        for c in cards:
+            by_dim.setdefault(c.get("dimension") or "其他", []).append(c)
+        for d in by_dim:
+            by_dim[d].sort(key=lambda x: x.get("score", 0), reverse=True)
+
+        # 每维度至少取 PER_DIM_QUOTA 条，保证小维度也在首屏可见；
+        # 配额取完后合并、整体按 score 降序截断 SSR_INITIAL_LIMIT。
+        quota = max(2, SSR_INITIAL_LIMIT // max(1, len(by_dim)))
+        pooled = []
+        for d, lst in by_dim.items():
+            pooled.extend(lst[:quota])
+        pooled.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return pooled[:SSR_INITIAL_LIMIT]
     except Exception:
         return []
 
@@ -146,6 +165,9 @@ def _sitemap_terms():
 
 # 站点级元信息（描述等），集中维护。
 SITE_DESC = "AI 热点聚合 · 实时追踪 HuggingFace 模型趋势、arXiv 相关论文与社区讨论。上升最快、最热、最新 AI 模型一页尽览。"
+
+# 服务条款最后更新日期（修改条款时同步更新）。
+SITE_TERMS_UPDATED = "2026-08-26"
 
 
 
@@ -542,6 +564,21 @@ def term_detail(term_name):
                            canonical=canonical, seo_enabled=_seo_enabled())
 
 
+@app.route("/terms")
+def terms():
+    """服务条款页（中英双语，SEO 可索引）。
+
+    内容为静态文案，updated_at 由 SITE_TERMS_UPDATED 常量确定。canonical 指向 /terms。
+    英文版与隐私声明置于中文之前（适配境外主体 + Adsterra 广告合规要求）。
+    """
+    return render_template("terms.html", site_name=config.SITE_NAME,
+                           site_desc="Terms of Service / 服务条款",
+                           base_url=_base_url(), canonical=_abs("/terms"),
+                           seo_enabled=_seo_enabled(),
+                           contact_email=config.CONTACT_EMAIL,
+                           updated_at=SITE_TERMS_UPDATED)
+
+
 @app.errorhandler(404)
 def not_found(e):
     """404 → 简单 HTML（noindex），避免爬虫索引不存在的 term 详情页。"""
@@ -639,6 +676,8 @@ def sitemap():
     if base:
         urls.append(base + "/")
         if _seo_enabled():
+            # 服务条款页（静态，常驻索引）
+            urls.append(f"{base}/terms")
             for t in _sitemap_terms():
                 slug = t.get("term")
                 if not slug:
