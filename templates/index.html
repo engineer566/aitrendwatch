@@ -111,10 +111,7 @@
 
   /* ---- 分类 + 排序 控制条 ---- */
   .controls { max-width: 860px; margin: 16px auto 0; padding: 0 24px; }
-  .cat-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-behavior: smooth; scrollbar-width: thin; }
-  .cat-bar::-webkit-scrollbar { height: 4px; }
-  .cat-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-  .cat-bar::-webkit-scrollbar-track { background: transparent; }
+  .cat-bar { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 4px; }
   .cat-pill {
     display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
     font-size: 13px; padding: 6px 14px; border-radius: 16px;
