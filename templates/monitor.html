@@ -252,10 +252,28 @@ const chartXEl = document.getElementById("chart-x");
 const chartSub = document.getElementById("chart-sub");
 
 function renderStats(d) {
-  document.getElementById("today-pv").textContent = fmtNum(d.today_pv);
-  document.getElementById("today-uv").textContent = fmtNum(d.today_uv);
-  document.getElementById("total-pv").textContent = fmtNum(d.total_pv);
-  document.getElementById("total-uv").textContent = fmtNum(d.total_uv);
+  // 安全写入：元素可能被 skeleton() 的 innerHTML 覆盖删除，先重建结构再填值。
+  // 否则 getElementById 返回 null → 抛 TypeError → 整个 load() 进 catch，
+  // 所有渲染跳过，骨架屏永远留着，页面「一直加载中」。
+  const row = document.getElementById("stats-row");
+  const boxes = [
+    { id: "today-pv",  label: "今日 PV",        cls: "accent", val: d.today_pv },
+    { id: "today-uv",  label: "今日独立 IP",    cls: "green",  val: d.today_uv },
+    { id: "total-pv",  label: "近 30 天 PV",    cls: "purple", val: d.total_pv },
+    { id: "total-uv",  label: "近 30 天独立 IP", cls: "orange", val: d.total_uv },
+  ];
+  // 若任一 id 缺失（被骨架覆盖），整体重建 stats-row 结构
+  const missing = boxes.some(b => !document.getElementById(b.id));
+  if (missing) {
+    row.innerHTML = boxes.map(b =>
+      `<div class="stat-box"><div class="label">${b.label}</div>` +
+      `<div class="value ${b.cls} num" id="${b.id}">—</div></div>`
+    ).join("");
+  }
+  boxes.forEach(b => {
+    const el = document.getElementById(b.id);
+    if (el) el.textContent = fmtNum(b.val);
+  });
 }
 
 function renderChart(daily) {

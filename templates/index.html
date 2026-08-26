@@ -203,6 +203,9 @@
   .state.error { color: var(--accent-2); }
 
   footer { text-align: center; padding: 24px; color: var(--text-dim); font-size: 12px; }
+  .footer-links { margin-top: 8px; display: inline-block; }
+  .footer-link { color: var(--text-dim); text-decoration: none; border-bottom: 1px dashed var(--border); }
+  .footer-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
   /* ---- 赞助位 ---- */
   .sponsor-card {
@@ -312,26 +315,34 @@
 {% if seo_enabled and initial_terms %}
 {# ===== SSR 首屏热词卡（爬虫可见，JS 启动后接管） ===== #}
 {% for t in initial_terms %}
+{% set dim = t.dimension or ('模型发布' if t.kind == 'model' else '其他') %}
+{% set dim_icon = '🧠' if dim == '模型发布' else ('📱' if dim == '产品发布' else ('📄' if dim == '研究论文' else ('💰' if dim == '投融资' else ('📰' if dim == '行业动态' else '✨')))) %}
 <div class="term-card" style="--cat-color:#4f8cff">
   <div class="term-head">
     <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
-    <span class="cat-badge">🧠 模型</span>
+    <span class="cat-badge">{{ dim_icon }} {{ dim }}</span>
     <span class="term-name">
-      {% if t.author %}<span class="author">{{ t.author }} / </span>{% endif %}<a href="{{ t.official_url }}" target="_blank" rel="noopener">{{ t.term }}</a>
+      {% if t.kind == 'news' %}<a href="{{ t.official_url }}" target="_blank" rel="noopener">{{ t.title }}</a>{% else %}{% if t.author %}<span class="author">{{ t.author }} / </span>{% endif %}<a href="{{ t.official_url }}" target="_blank" rel="noopener">{{ t.term }}</a>{% endif %}
     </span>
-    <span class="head-right"><span>{{ t.created_at or '' }}</span></span>
+    <span class="head-right"><span>{{ t.published or t.created_at or '' }}</span></span>
   </div>
-  {% if t.trending_score != none %}<div class="term-meta"><span class="m-up">📈 趋势 <span class="num">{{ t.trending_score }}</span></span>{% if t.likes != none %}<span class="m-hot">❤ <span class="num">{{ t.likes }}</span></span>{% endif %}{% if t.downloads != none %}<span>↓ <span class="num">{{ t.downloads }}</span></span>{% endif %}</div>{% endif %}
-  {% if t.tags %}<div class="tags">{% for tg in t.tags[:5] %}<span class="tag">{{ tg }}</span>{% endfor %}</div>{% endif %}
-  <div class="links">
-    <a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.official_label or '官方' }}</a>
-    {% for c in (t.community or []) %}<a class="link-btn" href="{{ c.url }}" target="_blank" rel="noopener">💬 {{ c.site }}</a>{% endfor %}
-  </div>
-  {% if t.papers %}
-  <div class="papers">
-    <div class="papers-title">📄 相关论文（arXiv）</div>
-    {% for p in t.papers %}<div class="paper"><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a><span class="pm">{{ p.published or '' }}</span></div>{% endfor %}
-  </div>
+  {% if t.kind == 'news' %}
+    {% if t.hot %}<div class="term-meta"><span class="m-hot">🔥 <span class="num">{{ t.hot }}</span></span>{% if t.hn_points %}<span>HN <span class="num">{{ t.hn_points }}</span></span>{% endif %}{% if t.reddit_score %}<span>Reddit ❤ <span class="num">{{ t.reddit_score }}</span></span>{% endif %}</div>{% endif %}
+    {% if t.summary %}<div class="term-meta"><span>{{ t.summary }}</span></div>{% endif %}
+    <div class="links"><a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.source or '官方' }}</a></div>
+  {% else %}
+    {% if t.trending_score != none %}<div class="term-meta"><span class="m-up">📈 趋势 <span class="num">{{ t.trending_score }}</span></span>{% if t.likes != none %}<span class="m-hot">❤ <span class="num">{{ t.likes }}</span></span>{% endif %}{% if t.downloads != none %}<span>↓ <span class="num">{{ t.downloads }}</span></span>{% endif %}</div>{% endif %}
+    {% if t.tags %}<div class="tags">{% for tg in t.tags[:5] %}<span class="tag">{{ tg }}</span>{% endfor %}</div>{% endif %}
+    <div class="links">
+      <a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.official_label or '官方' }}</a>
+      {% for c in (t.community or []) %}<a class="link-btn" href="{{ c.url }}" target="_blank" rel="noopener">💬 {{ c.site }}</a>{% endfor %}
+    </div>
+    {% if t.papers %}
+    <div class="papers">
+      <div class="papers-title">📄 相关论文（arXiv）</div>
+      {% for p in t.papers %}<div class="paper"><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a><span class="pm">{{ p.published or '' }}</span></div>{% endfor %}
+    </div>
+    {% endif %}
   {% endif %}
 </div>
 {% endfor %}
@@ -346,7 +357,8 @@
 <footer>
   统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论<br>
   新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）<br>
-  分类：模型发布 / 产品发布 / 研究论文 / 投融资 / 行业动态 / 其他
+  分类：模型发布 / 产品发布 / 研究论文 / 投融资 / 行业动态 / 其他<br>
+  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">服务条款 / Terms of Service</a></span>
 </footer>
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
@@ -374,6 +386,7 @@ const I18N = {
     footer_l1: "统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论",
     footer_l2: "新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）",
     footer_l3: "分类：模型发布 / 产品发布 / 研究论文 / 投融资 / 行业动态 / 其他",
+    footer_terms: "服务条款",
     today: "今天", yesterday: "昨天", days_ago: " 天前", months_ago: " 个月前", years_ago: " 年前",
     warming: "维度热词预热中，请稍后刷新",
   },
@@ -392,6 +405,7 @@ const I18N = {
     footer_l1: "Unified feed: HuggingFace models (trends/likes/downloads) · arXiv papers · Zhihu/Bilibili/GitHub discussion",
     footer_l2: "News: OpenAI/TechCrunch/HF/arXiv/QbitAI etc. official RSS · Hacker News + Reddit community heat · DeepSeek tagging (links go to official sources)",
     footer_l3: "Categories: Model Releases / Product Launches / Research Papers / Funding / Industry News / Other",
+    footer_terms: "Terms of Service",
     today: "Today", yesterday: "Yesterday", days_ago: " days ago", months_ago: " months ago", years_ago: " years ago",
     warming: "Warming up trends, please refresh shortly",
   },
@@ -448,7 +462,9 @@ function localizeStatic() {
   });
   if (demoPill) demoPill.textContent = t("demo_pill");
   const f = document.querySelector("footer");
-  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}`;
+  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}<br><span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">${t("footer_terms")}</a></span>`;
+  const yEl = document.getElementById("footer-year");
+  if (yEl) yEl.textContent = new Date().getFullYear();
 }
 function applyLang() {
   document.documentElement.lang = LANG === "en" ? "en" : "zh-CN";
@@ -845,6 +861,8 @@ async function fetchAll() {
         const ssr = JSON.parse(raw);
         if (Array.isArray(ssr) && ssr.length) {
           allData = ssr;
+          // SSR 数据无 dimension_list，用前端默认维度顺序补全分类条
+          if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
           render();
           lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
           fetching = false;

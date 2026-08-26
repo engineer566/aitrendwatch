@@ -21,6 +21,9 @@ ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "").strip()
 # ---------- 站点信息 ----------
 SITE_NAME = os.environ.get("SITE_NAME", "ModelRadar")
 BASE_URL = os.environ.get("BASE_URL", "").strip()  # 如 https://modelradar.ai
+# 站点联系/DMCA 通知邮箱（服务条款、隐私声明、版权侵权通知统一入口）。
+# 未配置 → 条款页用占位文案，不影响功能。
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()
 
 # ---------- 数据存储 ----------
 # SQLite 数据库目录与路径（赞助位 + 统计）。
@@ -44,6 +47,15 @@ CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
 # 未配置 key → dims.py 的 LLM 打标降级到 RSS 源默认维度，热词仍可展示。
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+
+# ---------- dims 生产定点预热（Asia/Shanghai 24h 制）----------
+# 一天 4 次：13/19/01/07，6 小时一档。
+# 选点理由：① 避开 DeepSeek 高峰段（工作日 9-12 / 14-18），多落空闲档（半价）；
+# ② 6 小时一档压在 DeepSeek 硬盘缓存 TTL（几小时到几天）内，规则前缀跨次复用
+#   可命中缓存（命中价是未命中的 1/30）。
+DIMS_REFRESH_HOURS = tuple(
+    int(h) for h in os.environ.get("DIMS_REFRESH_HOURS", "1,7,13,19").split(",")
+)
 
 # ---------- 分析开关 ----------
 def _as_bool(v, default=True):
