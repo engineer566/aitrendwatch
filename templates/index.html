@@ -238,8 +238,11 @@
   @media (max-width: 640px) {
     header { padding: 10px 16px; }
     .controls, main, .demo-banner, .sponsor-footer, .ads-slot, .ads-footer-slot { padding-left: 16px; padding-right: 16px; }
-    .header-right #last-update { display: none; }
   }
+
+  /* 后台为定时更新（非实时），不显示「更新于」时间，避免「实时更新」误导（issue 4）。
+     全端隐藏 #last-update（移动端原本已隐藏，此处扩展到桌面端）。 */
+  .header-right #last-update { display: none; }
 </style>
 {% if seo_enabled and initial_terms %}
 <script type="application/ld+json">
@@ -637,6 +640,9 @@ sortSeg.addEventListener("click", e => {
   b.classList.add("active");
   currentSort = b.dataset.sort;
   syncURL(); render();
+  // 切排序后端拉对应 sort 的全量数据（前端 visibleData 仅在已有 allData 上重排，
+  // 但不同 sort 后端已预排序+历史库合并，全量拉取保证内容池一致）。abort 旧请求。
+  fetchAll();
 });
 // 初始排序按钮状态（可能被 URL 参数改过）
 document.querySelectorAll("#sort-seg button").forEach(x =>
@@ -830,10 +836,15 @@ function render() {
 }
 
 // ==================== 数据拉取：统一卡片流（/api/stream） ====================
-async function fetchJSON(url) {
+async function fetchJSON(url, signal) {
   try {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 25000);
+    // 若调用方传入外部 signal（切语言/排序时 abort 旧请求），联动本 ctrl。
+    if (signal) {
+      if (signal.aborted) ctrl.abort();
+      else signal.addEventListener("abort", () => ctrl.abort());
+    }
     const res = await fetch(url, { signal: ctrl.signal });
     clearTimeout(to);
     if (res.ok) return await res.json();
@@ -842,23 +853,22 @@ async function fetchJSON(url) {
 }
 
 let fetching = false;
-// 缓存后端最近一次 fetched_at（Unix 秒）。刷新/切语言时复用，避免回退墙钟。
+let _fetchCtrl = null;        // 当前 /api/stream 请求的 AbortController，切语言/排序时 abort 旧请求
+// 后台为定时更新（非实时），不再显示「更新于」时间，避免「实时更新」误导（issue 4）。
+// _lastFetchedAt 仅内部缓存，不渲染到 DOM。
 let _lastFetchedAt = 0;
-function _fmtFetchedAt(ts) {
-  if (!ts) return "";
-  return t("updated") + new Date(ts * 1000).toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
-}
 async function fetchAll() {
-  if (fetching) return;
+  // 切语言/排序时若上一次请求仍在飞，abort 它并立即发起新请求——
+  // 否则首次加载 /api/stream 慢（公网 1-3s）期间用户切语言会被旧 fetch 占住
+  // fetching 锁，allData 停留在 SSR 18 条，要切两次语言才显示全量（issue 1）。
+  if (_fetchCtrl) { try { _fetchCtrl.abort(); } catch (e) {} }
   fetching = true;
-  lastUpdateEl.textContent = _lastFetchedAt ? _fmtFetchedAt(_lastFetchedAt) : t("loading");
+  _fetchCtrl = new AbortController();
 
   // 首屏：优先用 SSR 注入的数据立即渲染，避免空骨架闪烁。
   // 但 SSR 只注入少量首屏卡（SSR_INITIAL_LIMIT），内容池远小于 /api/stream，
   // 若就此 return，rise/hot/new 三个 tab 只会在小池里排序，内容几乎一样、数量少。
   // 故：SSR 仅做即时渲染，随后立即异步拉取 /api/stream 全量数据替换。
-  // SSR 数据无 fetched_at，此处不更新时间（保持 loading 或上次后端时间），
-  // 等 /api/stream 返回后再设——避免用前端墙钟（issue 4）。
   const hadSSR = !allData.length;
   if (hadSSR) {
     try {
@@ -877,7 +887,7 @@ async function fetchAll() {
 
   // 无论是否命中 SSR，都拉取全量 /api/stream 替换首屏小池，
   // 保证 rise/hot/new 有足够大的内容池产生区分度，且数量稳定。
-  const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}`);
+  const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}`, _fetchCtrl.signal);
 
   let terms = null;
   if (d && d.ok !== false && Array.isArray(d.terms)) {
@@ -895,13 +905,10 @@ async function fetchAll() {
     allData = terms;
     render();
   }
-  // 更新时间用后端 fetched_at（上次后台刷新时刻，6 小时一档稳定不变），
-  // 不用前端墙钟——刷新/切语言时时间不跳（issue 4）。
-  if (d && d.fetched_at) {
-    _lastFetchedAt = d.fetched_at;
-    lastUpdateEl.textContent = _fmtFetchedAt(_lastFetchedAt);
-  }
+  // 后台定时更新，不向前端展示更新时间（issue 4）。
+  if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
   fetching = false;
+  _fetchCtrl = null;
 }
 
 renderTopBanner();
