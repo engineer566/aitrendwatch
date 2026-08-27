@@ -842,15 +842,23 @@ async function fetchJSON(url) {
 }
 
 let fetching = false;
+// 缓存后端最近一次 fetched_at（Unix 秒）。刷新/切语言时复用，避免回退墙钟。
+let _lastFetchedAt = 0;
+function _fmtFetchedAt(ts) {
+  if (!ts) return "";
+  return t("updated") + new Date(ts * 1000).toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
+}
 async function fetchAll() {
   if (fetching) return;
   fetching = true;
-  lastUpdateEl.textContent = t("loading");
+  lastUpdateEl.textContent = _lastFetchedAt ? _fmtFetchedAt(_lastFetchedAt) : t("loading");
 
   // 首屏：优先用 SSR 注入的数据立即渲染，避免空骨架闪烁。
   // 但 SSR 只注入少量首屏卡（SSR_INITIAL_LIMIT），内容池远小于 /api/stream，
   // 若就此 return，rise/hot/new 三个 tab 只会在小池里排序，内容几乎一样、数量少。
   // 故：SSR 仅做即时渲染，随后立即异步拉取 /api/stream 全量数据替换。
+  // SSR 数据无 fetched_at，此处不更新时间（保持 loading 或上次后端时间），
+  // 等 /api/stream 返回后再设——避免用前端墙钟（issue 4）。
   const hadSSR = !allData.length;
   if (hadSSR) {
     try {
@@ -861,7 +869,6 @@ async function fetchAll() {
           allData = ssr;
           if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
           render();
-          lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
         }
       }
     } catch (e) {}
@@ -887,7 +894,12 @@ async function fetchAll() {
   if (terms) {
     allData = terms;
     render();
-    lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
+  }
+  // 更新时间用后端 fetched_at（上次后台刷新时刻，6 小时一档稳定不变），
+  // 不用前端墙钟——刷新/切语言时时间不跳（issue 4）。
+  if (d && d.fetched_at) {
+    _lastFetchedAt = d.fetched_at;
+    lastUpdateEl.textContent = _fmtFetchedAt(_lastFetchedAt);
   }
   fetching = false;
 }
