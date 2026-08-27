@@ -850,26 +850,30 @@ async function fetchAll() {
   if (fetching) return;
   fetching = true;
   lastUpdateEl.textContent = t("loading");
-  // 首屏：优先用 SSR 注入的数据，避免空骨架闪烁与重复请求
-  if (!allData.length) {
+
+  // 首屏：优先用 SSR 注入的数据立即渲染，避免空骨架闪烁。
+  // 但 SSR 只注入少量首屏卡（SSR_INITIAL_LIMIT），内容池远小于 /api/stream，
+  // 若就此 return，rise/hot/new 三个 tab 只会在小池里排序，内容几乎一样、数量少。
+  // 故：SSR 仅做即时渲染，随后立即异步拉取 /api/stream 全量数据替换。
+  const hadSSR = !allData.length;
+  if (hadSSR) {
     try {
       const raw = document.getElementById("initial-terms-data").textContent.trim();
       if (raw) {
         const ssr = JSON.parse(raw);
         if (Array.isArray(ssr) && ssr.length) {
           allData = ssr;
-          // SSR 数据无 dimension_list，用前端默认维度顺序补全分类条
           if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
           render();
           lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
-          fetching = false;
-          return;
         }
       }
     } catch (e) {}
-    listEl.innerHTML = skeletonHTML();
+    if (!allData.length) listEl.innerHTML = skeletonHTML();
   }
 
+  // 无论是否命中 SSR，都拉取全量 /api/stream 替换首屏小池，
+  // 保证 rise/hot/new 有足够大的内容池产生区分度，且数量稳定。
   const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}`);
 
   let terms = null;
@@ -877,14 +881,18 @@ async function fetchAll() {
     terms = d.terms;
     if (d.dimension_list) dimensionList = d.dimension_list;
     if (demoPill) demoPill.style.display = "none";
-  } else {
-    terms = MOCK_DATA().terms;   // 后端未就绪 → Mock 回退
+  } else if (!hadSSR) {
+    // 非 SSR 首屏且后端未就绪 → Mock 回退
+    terms = MOCK_DATA().terms;
     if (demoPill) demoPill.style.display = "inline-flex";
   }
+  // SSR 命中但 /api/stream 失败：保留 SSR 数据，不回退 Mock
 
-  allData = terms;
-  render();
-  lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
+  if (terms) {
+    allData = terms;
+    render();
+    lastUpdateEl.textContent = t("updated") + new Date().toLocaleTimeString(LANG === "en" ? "en-US" : "zh-CN");
+  }
   fetching = false;
 }
 

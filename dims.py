@@ -32,7 +32,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 from config import (CACHE_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL,
-                    DIMS_REFRESH_HOURS)
+                    DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
+
+try:
+    import news_store  # 历史持久化（issue 6）；失败不阻塞，get_news_cards 自动降级
+except Exception:
+    news_store = None
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -872,19 +877,45 @@ def get_news_cards(lang="zh"):
     """
     lang = lang if lang in ("zh", "en") else "zh"
     data, fetched_at = _file_cache_get()
-    if not data:
-        return [], fetched_at
     cards = []
-    for arr in data.get("dimensions", {}).values():
-        for c in arr:
-            pc = _project_card(c, lang)
-            pc["kind"] = "news"
-            pc["id"] = pc.get("official_url") or pc.get("title", "")
-            pc["hot"] = pc.get("hot") or pc.get("score", 0)
-            pc["official_label"] = pc.get("source", "")
-            pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
-                          else pc.get("summary_en", ""))
-            cards.append(pc)
+    if data:
+        for arr in data.get("dimensions", {}).values():
+            for c in arr:
+                pc = _project_card(c, lang)
+                pc["kind"] = "news"
+                pc["id"] = pc.get("official_url") or pc.get("title", "")
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
+                              else pc.get("summary_en", ""))
+                cards.append(pc)
+
+    # 合并历史库（issue 6）：当轮 cards 可能只有几十条（每维度前 10），
+    # 叠加历史库回溯近 NEWS_HISTORY_DAYS 天、上限 NEWS_HISTORY_LIMIT 条，
+    # 扩大内容池让 rise/hot/new 有区分度、内容更丰富。
+    # 去重按 official_url（id），当轮优先；历史卡补 kind/id/official_label/summary。
+    if news_store:
+        try:
+            hist = news_store.list_history_cards(
+                limit=NEWS_HISTORY_LIMIT, include_inactive=True,
+                days=NEWS_HISTORY_DAYS)
+            seen = {c.get("id") for c in cards if c.get("id")}
+            for hc in hist:
+                url = hc.get("official_url")
+                if not url or url in seen:
+                    continue
+                pc = _project_card(hc, lang)
+                pc["kind"] = "news"
+                pc["id"] = url
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
+                              else pc.get("summary_en", ""))
+                cards.append(pc)
+                seen.add(url)
+        except Exception:
+            pass
+
     return cards, fetched_at
 
 
@@ -918,6 +949,22 @@ def _cross_proc_lock(path):
             os.close(fd)
 
 
+def _persist_to_history(data):
+    """把本轮刷新的 cards 拍平后 upsert 到历史库（issue 6）。
+
+    data["dimensions"] 是 {dim: [cards]} 分组；拍平成一张列表交给
+    news_store.upsert_cards。score/trend/hot 已在 _to_card 里算好，
+    upsert 每次覆盖重算（满足 issue 6「每次刷新重算热度/趋势」）。
+    """
+    if not news_store or not data or not data.get("ok"):
+        return
+    cards = []
+    for arr in data.get("dimensions", {}).values():
+        cards.extend(arr)
+    if cards:
+        news_store.upsert_cards(cards)
+
+
 def _dims_refresh_once():
     if not _dims_refresh_lock.acquire(blocking=False):
         return True   # 同 worker 已在刷新，跳过
@@ -927,6 +974,14 @@ def _dims_refresh_once():
                 data = _fetch_dims_raw()
                 if data.get("ok"):
                     _file_cache_set(data, data["fetched_at"])
+                    # 持久化本轮 cards 到历史库（issue 6）。
+                    # 只在拿到锁的 worker 写，其他 worker 走 BlockingIOError 跳过，
+                    # 不会重复写。失败静默——news_store 内部已降级。
+                    if news_store:
+                        try:
+                            _persist_to_history(data)
+                        except Exception:
+                            pass
                     return True
                 return False
         except BlockingIOError:
