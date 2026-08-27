@@ -427,6 +427,31 @@ _SOURCE_WEIGHT = {
 }
 
 
+def _age_hours(published):
+    """published（YYYY-MM-DD）距今的小时数（当天 0 点 UTC 起算，最小 0）。
+
+    解析失败按 0 处理（视为「最新」，衰减最小）。
+    """
+    try:
+        if published:
+            d = datetime.strptime(published[:10], "%Y-%m-%d")
+            age = (datetime.utcnow() - d).total_seconds() / 3600
+        else:
+            age = 0
+        return max(age, 0)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _time_decay(published, gravity=1.5):
+    """HN 排名式时效衰减：1 / (age_hours + 2)^gravity。
+
+    gravity=1.5 时 age=0 → 0.354，age=168(7d) → 0.00056。
+    """
+    age_hours = _age_hours(published)
+    return 1.0 / pow(age_hours + 2, gravity)
+
+
 def _composite_score(hn, reddit_score, reddit_comments, published, region, source):
     """把 HN + Reddit 信号合成一个与 model likes 同量级的热度分。
 
@@ -434,20 +459,9 @@ def _composite_score(hn, reddit_score, reddit_comments, published, region, sourc
     - HN 乘 10 使 32 分约等于 320，与 Reddit 赞同量级。
     - HN/Reddit 都没命中（community<1）时，国内源按 _SOURCE_WEIGHT 兜底，
       国际源默认 20，国内其他默认 30。
-    返回 int（同时作为 score 和 trend）。
+    返回 int（作为 hot/累计热度排序键）。
     """
-    try:
-        # published 当天 0 点 UTC 起算的年龄（小时）
-        if published:
-            d = datetime.strptime(published[:10], "%Y-%m-%d")
-            age_hours = (datetime.utcnow() - d).total_seconds() / 3600
-        else:
-            age_hours = 0
-        age_hours = max(age_hours, 0)
-    except (ValueError, TypeError):
-        age_hours = 0
-    # HN 排名公式：1 / (age + 2)^1.5，age=0 时 decay=0.354，age=168(7d) 时≈0.00056
-    decay = 1.0 / pow(age_hours + 2, 1.5)
+    decay = _time_decay(published)
     community = hn * 10 + reddit_score + reddit_comments * 0.5
     if community < 1:
         # 兜底：按源权重给 floor
@@ -461,6 +475,43 @@ def _composite_score(hn, reddit_score, reddit_comments, published, region, sourc
     # 放大到与 likes 同量级（community 已是几百量级，乘 decay 后偏小，
     # 再乘 100 使近 1-2 天的热门国际新闻达到 ~1k-3k，与 model 中位 likes 2k 可比）
     return int(round(hot * 100))
+
+
+def _trend_score(hn, reddit_score, reddit_comments, published, region, source):
+    """news 卡的「上升势头」分 —— 与累计热度（_composite_score，作为 hot）解耦。
+
+    之前 trend = score，导致「上升最快」与「最热」对 news 卡排序完全相同。
+    这里让 trend 反映真实的「正在发酵」信号，与 hot 产生区分度：
+
+    - hot（_composite_score）：累计热度。无社区信号时按 _SOURCE_WEIGHT 给 floor，
+      保证国内源事件在「最热」里仍可见 —— 这是「热度」的合理表现。
+    - trend（本函数）：上升势头。无社区信号（HN/Reddit 都没命中）= 无上升势头，
+      直接给 0，让「上升最快」榜单只由真正在社区发酵的事件占据。
+      有社区信号时，用更陡的时效衰减（gravity=2.2）+ 近 24/48h 加权，
+      强化「近期正在升温」而非「累计热度高」。
+
+    效果对比（age 为距今小时数，community = hn*10 + reddit_score + reddit_comments*0.5）：
+      - 国内兜底事件（community=0）：hot 仍给 floor（最热里可见），trend=0（上升最快里沉底）
+      - 3 天前 strong 事件：hot 仍较高（累计热度），trend 衰减到接近 0（已过上升期）
+      - 今天强社区事件：hot 高，trend 更高（fresh_boost）—— 两者都靠前但顺序与 hot 不同
+    返回 int（与 hot 同量级，便于与 model 卡 trendingScore 混排）。
+    """
+    community = hn * 10 + reddit_score + reddit_comments * 0.5
+    if community < 1:
+        # 无社区信号 = 无上升势头，不占「上升最快」榜单（与 hot 的 floor 兜底形成区分）
+        return 0
+    age_hours = _age_hours(published)
+    # 更陡的衰减：1 / (age + 2)^2.2，age=0 时 0.217，age=48 时 0.0009，age=72 时 0.0003
+    decay = 1.0 / pow(age_hours + 2, 2.2)
+    # 近 24h 额外加权 1.6x，48h 内 1.2x，强化「正在上升」
+    if age_hours <= 24:
+        fresh_boost = 1.6
+    elif age_hours <= 48:
+        fresh_boost = 1.2
+    else:
+        fresh_boost = 1.0
+    trend = community * decay * fresh_boost
+    return int(round(trend * 100))
 
 
 def enrich_with_signals(items):
@@ -701,8 +752,13 @@ def _to_card(it):
             it.get("hn_points", 0), it.get("reddit_score", 0),
             it.get("reddit_comments", 0), it.get("published"),
             it.get("region"), it.get("source")),
+        # 上升势头分：更陡时效衰减 + 近 24/48h 加权，与 score 解耦，
+        # 让「上升最快」与「最热」对 news 卡产生不同排序（见 _trend_score）。
+        "trend":      _trend_score(
+            it.get("hn_points", 0), it.get("reddit_score", 0),
+            it.get("reddit_comments", 0), it.get("published"),
+            it.get("region"), it.get("source")),
     }
-    c["trend"] = c["score"]  # news 无历史快照，上升势头用当前热度
     c["hot"] = c["score"]
     return c
 
