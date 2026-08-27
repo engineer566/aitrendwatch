@@ -29,6 +29,11 @@ CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()
 # SQLite 数据库目录与路径（赞助位 + 统计）。
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 DB_PATH = os.path.join(DATA_DIR, "sponsors.db")
+NEWS_DB_PATH = os.environ.get("NEWS_DB_PATH", os.path.join(DATA_DIR, "news.db"))
+# 历史内容池最多回溯条数（issue 6：扩大内容，但上限控单次响应体积）
+NEWS_HISTORY_LIMIT = int(os.environ.get("NEWS_HISTORY_LIMIT", "400") or 400)
+# 历史回溯天数：仅展示近 N 天 published 的卡，过期内容不再进内容池
+NEWS_HISTORY_DAYS = int(os.environ.get("NEWS_HISTORY_DAYS", "30") or 30)
 
 # GeoLite2 离线国家库（监控页 IP 地域兜底；缺失则地域为 Unknown，不影响服务）。
 # 反代头（CF-IPCountry / X-Country-Code）优先，无头时才查此库。

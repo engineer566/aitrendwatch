@@ -10,9 +10,12 @@
 import re
 import json
 import time
+import base64
 import hmac
 import threading
 import hashlib
+import zlib
+import struct
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, urljoin
@@ -694,14 +697,46 @@ def sitemap():
     return Response("\n".join(body), mimetype="application/xml")
 
 
+# 预生成 favicon PNG（32×32，蓝色圆角底 + 白色“A”字标），纯标准库生成，
+# 内联为 data 以避免引入静态目录。PNG 是浏览器标签页兼容性最高的格式
+# （旧版 Chrome/Safari/Edge 不渲染 image/svg+xml favicon）。
+_FAVICON_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAApklEQVR42u2X"
+    "UQ6AMAhDuaEX88765wdhpMWyOJVkXxvtm4kDzFxs+3FEKwpkzy/LYpSkBBhC"
+    "ZAmZEWseQiAJaoALAj2MQrB67wJgtUoAGcQPMAXg23+B8hFqA2Ah1gFQVsP1"
+    "ABCDcll+PMDdWBugIkr3h0oxKUD1k7J5prx9aU7oqPdMvqlvz2pYV7cDA/jZ"
+    "QNVqIVrhdDQLIJwPleYZRDohdwN4vxPF7lV1CYFtagAAAABJRU5ErkJggg=="
+)
+_FAVICON_PNG = base64.b64decode(_FAVICON_PNG_B64)
+
+
 @app.route("/favicon.ico")
 def favicon():
-    # 内联最小 SVG（以 image/svg+xml 提供），避免 404 噪声。无需静态目录。
+    # 返回真实 PNG（而非 SVG），最大化浏览器标签页兼容性；附带一年强缓存
+    # 头，避免每次页面加载都重新请求 favicon。
+    resp = Response(_FAVICON_PNG, mimetype="image/x-icon")
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
+@app.route("/favicon.svg")
+def favicon_svg():
+    """现代浏览器可用的 SVG 版本（模板里作为更高优先级的 icon 引用）。"""
     svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
            '<rect width="32" height="32" rx="7" fill="#4f8cff"/>'
            '<text x="16" y="23" font-size="20" text-anchor="middle" '
-           'fill="#fff" font-family="sans-serif">🤖</text></svg>')
-    return Response(svg, mimetype="image/svg+xml")
+           'fill="#fff" font-family="sans-serif">A</text></svg>')
+    resp = Response(svg, mimetype="image/svg+xml")
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
+@app.route("/apple-touch-icon.png")
+def apple_touch_icon():
+    """iOS 添加到主屏幕用的图标（此处复用 32px PNG，浏览器会自行缩放）。"""
+    resp = Response(_FAVICON_PNG, mimetype="image/png")
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
 
 
 # ---------- 赞助位点击跳转 ----------

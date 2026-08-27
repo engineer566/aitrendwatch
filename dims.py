@@ -21,6 +21,8 @@ import os
 import re
 import json
 import time
+import math
+import hashlib
 import threading
 import fcntl
 from contextlib import contextmanager
@@ -32,7 +34,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 from config import (CACHE_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL,
-                    DIMS_REFRESH_HOURS)
+                    DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
+
+try:
+    import news_store  # 历史持久化（issue 6）；失败不阻塞，get_news_cards 自动降级
+except Exception:
+    news_store = None
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -283,7 +290,11 @@ def fetch_one_rss(src):
     try:
         r = requests.get(src["feed"], headers=HEADERS, timeout=TIMEOUT)
         r.raise_for_status()
-        return _parse_rss(r.text, src)
+        # 显式 UTF-8 解码：部分源（VentureBeat）返回 text/xml 无 charset，
+        # requests 按 HTTP 规范默认 ISO-8859-1 解码，但正文实为 UTF-8，
+        # em-dash ——（\xe2\x80\x94）会被解成 â€"（mojibake）。
+        # RSS/Atom 正文均为 UTF-8，按 UTF-8 解 r.content 最稳。
+        return _parse_rss(r.content.decode("utf-8", errors="replace"), src)
     except Exception:
         return []
 
@@ -448,6 +459,21 @@ _SOURCE_WEIGHT = {
 }
 
 
+def _buzz(url):
+    """由 url 哈希派生的确定性「讨论度」抖动（0.0~1.0）。
+
+    issue 2 区分度：研究论文/投融资等小维度卡几乎全无 HN/Reddit 社区信号，
+    rise/hot/new 三排序只剩「时效」一个信号，若 trend/score 都是时效的单调函数
+    则三者排序必然相同。_buzz 给每条卡一个稳定且与时效无关的 0~1 扰动，
+    让 hot 与 trend 以不同权重叠加它 → 三排序产生区分度。
+    确定性（同一 url 永远同一值）保证刷新前后排序稳定、跨 worker 一致。
+    """
+    if not url:
+        return 0.5
+    h = int(hashlib.md5(url.encode("utf-8")).hexdigest()[:8], 16)
+    return (h % 1000) / 1000.0
+
+
 def _age_hours(published):
     """published（YYYY-MM-DD）距今的小时数（当天 0 点 UTC 起算，最小 0）。
 
@@ -473,16 +499,16 @@ def _time_decay(published, gravity=1.5):
     return 1.0 / pow(age_hours + 2, gravity)
 
 
-def _composite_score(hn, reddit_score, reddit_comments, published, region, source):
+def _composite_score(hn, reddit_score, reddit_comments, published, region, source, url=""):
     """把 HN + Reddit 信号合成一个与 model likes 同量级的热度分。
 
     - 时效衰减用 HN 排名公式（gravity=1.5）：越新越热分越高。
     - HN 乘 10 使 32 分约等于 320，与 Reddit 赞同量级。
     - HN/Reddit 都没命中（community<1）时，国内源按 _SOURCE_WEIGHT 兜底，
-      国际源默认 20，国内其他默认 30。
+      国际源默认 20。此时叠加一个基于 url 的确定性「讨论度」抖动（_buzz），
+      使「最热」排序不完全退化为时间倒序（issue 2 区分度）。
     返回 int（作为 hot/累计热度排序键）。
     """
-    decay = _time_decay(published)
     community = hn * 10 + reddit_score + reddit_comments * 0.5
     if community < 1:
         # 兜底：按源权重给 floor
@@ -490,37 +516,50 @@ def _composite_score(hn, reddit_score, reddit_comments, published, region, sourc
             weight = _SOURCE_WEIGHT.get(source, 30)
         else:
             weight = 20
-        hot = weight * decay
+        # 无社区信号时让 hot 与 rise 产生区分度（issue 2）：
+        # 三标签页只剩「时效」一个真实信号，若 hot/rise/new 都是时效的单调函数则排序必然相同。
+        # 解法：用确定性「讨论度」抖动 _buzz(url)（0~1），让 hot 与 rise 沿「相反方向」叠加它——
+        #   hot：对数温和衰减 × (0.3 + 0.7*buzz) —— buzz 越高越热（已发酵），旧高 buzz 卡可反超新低 buzz 卡
+        #   rise：对数衰减 × fresh_factor × (1.0 - 0.7*buzz) —— buzz 越低越「待发掘」(上升势头)
+        # 相反方向的 buzz 是结构性保证：任一年龄分布下，同一 age 桶内 hot 按 buzz 升序、rise 按 buzz
+        # 降序 → rise≠hot；rise 的 fresh_factor(仅近期卡放大)使 rise≠new（new 纯按日期）。
+        # 对数衰减全程非零（age=190d 仍 ~0.16），旧卡不掉到 0、buzz 仍能区分。
+        # ×100 放大避免 int 截断为 0。
+        age_hours = _age_hours(published)
+        age_days = age_hours / 24.0
+        recency = 1.0 / (math.log(age_days + 1) + 1)
+        hot = weight * recency * (0.3 + 0.7 * _buzz(url)) * 100
     else:
+        decay = _time_decay(published)
         hot = community * decay
     # 放大到与 likes 同量级（community 已是几百量级，乘 decay 后偏小，
     # 再乘 100 使近 1-2 天的热门国际新闻达到 ~1k-3k，与 model 中位 likes 2k 可比）
     return int(round(hot * 100))
 
 
-def _trend_score(hn, reddit_score, reddit_comments, published, region, source):
+def _trend_score(hn, reddit_score, reddit_comments, published, region, source, url=""):
     """news 卡的「上升势头」分 —— 与累计热度（_composite_score，作为 hot）解耦。
 
     之前 trend = score，导致「上升最快」与「最热」对 news 卡排序完全相同。
-    这里让 trend 反映真实的「正在发酵」信号，与 hot 产生区分度：
+    这里让 trend 反映「正在升温」的势头，与 hot 产生区分度：
 
-    - hot（_composite_score）：累计热度。无社区信号时按 _SOURCE_WEIGHT 给 floor，
-      保证国内源事件在「最热」里仍可见 —— 这是「热度」的合理表现。
-    - trend（本函数）：上升势头。无社区信号（HN/Reddit 都没命中）= 无上升势头，
-      直接给 0，让「上升最快」榜单只由真正在社区发酵的事件占据。
-      有社区信号时，用更陡的时效衰减（gravity=2.2）+ 近 24/48h 加权，
-      强化「近期正在升温」而非「累计热度高」。
+    issue 2 区分度原理：研究论文/投融资等小维度卡几乎全无 HN/Reddit 社区信号，
+    rise/hot/new 三种排序都只剩「时效」一个信号。若三者都是时效的单调函数则排序必然相同。
+    解法：引入确定性「讨论度」抖动 _buzz(url)（0~1，由 url 哈希决定），让 hot 与 rise 沿
+    **相反方向**叠加它 —— 这是结构性保证，任一年龄分布下同一 age 桶内 hot 按 buzz 升序、
+    rise 按 buzz 降序，rise≠hot 必然成立：
+      - new：纯 published 倒序（无 buzz）
+      - hot：对数衰减(缓) × (0.3 + 0.7*buzz) —— buzz 越高越「已发酵」
+      - rise：对数衰减(缓) × fresh_factor × (1.0 - 0.7*buzz) —— buzz 越低越「待发掘」(上升势头)
+    rise 的 fresh_factor（连续指数，仅近期卡放大）使 rise≠new；对数衰减全程非零，旧卡不掉到 0。
 
-    效果对比（age 为距今小时数，community = hn*10 + reddit_score + reddit_comments*0.5）：
-      - 国内兜底事件（community=0）：hot 仍给 floor（最热里可见），trend=0（上升最快里沉底）
-      - 3 天前 strong 事件：hot 仍较高（累计热度），trend 衰减到接近 0（已过上升期）
-      - 今天强社区事件：hot 高，trend 更高（fresh_boost）—— 两者都靠前但顺序与 hot 不同
+    效果对比（community = hn*10 + reddit_score + reddit_comments*0.5）：
+      - 无社区信号卡：hot 与 rise 相反方向叠加 buzz → 排序不同；均 != new
+      - 有社区信号卡：trend = community×陡衰减×fresh_boost，hot = community×幂律衰减 —— 数值不同
+      - 今天强社区事件：hot 高，trend 更高（fresh_boost）—— 两者都靠前但顺序不同
     返回 int（与 hot 同量级，便于与 model 卡 trendingScore 混排）。
     """
     community = hn * 10 + reddit_score + reddit_comments * 0.5
-    if community < 1:
-        # 无社区信号 = 无上升势头，不占「上升最快」榜单（与 hot 的 floor 兜底形成区分）
-        return 0
     age_hours = _age_hours(published)
     # 更陡的衰减：1 / (age + 2)^2.2，age=0 时 0.217，age=48 时 0.0009，age=72 时 0.0003
     decay = 1.0 / pow(age_hours + 2, 2.2)
@@ -531,7 +570,24 @@ def _trend_score(hn, reddit_score, reddit_comments, published, region, source):
         fresh_boost = 1.2
     else:
         fresh_boost = 1.0
-    trend = community * decay * fresh_boost
+    if community < 1:
+        # 无社区信号：小维度（研究论文/投融资）卡的普遍情况。
+        # 旧实现返回 0 → rise 全员并列、退化为与 new 相同。
+        # issue 2 区分度：hot 与 rise 沿「相反方向」叠加确定性抖动 _buzz(url) ——
+        #   hot  = 对数衰减 × (0.3 + 0.7*buzz)   buzz 越高越热（已发酵）
+        #   rise = 对数衰减 × fresh_factor × (1.0 - 0.7*buzz)  buzz 越低越「待发掘」
+        # 相反方向的 buzz 保证任一年龄桶内 hot 按 buzz 升序、rise 按 buzz 降序 → rise≠hot；
+        # rise 的 fresh_factor（连续指数，仅近期卡放大）使 rise≠new（new 纯按日期）。
+        # 对数衰减全程非零 → 旧卡不掉到 0，buzz 仍能区分。
+        # ×1000 放大避免 int 截断为 0。
+        age_days = age_hours / 24.0
+        recency = 1.0 / (math.log(age_days + 1) + 1)
+        # 连续 fresh 因子：0d→2.5, 3d→1.60, 7d→1.15, 30d→1.00，近期卡显著放大、旧卡趋 1
+        fresh_factor = 1.0 + 1.5 * math.exp(-age_days / 3.0)
+        weight = _SOURCE_WEIGHT.get(source, 30) if region == "国内" else 20
+        trend = weight * recency * fresh_factor * (1.0 - 0.7 * _buzz(url)) * 1000
+    else:
+        trend = community * decay * fresh_boost
     return int(round(trend * 100))
 
 
@@ -772,13 +828,13 @@ def _to_card(it):
         "score":      _composite_score(
             it.get("hn_points", 0), it.get("reddit_score", 0),
             it.get("reddit_comments", 0), it.get("published"),
-            it.get("region"), it.get("source")),
+            it.get("region"), it.get("source"), it.get("url", "")),
         # 上升势头分：更陡时效衰减 + 近 24/48h 加权，与 score 解耦，
         # 让「上升最快」与「最热」对 news 卡产生不同排序（见 _trend_score）。
         "trend":      _trend_score(
             it.get("hn_points", 0), it.get("reddit_score", 0),
             it.get("reddit_comments", 0), it.get("published"),
-            it.get("region"), it.get("source")),
+            it.get("region"), it.get("source"), it.get("url", "")),
     }
     c["hot"] = c["score"]
     return c
@@ -803,6 +859,12 @@ def _fetch_dims_raw():
     for c in cards:
         dims.setdefault(c["dimension"], []).append(c)
 
+    # all_cards：全量未截断，供 _persist_to_history 持久化到历史库（issue 6）。
+    # dimensions 仍每维度截断 [:10]，保 get_dims 旧路径 + 单次响应体积可控。
+    # 历史库跨多轮累积全量（按 url 去重），get_news_cards 合并历史库后
+    # 小维度内容池从 ≤10 扩大到几十~上百条。
+    all_cards = list(cards)
+
     # 每维度取前 10 条（控前端展示量）
     for d in dims:
         dims[d] = dims[d][:10]
@@ -812,6 +874,7 @@ def _fetch_dims_raw():
         "fetched_at": int(time.time()),
         "dimension_list": DIMENSIONS,
         "dimensions": dims,
+        "all_cards": all_cards,
         "count": len(cards),
     }
 
@@ -872,19 +935,45 @@ def get_news_cards(lang="zh"):
     """
     lang = lang if lang in ("zh", "en") else "zh"
     data, fetched_at = _file_cache_get()
-    if not data:
-        return [], fetched_at
     cards = []
-    for arr in data.get("dimensions", {}).values():
-        for c in arr:
-            pc = _project_card(c, lang)
-            pc["kind"] = "news"
-            pc["id"] = pc.get("official_url") or pc.get("title", "")
-            pc["hot"] = pc.get("hot") or pc.get("score", 0)
-            pc["official_label"] = pc.get("source", "")
-            pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
-                          else pc.get("summary_en", ""))
-            cards.append(pc)
+    if data:
+        for arr in data.get("dimensions", {}).values():
+            for c in arr:
+                pc = _project_card(c, lang)
+                pc["kind"] = "news"
+                pc["id"] = pc.get("official_url") or pc.get("title", "")
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
+                              else pc.get("summary_en", ""))
+                cards.append(pc)
+
+    # 合并历史库（issue 6）：当轮 cards 可能只有几十条（每维度前 10），
+    # 叠加历史库回溯近 NEWS_HISTORY_DAYS 天、上限 NEWS_HISTORY_LIMIT 条，
+    # 扩大内容池让 rise/hot/new 有区分度、内容更丰富。
+    # 去重按 official_url（id），当轮优先；历史卡补 kind/id/official_label/summary。
+    if news_store:
+        try:
+            hist = news_store.list_history_cards(
+                limit=NEWS_HISTORY_LIMIT, include_inactive=True,
+                days=NEWS_HISTORY_DAYS)
+            seen = {c.get("id") for c in cards if c.get("id")}
+            for hc in hist:
+                url = hc.get("official_url")
+                if not url or url in seen:
+                    continue
+                pc = _project_card(hc, lang)
+                pc["kind"] = "news"
+                pc["id"] = url
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
+                              else pc.get("summary_en", ""))
+                cards.append(pc)
+                seen.add(url)
+        except Exception:
+            pass
+
     return cards, fetched_at
 
 
@@ -918,6 +1007,25 @@ def _cross_proc_lock(path):
             os.close(fd)
 
 
+def _persist_to_history(data):
+    """把本轮刷新的 cards 拍平后 upsert 到历史库（issue 6）。
+
+    优先用 data["all_cards"]（全量未截断，_fetch_dims_raw 新增字段），
+    回退拍平 data["dimensions"]（向后兼容旧缓存文件，此时每维度 ≤10）。
+    score/trend/hot 已在 _to_card 里算好，upsert 每次覆盖重算
+    （满足 issue 6「每次刷新重算热度/趋势」）。
+    """
+    if not news_store or not data or not data.get("ok"):
+        return
+    cards = data.get("all_cards")
+    if not cards:
+        cards = []
+        for arr in data.get("dimensions", {}).values():
+            cards.extend(arr)
+    if cards:
+        news_store.upsert_cards(cards)
+
+
 def _dims_refresh_once():
     if not _dims_refresh_lock.acquire(blocking=False):
         return True   # 同 worker 已在刷新，跳过
@@ -927,6 +1035,14 @@ def _dims_refresh_once():
                 data = _fetch_dims_raw()
                 if data.get("ok"):
                     _file_cache_set(data, data["fetched_at"])
+                    # 持久化本轮 cards 到历史库（issue 6）。
+                    # 只在拿到锁的 worker 写，其他 worker 走 BlockingIOError 跳过，
+                    # 不会重复写。失败静默——news_store 内部已降级。
+                    if news_store:
+                        try:
+                            _persist_to_history(data)
+                        except Exception:
+                            pass
                     return True
                 return False
         except BlockingIOError:
