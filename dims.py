@@ -65,19 +65,33 @@ DIMS_CACHE_TTL = 7200           # 文件缓存兜底有效期：2 小时
 _file_cache = {}
 _file_cache_lock = threading.Lock()
 _file_cache_loaded = False
+_file_cache_mtime = 0  # 上次加载时 dims.json 的 mtime；用于跨 worker 感知磁盘刷新
 
 
-def _load_file_cache():
-    global _file_cache_loaded
+def _load_file_cache(force=False):
+    """加载 dims.json 到内存缓存。
+
+    单次加载后，通过比较磁盘 mtime 决定是否需要重新读盘——这样后台刷新线程
+    （或另一个 gunicorn worker）写出新 dims.json 后，所有 worker 都能在下次
+    请求时自动收敛到最新缓存，避免长驻 worker 永远持有旧数据。
+    """
+    global _file_cache_loaded, _file_cache_mtime
     with _file_cache_lock:
-        if _file_cache_loaded:
-            return
         try:
-            with open(DIMS_CACHE_FILE, "r", encoding="utf-8") as f:
-                _file_cache.update(json.load(f))
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            pass
+            cur_mtime = os.path.getmtime(DIMS_CACHE_FILE)
+        except OSError:
+            cur_mtime = 0
+        # 已加载且磁盘未变化 → 直接复用内存缓存
+        if _file_cache_loaded and not force and cur_mtime == _file_cache_mtime:
+            return
+        if cur_mtime:
+            try:
+                with open(DIMS_CACHE_FILE, "r", encoding="utf-8") as f:
+                    _file_cache.update(json.load(f))
+            except (json.JSONDecodeError, OSError):
+                pass
         _file_cache_loaded = True
+        _file_cache_mtime = cur_mtime
 
 
 def _save_file_cache():
@@ -104,6 +118,13 @@ def _file_cache_set(data, fetched_at):
     with _file_cache_lock:
         _file_cache["dims"] = {"data": data, "fetched_at": fetched_at}
     _save_file_cache()
+    # 写盘后立即同步 mtime，避免本 worker 下次 _load_file_cache 误判磁盘变化而重读
+    global _file_cache_mtime
+    try:
+        with _file_cache_lock:
+            _file_cache_mtime = os.path.getmtime(DIMS_CACHE_FILE)
+    except OSError:
+        pass
 
 
 # ---------- RSS 源定义 ----------
