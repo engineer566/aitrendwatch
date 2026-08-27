@@ -103,8 +103,6 @@
   }
   .header-right { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); }
 
-  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; box-shadow: 0 0 0 0 rgba(62,207,142,.7); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(62,207,142,.6)} 70%{box-shadow:0 0 0 8px rgba(62,207,142,0)} 100%{box-shadow:0 0 0 0 rgba(62,207,142,0)} }
   button { cursor: pointer; border: none; background: none; color: inherit; font: inherit; }
   .btn { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--text-dim); transition: all .15s; font-size: 13px; }
   .btn:hover { color: var(--text); border-color: var(--accent); }
@@ -284,7 +282,6 @@
       <kbd>/</kbd>
     </div>
     <div class="header-right">
-      <span><span class="live-dot"></span> <span class="live-label">实时</span></span>
       <span id="last-update">—</span>
       <button class="btn" id="lang-btn" title="切换语言 / Toggle language">EN</button>
       <button class="btn" id="theme-btn" title="切换深浅色">🌙</button>
@@ -371,7 +368,6 @@ const I18N = {
   zh: {
     site_subtitle: "AI 热点聚合",
     search_ph: "搜索热点 / 作者…",
-    live: "实时",
     all: "全部",
     sort_rise: "📈 上升最快", sort_hot: "🔥 最热", sort_new: "🕒 最新",
     loading: "加载中…",
@@ -390,7 +386,6 @@ const I18N = {
   en: {
     site_subtitle: "AI Trend Aggregator",
     search_ph: "Search trends / authors…",
-    live: "Live",
     all: "All",
     sort_rise: "📈 Trending", sort_hot: "🔥 Hottest", sort_new: "🕒 Newest",
     loading: "Loading…",
@@ -451,7 +446,6 @@ const langBtn = document.getElementById("lang-btn");
 function localizeStatic() {
   document.title = `{{ site_name }} · ${t("site_subtitle")}`;
   searchInput.placeholder = t("search_ph");
-  document.querySelector(".live-label").textContent = t("live");
   document.querySelectorAll("#sort-seg button").forEach(b => {
     if (b.dataset.sort === "rise") b.textContent = t("sort_rise");
     if (b.dataset.sort === "hot")  b.textContent = t("sort_hot");
