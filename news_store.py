@@ -65,11 +65,38 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_news_published ON news_cards(published DESC);
             CREATE INDEX IF NOT EXISTS idx_news_dim ON news_cards(dimension);
         """)
+        _migrate(conn)
         conn.commit()
         conn.close()
         _DB_OK = True
     except Exception:
         _DB_OK = False
+
+
+# 旧维度枚举 → 新 6 类（2026-08 词维度重构）。只更新命中旧枚举的行，幂等。
+_DIM_MIGRATION = {
+    "模型发布": "模型与技术",
+    "产品发布": "产品与应用",
+    "研究论文": "研究与论文",
+    "投融资":   "商业与投融资",
+    "行业动态": "政策与行业",
+}
+
+
+def _migrate(conn):
+    """幂等迁移：① news_cards 加 keywords 列；② dimension 旧值映射到新枚举。"""
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(news_cards)")}
+        if "keywords" not in cols:
+            conn.execute("ALTER TABLE news_cards ADD COLUMN keywords TEXT DEFAULT '[]'")
+    except Exception:
+        pass
+    try:
+        for old, new in _DIM_MIGRATION.items():
+            conn.execute("UPDATE news_cards SET dimension=? WHERE dimension=?",
+                         (new, old))
+    except Exception:
+        pass
 
 
 def _conn():
@@ -103,13 +130,13 @@ def upsert_cards(cards):
                     url, title, title_zh, title_en, summary_zh, summary_en,
                     dimension, source, region, published,
                     hn_points, reddit_score, reddit_comments,
-                    score, trend, hot,
+                    score, trend, hot, keywords,
                     first_seen_at, last_refresh_at, active
                 ) VALUES (
                     :url, :title, :title_zh, :title_en, :summary_zh, :summary_en,
                     :dimension, :source, :region, :published,
                     :hn_points, :reddit_score, :reddit_comments,
-                    :score, :trend, :hot,
+                    :score, :trend, :hot, :keywords,
                     :first_seen_at, :last_refresh_at, 1
                 )
                 ON CONFLICT(url) DO UPDATE SET
@@ -128,6 +155,7 @@ def upsert_cards(cards):
                     score=excluded.score,
                     trend=excluded.trend,
                     hot=excluded.hot,
+                    keywords=excluded.keywords,
                     last_refresh_at=excluded.last_refresh_at,
                     active=1
                 """,
@@ -173,10 +201,26 @@ def _card_to_row(c, now):
         "score": int(c.get("score", 0) or 0),
         "trend": int(c.get("trend", 0) or 0),
         "hot": int(c.get("hot", 0) or c.get("score", 0) or 0),
+        # keywords 统一落 JSON 数组字符串（canonical 词键），list/str 输入都兼容
+        "keywords": _keywords_to_json(c.get("keywords")),
         # ON CONFLICT 不更新 first_seen_at，这里给新行用；旧行被覆盖忽略
         "first_seen_at": now,
         "last_refresh_at": now,
     }
+
+
+def _keywords_to_json(kw):
+    """keywords 输入归一成 JSON 数组字符串：list → dump；已是 JSON 串 → 校验后原样。"""
+    if isinstance(kw, list):
+        return json.dumps([str(k) for k in kw][:8], ensure_ascii=False)
+    if isinstance(kw, str) and kw.strip():
+        try:
+            v = json.loads(kw)
+            if isinstance(v, list):
+                return json.dumps([str(k) for k in v][:8], ensure_ascii=False)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return "[]"
 
 
 # ---------- 读：合并历史库扩大内容池 ----------
@@ -245,8 +289,9 @@ def search_history(query, lang="zh", limit=50):
                   OR summary_en LIKE ? ESCAPE '\\'
                   OR source LIKE ? ESCAPE '\\'
                   OR dimension LIKE ? ESCAPE '\\'
+                  OR keywords LIKE ? ESCAPE '\\'
                ORDER BY score DESC, published DESC LIMIT ?""",
-            (q, q, q, q, q, q, limit),
+            (q, q, q, q, q, q, q, limit),
         ).fetchall()
         conn.close()
         return [_row_to_card(r) for r in rows]
@@ -274,7 +319,17 @@ def _row_to_card(r):
         "score": d.get("score", 0),
         "trend": d.get("trend", 0),
         "hot": d.get("hot", 0) or d.get("score", 0),
+        "keywords": _json_to_keywords(d.get("keywords")),
     }
+
+
+def _json_to_keywords(s):
+    """DB keywords 列（JSON 数组字符串）→ list；任何异常 → []。"""
+    try:
+        v = json.loads(s or "[]")
+        return [str(k) for k in v] if isinstance(v, list) else []
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return []
 
 
 init_db()

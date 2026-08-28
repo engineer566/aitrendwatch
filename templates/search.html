@@ -151,6 +151,11 @@
     color: var(--purple);
   }
   .result-kind.model { background: color-mix(in srgb, var(--cyan) 18%, transparent); color: var(--cyan); }
+  .result-kind.word { background: color-mix(in srgb, var(--purple) 18%, transparent); color: var(--purple); }
+  .word-hits { margin-bottom: 14px; }
+  .word-hits-title { font-size: 13px; font-weight: 700; color: var(--text-dim); margin: 0 0 8px; }
+  .word-hit-card { border-color: color-mix(in srgb, var(--purple) 40%, transparent); }
+  .go-detail { color: var(--accent); }
   .result-title {
     font-size: 15px; font-weight: 600; line-height: 1.45; margin-bottom: 6px;
   }
@@ -252,6 +257,32 @@
     <span class="pill">📅 {{ '含' if lang == 'zh' else 'incl.' }} {{ history_hits }} {{ '条历史归档' if lang == 'zh' else 'archive' }}</span>
     {% endif %}
   </div>
+
+  {% if word_hits %}
+    <div class="word-hits">
+      <div class="word-hits-title">🔤 {{ '热词命中' if lang == 'zh' else 'Hot words' }}</div>
+      {% for wh in word_hits %}
+      {% set wname = wh.term_display or wh.term or wh.id %}
+      <div class="result-card word-hit-card">
+        <div class="result-head">
+          <span class="result-kind word">🔤 {{ '热词' if lang == 'zh' else 'Word' }}</span>
+          {% if wh.origin == 'hf' %}<span class="result-source">🤗 HF</span>{% elif wh.origin == 'both' %}<span class="result-source">📰+🤗</span>{% endif %}
+          <span class="result-score">{{ '相关度' if lang == 'zh' else 'score' }} {{ "%.1f"|format(wh._score) }}</span>
+        </div>
+        <div class="result-title">
+          <a href="/term/{{ wh.id }}" data-q="{{ q }}" data-url="/term/{{ wh.id }}">
+            {% if wh._highlight_term %}{{ wh._highlight_term|safe }}{% else %}{{ wname }}{% endif %}
+          </a>
+        </div>
+        <div class="result-foot">
+          {% if wh.news_cnt %}<span>📄 <strong>{{ wh.news_cnt }}</strong> {{ '篇报道' if lang == 'zh' else 'reports' }}</span>{% endif %}
+          {% if wh.hot %}<span>🔥 <strong>{{ wh.hot }}</strong></span>{% endif %}
+          <span class="go-detail">→ {{ '查看聚合页' if lang == 'zh' else 'View page' }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 
   {% if terms %}
     <div id="results">

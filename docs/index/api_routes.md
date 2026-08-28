@@ -2,13 +2,15 @@
 
 > 全部 37 条路由（含 errorhandler），按功能分组。每条带 `app.py:行号` 便于跳读。
 > 配合 [INDEX.md](../INDEX.md) 使用。
+> 注：词维度重构（2026-08）后 `/api/trending` `/api/top` `/api/term/<name>` 三个旧
+> tracker JSON API 已删除（词聚合由 `/api/stream?view=words` 承担）。
 
 ## 页面路由（HTML）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 | 备注 |
 |------|------|------|------|------|------|
-| `/` | GET | `index` | `app.py:472` | 首页主单页 | 记 PV/visit/曝光，SSR 首批热词，前端 JS 再拉 `/api/stream` |
-| `/term/<path:term_name>` | GET | `term_detail` | `app.py:542` | 单热词详情页（SEO 长尾） | 进程内 TTL 缓存（1800s）；未找到 → 404 |
+| `/` | GET | `index` | `app.py:472` | 首页主单页（词视图为主 + 逐条新闻 tab） | 记 PV/visit/曝光，SSR 首批词卡，前端 JS 再拉 `/api/stream` |
+| `/term/<path:term_name>` | GET | `term_detail` | `app.py:615` | 通用热词聚合页（SEO 长尾）：任何词有页——相关报道聚合 + 词热度；HF 词额外含官方/社区/arXiv 区块 | 进程内 TTL 缓存；未找到 → 404 |
 | `/terms` | GET | `terms` | `app.py:571` | 服务条款页（中英双语） | 静态文案，`SITE_TERMS_UPDATED` 常量 |
 | `/admin/login` | GET,POST | `admin_login` | `app.py:773` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身 |
 | `/admin` | GET | `admin_home` | `app.py:797` | 赞助位管理后台 | 需 admin |
@@ -24,20 +26,13 @@
 | `/api/hot/<source>` | GET | `api_hot` | `app.py:502` | 单源热点（带硬性超时 `SOURCE_DEADLINE`） |
 | `/api/all` | GET | `api_all` | `app.py:507` | 并发聚合所有 8 源 |
 
-### 热词追踪（tracker 层）
-
-| 路径 | 方法 | 函数 | 行号 | 功能 |
-|------|------|------|------|------|
-| `/api/trending` | GET | `api_trending` | `app.py:524` | 7 日上升最快热词（HF trendingScore） |
-| `/api/top` | GET | `api_top` | `app.py:530` | 热度最高热词（HF likes） |
-| `/api/term/<path:term_name>` | GET | `api_term` | `app.py:536` | 单热词详情 JSON（官方链接+社区+论文） |
-
-### 维度事件层（dims 层）
+### 词维度层（词维度重构后主功能）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
 | `/api/dims` | GET | `api_dims` | `app.py:600` | 按 AI 维度分组的热点卡；`?dimension=` `?lang=zh/en` |
-| `/api/stream` | GET | `api_stream` | `app.py:608` | **统一卡片流**（model+news 合并），前端主数据源；`?lang=` `?sort=rise/hot/new` |
+| `/api/stream` | GET | `api_stream` | `app.py:687` | **统一卡片流**，前端主数据源；`?view=words\|news`（默认 words）+ `?lang=` `?sort=rise/hot/new`。words 视图词卡（热度=报道聚合+HF likes、上升=环比、最新=新奇度新词发现）；news 视图 model+news 逐条（旧逻辑零回归） |
+| `/api/word/<term>` | GET | `api_word` | `app.py:744` | 单词聚合 JSON：词元信息 + 全量关联报道（≤50）；词卡「展开更多」与详情页共用 |
 
 ### 系统
 
