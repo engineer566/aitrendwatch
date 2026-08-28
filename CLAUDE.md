@@ -19,6 +19,19 @@
 验证 dims 逻辑时，断言降级路径即可（`dimension == default_dim`、
 `title_zh == 原标题`、`summary_zh == 原标题前 30 字`）。
 
+## 代码索引（降低 token 理解成本）
+
+项目在 `docs/INDEX.md` 维护了一套多级代码索引，**agent 进场应先读它**，
+用「模块速查表」+「按任务跳转表」定位目标模块/函数/路由，再按需精读单文件，
+避免逐文件全量扫描。L2 索引按主题分文件：`docs/index/architecture.md`（架构/
+数据流/后台预热）、`api_routes.md`（37 条路由）、`modules.md`（6 模块函数）、
+`frontend.md`（6 模板）、`data_flow.md`（外部源/SQLite/环境变量）。
+
+- 索引条目均带 `file:行号` 锚点，可直接跳读对应源码段。
+- **`vendor/`（~13 万行 vendored 依赖）永远不读、不索引、不改**——读它是巨量 token 噪音。
+- 同理 `cache/`、`data/`、`__pycache__/` 是运行产物/字节码，不读。
+- 改动代码后顺手更新对应索引条目，保持行号与描述同步。
+
 ## 工作流约定
 
 - 多特性并行开发：各 agent 在独立 worktree（`.claude/worktrees/` 或
