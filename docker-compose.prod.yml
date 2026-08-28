@@ -11,6 +11,7 @@ services:
       - ./tracker.py:/app/tracker.py:ro
       - ./dims.py:/app/dims.py:ro
       - ./news_store.py:/app/news_store.py:ro
+      - ./terms.py:/app/terms.py:ro
       - ./templates:/app/templates:ro
       - ./vendor:/app/vendor:ro
       - ./cache:/app/cache:rw
