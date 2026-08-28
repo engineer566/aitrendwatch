@@ -428,7 +428,7 @@ const sortSeg = document.getElementById("sort-seg");
 let allData = [];            // 统一卡片流全量数据（model + news）
 let currentCat = "all";      // 当前维度筛选：all 或维度中文 key
 let currentSort = "rise";    // rise / hot / new
-let query = "";
+// v2: 搜索已独立为 /search 页面，首页不再持有本地 query 状态
 let LANG = "{{ default_lang or 'zh' }}";   // zh | en（SSR 注入默认，可被 localStorage / ?lang= 覆盖）
 let dimensionList = [];      // 后端下发的维度顺序
 
@@ -498,54 +498,27 @@ themeBtn.addEventListener("click", () => {
 paintThemeBtn();
 
 // ==================== 搜索 ====================
-// 搜索体验：本地即时过滤（已加载卡片，毫秒级）+ 后端历史库搜索（防抖 350ms，
-// 跨近 30 天归档 news + 当轮 model 卡，扩大召回）。后端结果到达后合并去重，
-// 让用户既能秒看到当前流匹配，又能搜到不在当前流里的历史内容。
-// 每次后端搜索会落库 search_queries，供后台监控页统计热门搜索词。
-let _searchTimer = null;
-let _searchCtrl = null;          // 当前 /api/search 请求的 AbortController
-let _searchResultQuery = "";     // 最近一次后端结果对应的 query（避免乱序覆盖）
-let _searchExtra = [];           // 后端搜出的、当前流之外的额外卡（合并进渲染）
-function runBackendSearch(rawQ) {
-  // 防抖：350ms 内连续输入只发最后一次；切语言/清空时 abort 旧请求
-  if (_searchTimer) clearTimeout(_searchTimer);
-  if (_searchCtrl) { try { _searchCtrl.abort(); } catch (e) {} _searchCtrl = null; }
-  if (!rawQ) {
-    _searchExtra = []; _searchResultQuery = ""; render(); return;
-  }
-  _searchTimer = setTimeout(async () => {
-    _searchCtrl = new AbortController();
-    const url = `/api/search?q=${encodeURIComponent(rawQ)}&lang=${encodeURIComponent(LANG)}&limit=50`;
-    try {
-      const res = await fetch(url, { signal: _searchCtrl.signal });
-      if (!res.ok) return;
-      const d = await res.json();
-      if (_searchResultQuery && rawQ !== _searchResultQuery) return;  // 旧结果迟到，丢弃
-      _searchResultQuery = rawQ;
-      const terms = (d && Array.isArray(d.terms)) ? d.terms : [];
-      // 去重：后端结果里去掉当前 allData 已有的卡（按 id/title），余下作为 extra
-      const localIds = new Set(allData.map(t => t.id || t.full_id || t.term || t.official_url || t.title));
-      _searchExtra = terms.filter(t => {
-        const id = t.id || t.full_id || t.term || t.official_url || t.title;
-        return !localIds.has(id);
-      });
-      render();
-    } catch (e) {}
-  }, 350);
+// v2：搜索是独立的结果页（/search?q=...），不再是首页的「混合过滤器」。
+// - 按 Enter / 点击搜索图标 → 跳转到 /search?q=...&lang=...
+// - 搜索词会落 search_queries 表（服务端在 /search 路由记录），前端不再调用 /api/search。
+// - 快捷键 / 聚焦搜索框（与旧版一致）。
+function goSearch(q) {
+  q = (q || "").trim();
+  if (!q) return;   // 空 query 不跳转，停留在首页
+  window.location.href = "/search?q=" + encodeURIComponent(q) + "&lang=" + LANG;
 }
-searchInput.addEventListener("input", () => {
-  query = searchInput.value.trim().toLowerCase();
-  render();
-  runBackendSearch(searchInput.value.trim());
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    goSearch(searchInput.value);
+  } else if (e.key === "Escape") {
+    searchInput.value = "";
+    searchInput.blur();
+  }
 });
 document.addEventListener("keydown", e => {
   if (e.key === "/" && document.activeElement !== searchInput) {
-    e.preventDefault(); searchInput.focus();
-  } else if (e.key === "Escape" && document.activeElement === searchInput) {
-    searchInput.value = ""; query = ""; _searchExtra = []; _searchResultQuery = "";
-    if (_searchTimer) clearTimeout(_searchTimer);
-    if (_searchCtrl) { try { _searchCtrl.abort(); } catch (e) {} _searchCtrl = null; }
-    render(); searchInput.blur();
+    e.preventDefault(); searchInput.focus(); searchInput.select();
   }
 });
 
@@ -828,27 +801,8 @@ function skeletonHTML() {
 function visibleData() {
   let items = allData;
   if (currentCat !== "all") items = items.filter(t => (t.dimension || "其他") === currentCat);
-  if (query) {
-    const q = query.toLowerCase();
-    items = items.filter(t =>
-      (t.title||"").toLowerCase().includes(q) ||
-      (t.term||"").toLowerCase().includes(q) ||
-      (t.summary||"").toLowerCase().includes(q) ||
-      (t.source||"").toLowerCase().includes(q) ||
-      (t.author||"").toLowerCase().includes(q));
-    // 合并后端历史库搜索的额外结果（当前流之外的匹配卡），扩大召回
-    if (currentCat === "all") {
-      const localIds = new Set(items.map(t => t.id || t.full_id || t.term || t.official_url || t.title));
-      const extra = _searchExtra.filter(t => {
-        const id = t.id || t.full_id || t.term || t.official_url || t.title;
-        return !localIds.has(id);
-      });
-      items = items.concat(extra);
-    } else {
-      // 选了维度时，extra 也要按维度过滤
-      items = items.concat(_searchExtra.filter(t => (t.dimension || "其他") === currentCat));
-    }
-  }
+  // v2: 首页不再做 query 过滤——搜索已独立为 /search 页面，避免「混合过滤器」体验。
+  // 用户在搜索框输入后按 Enter 跳转 /search?q=... 看独立结果（带相关性打分 + <mark> 高亮）。
   // 统一排序键：rise→trend, hot→score, new→published
   const key = { rise: "trend", hot: "score", new: "published" }[currentSort];
   return [...items].sort((a, b) => {
@@ -870,7 +824,7 @@ function render() {
   }
   const items = visibleData();
   if (!items.length) {
-    listEl.innerHTML = `<div class="state">${t("empty")}${query ? `${t("empty_q")}${escapeHtml(query)}」)` : ""}</div>`;
+    listEl.innerHTML = `<div class="state">${t("empty")}</div>`;  // v2: 首页无 query，搜索走独立 /search 页面
     return;
   }
   // 每 N 张热点卡后插一张 inline 赞助卡；无自建 inline 时联盟广告补位

@@ -132,6 +132,18 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_search_date ON search_queries(date);
             CREATE INDEX IF NOT EXISTS idx_search_query ON search_queries(query);
+            -- v2: 搜索结果点击追踪 → 计算「搜索→点击」漏斗
+            CREATE TABLE IF NOT EXISTS search_clicks (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                query   TEXT NOT NULL,             -- 用户搜的词（trim+限长）
+                url     TEXT,                      -- 用户点的链接（result.url），用于回查是哪条结果
+                ip      TEXT,
+                country TEXT,
+                ts      TEXT NOT NULL,
+                date    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_click_query_date ON search_clicks(query, date);
+            CREATE INDEX IF NOT EXISTS idx_click_date ON search_clicks(date);
         """)
         conn.commit()
         _DB_OK = True
@@ -531,6 +543,106 @@ def search_stats(days=30, top_n=20):
         }
     except Exception:
         return empty
+
+
+def record_search_click(query, url=None, ip=None, country=None):
+    """记录一次「搜索结果点击」到 search_clicks 表。
+
+    best-effort，与 record_search_query 同模式。每次用户点了搜索结果卡里的
+    链接就落一条；供监控漏斗：哪些搜索词真的有转化（点击率 = clicks / searches）。
+    """
+    if not _DB_OK or not config.ANALYTICS_ENABLED:
+        return
+    q = (query or "").strip()[:80]
+    u = (url or "").strip()[:500]
+    if not q:
+        return
+    now = datetime.datetime.now()
+    try:
+        with _db_lock:
+            conn = _conn()
+            conn.execute(
+                "INSERT INTO search_clicks(query, url, ip, country, ts, date) "
+                "VALUES(?,?,?,?,?,?)",
+                (q, u, ip or "", country or "Unknown",
+                 now.isoformat(timespec="seconds"), now.date().isoformat()))
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+
+def search_funnel(days=30, top_n=15):
+    """返回搜索→点击漏斗：每个热门词的搜索次数、点击次数、点击率。
+
+    数据源：search_queries（搜索次数，按 query+date 去重）+ search_clicks
+    （点击次数，按 query+date 去重）。点击率 = clicks / searches，0 次搜
+    索的词不出现在漏斗里。供 monitor.html 用。
+    """
+    empty = {"total_searches": 0, "total_clicks": 0, "items": []}
+    if not _DB_OK:
+        return empty
+    try:
+        conn = _conn()
+        since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+        # 每个 query 的搜索次数（按搜索行计，不去重用户）
+        s_rows = conn.execute(
+            """SELECT query, COUNT(*) AS s FROM search_queries
+               WHERE date >= ? AND query != ''
+               GROUP BY query""", (since,)).fetchall()
+        # 每个 query 的点击次数
+        c_rows = conn.execute(
+            """SELECT query, COUNT(*) AS c FROM search_clicks
+               WHERE date >= ? AND query != ''
+               GROUP BY query""", (since,)).fetchall()
+        clicks_map = {r["query"]: r["c"] for r in c_rows}
+        items = []
+        total_s = 0
+        total_c = 0
+        for r in s_rows:
+            q = r["query"]; s = r["s"]; c = clicks_map.get(q, 0)
+            total_s += s; total_c += c
+            rate = round(c / s * 100, 1) if s else 0
+            items.append({"query": q, "searches": s, "clicks": c, "rate": rate})
+        # 按搜索次数降序截断 Top-N
+        items.sort(key=lambda x: (-x["searches"], x["query"]))
+        conn.close()
+        return {
+            "total_searches": total_s,
+            "total_clicks": total_c,
+            "items": items[:top_n],
+        }
+    except Exception:
+        return empty
+
+
+def search_suggest(prefix, limit=8):
+    """根据 prefix 返回热门搜索词建议（前缀匹配优先 + 包含匹配兜底）。
+
+    数据源：近 30 天 search_queries 表，去重 query + 按 COUNT 降序。
+    空串 / DB 不可用返回 []。供搜索框输入时实时下拉补全。
+    """
+    if not _DB_OK or not prefix:
+        return []
+    p = prefix.strip()
+    if not p:
+        return []
+    p_sql = p.replace("%", "\\%").replace("_", "\\_")
+    try:
+        conn = _conn()
+        since = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
+        # 优先：prefix 开头；再：包含 prefix
+        rows = conn.execute(
+            """SELECT query, COUNT(*) AS c FROM search_queries
+               WHERE date >= ? AND query LIKE ? ESCAPE '\\' AND query != ''
+               GROUP BY query
+               ORDER BY (query LIKE ?) DESC, c DESC, query ASC
+               LIMIT ?""",
+            (since, "%" + p_sql + "%", p_sql + "%", limit)).fetchall()
+        conn.close()
+        return [{"query": r["query"], "count": r["c"]} for r in rows]
+    except Exception:
+        return []
 
 
 # ---------- 降级回退 ----------
