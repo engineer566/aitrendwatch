@@ -10,6 +10,7 @@
 import re
 import json
 import time
+import math
 import base64
 import hmac
 import threading
@@ -649,6 +650,282 @@ def health():
     return jsonify({"ok": True})
 
 
+# ---------- 全站搜索 v2（独立结果页 + 加权打分 + 高亮 + 漏斗）----------
+import html as _html
+
+
+def _highlight(value, q):
+    """对单字段做 <mark> 包裹的高亮（HTML 安全）。
+
+    先 HTML escape 防 XSS，再对查询词做大小写不敏感的标记。多词查询时拆词
+    高亮（任意子串命中即标），避免「GPT-5」搜「GPT」时高亮缺失。
+    返回 escape 后的字符串（可能含 <mark>…</mark>）。
+    """
+    if not value or not q:
+        return _html.escape(value or "") if value else ""
+    s = _html.escape(str(value))
+    # 拆词：连续空白当分隔，全小写后逐词查
+    words = [w for w in q.lower().split() if w]
+    if not words:
+        return s
+    # 按词从长到短替换（避免短词吃掉长词的高亮边界）
+    for w in sorted(set(words), key=len, reverse=True):
+        # 大小写不敏感，但保留原文大小写：用 re.sub + lambda
+        s = re.sub(r"(?i)(" + re.escape(w) + r")",
+                   lambda m: f"<mark>{m.group(1)}</mark>", s)
+    return s
+
+
+# 字段权重：标题命中权重最高，摘要次之，来源/作者最弱（v2 加权打分）
+_FIELD_WEIGHTS = {
+    "title_zh": 30, "title_en": 30, "term": 30,   # 标题/模型名
+    "summary_zh": 12, "summary_en": 12, "summary": 12,  # 摘要
+    "source": 8, "author": 8,                              # 来源/作者
+    "title": 25,                                           # 兜底 title（zh/en 投影后字段）
+}
+
+
+def _score_card(card, q):
+    """对单张卡按 q 加权打分，返回 {score, matched_fields, card_with_highlights}。
+
+    命中规则：查询词拆词后，任何词出现在字段里即记权重。多词全中得高分。
+    热度仅做排序兜底：score + log(hot+1) * 1.5，避免高热度低相关卡霸榜。
+    matched_fields：['title', 'summary', ...] 用于前端「为什么命中」展示。
+    返回的 dict 已附 _highlight_<field> 字段，供 SSR 直接渲染（前端 escapeHtml 后注入）。
+    """
+    if not q or not card:
+        return None
+    words = [w for w in q.lower().split() if w]
+    if not words:
+        return None
+
+    fields = {
+        "title": card.get("title"),
+        "title_zh": card.get("title_zh"),
+        "title_en": card.get("title_en"),
+        "term": card.get("term"),
+        "summary": card.get("summary"),
+        "summary_zh": card.get("summary_zh"),
+        "summary_en": card.get("summary_en"),
+        "source": card.get("source") or card.get("official_label"),
+        "author": card.get("author"),
+    }
+    matched = []
+    score = 0
+    for fname, fval in fields.items():
+        if not fval:
+            continue
+        lv = str(fval).lower()
+        # 该字段有几词命中（全部命中得满分，按命中比例算）
+        hit = sum(1 for w in words if w in lv)
+        if hit == 0:
+            continue
+        ratio = hit / len(words)         # 部分命中给部分分
+        w = _FIELD_WEIGHTS.get(fname, 5)
+        # 字段越短命中权重越高（避免摘要超长但只一处命中的卡压过标题全命中的卡）
+        len_factor = 1.0 if len(lv) < 80 else 0.8
+        score += w * ratio * len_factor
+        matched.append(fname)
+
+    if not matched:
+        return None
+    # 热度兜底
+    hot = card.get("hot") or card.get("score") or 0
+    score += math.log(max(int(hot), 0) + 1) * 1.5
+
+    out_card = dict(card)
+    out_card["_score"] = round(score, 2)
+    out_card["_matched_fields"] = matched
+    # 高亮关键字段（SSR 直接渲染，前端不要再次 escape）
+    if out_card.get("title"):
+        out_card["_highlight_title"] = _highlight(out_card["title"], q)
+    if out_card.get("term"):
+        out_card["_highlight_term"] = _highlight(out_card["term"], q)
+    if out_card.get("summary"):
+        out_card["_highlight_summary"] = _highlight(out_card["summary"], q)
+    return out_card
+
+
+def _search_pool(lang):
+    """拉搜索池：model 当轮 + news 当轮 + news 历史库（合并去重）。"""
+    pool = []
+    seen = set()
+    # model 卡
+    try:
+        model_cards, _ = tracker.get_model_cards(lang)
+        for c in model_cards:
+            cid = c.get("id") or c.get("term")
+            if cid and cid in seen:
+                continue
+            if cid: seen.add(cid)
+            pool.append(c)
+    except Exception:
+        pass
+    # news 当轮
+    try:
+        news_cards, _ = dims.get_news_cards(lang)
+        for c in news_cards:
+            cid = c.get("id") or c.get("official_url")
+            if cid and cid in seen:
+                continue
+            if cid: seen.add(cid)
+            pool.append(c)
+    except Exception:
+        pass
+    # news 历史库（近 30 天全量导入，扩大召回）
+    try:
+        import news_store
+        if news_store._DB_OK:
+            hist = news_store.list_history_cards(limit=500, days=30)
+            for hc in hist:
+                pc = dims._project_card(hc, lang)
+                pc["kind"] = "news"
+                url = pc.get("official_url") or pc.get("title", "")
+                pc["id"] = url
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
+                              else pc.get("summary_en", ""))
+                if url and url in seen:
+                    continue
+                if url: seen.add(url)
+                pool.append(pc)
+    except Exception:
+        pass
+    return pool
+
+
+def _do_search(q, lang, limit):
+    """v2 核心搜索：对全池打分排序 + 返回 {count, terms, matched_in_history}。
+
+    terms 每项含 _score / _matched_fields / _highlight_* 字段。
+    matched_in_history：命中是否来自历史库（前端显示「含历史归档」标记）。
+    """
+    pool = _search_pool(lang)
+    scored = []
+    history_hits = 0
+    for c in pool:
+        s = _score_card(c, q)
+        if not s:
+            continue
+        # 标记是否来自历史库（pool 加的来源标记）
+        if c.get("_from_history"):
+            s["_from_history"] = True
+            history_hits += 1
+        scored.append(s)
+    scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    return scored[:limit], history_hits
+
+
+@app.route("/search")
+def search_page():
+    """独立搜索结果页（SSR），URL 可分享：/search?q=...&lang=...。
+
+    流程：
+      1) 记录搜索词（best-effort）。
+      2) 取 query + lang（默认按 region）。
+      3) 打分排序 + 切高亮，直接渲染 search.html。
+      4) 空结果：带「你可能想搜」补全（基于热门搜索词 + 补全接口）。
+    """
+    q = (request.args.get("q") or "").strip()
+    region = detect_region()
+    lang = request.args.get("lang", "zh" if region == "zh" else "en")
+    if lang not in ("zh", "en"):
+        lang = "zh" if region == "zh" else "en"
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 100))
+
+    cip = _client_ip()
+    store.record_search_query(q, lang=lang, ip=cip,
+                              country=_client_country(cip))
+
+    results, history_hits = [], 0
+    suggest = []
+    if q:
+        results, history_hits = _do_search(q, lang, limit)
+        if not results:
+            suggest = store.search_suggest(q[:20], limit=8)
+
+    return render_template(
+        "search.html",
+        q=q, lang=lang, terms=results,
+        count=len(results), history_hits=history_hits,
+        suggest=suggest, site_name=config.SITE_NAME,
+    )
+
+
+@app.route("/api/search/suggest")
+def api_search_suggest():
+    """搜索建议接口：GET ?q=...&limit=8。
+
+    基于近 30 天热门搜索词做前缀/包含匹配，供前端搜索框下拉补全。
+    空串或 < 1 字符直接返回空。绝不抛异常（DB 不可用 → 空数组）。
+    """
+    q = (request.args.get("q") or "").strip()
+    try:
+        limit = int(request.args.get("limit", "8"))
+    except ValueError:
+        limit = 8
+    limit = max(1, min(limit, 20))
+    if len(q) < 1:
+        return jsonify({"ok": True, "items": []})
+    items = store.search_suggest(q, limit=limit)
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/search/click", methods=["POST"])
+def api_search_click():
+    """搜索结果点击追踪：POST {q, url}，落 search_clicks 表。
+
+    前端在用户点击结果卡外链时发（不阻塞跳转，用 navigator.sendBeacon）。
+    失败静默——这是漏斗统计，不影响主流程。
+    """
+    payload = request.get_json(silent=True) or request.form or {}
+    q = (payload.get("q") or "").strip()[:80]
+    url = (payload.get("url") or "").strip()[:500]
+    if not q:
+        return jsonify({"ok": False, "err": "empty q"}), 400
+    cip = _client_ip()
+    store.record_search_click(q, url=url, ip=cip,
+                              country=_client_country(cip))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/search")
+def api_search():
+    """全站搜索 JSON 接口（v2）：带相关性打分 + 高亮。
+
+    返回 {ok, query, count, history_hits, terms}。
+    terms 每项含 _score / _matched_fields / _highlight_title / _highlight_summary /
+    _highlight_term，前端用 v-html 注入（已 HTML escape 安全）。
+    """
+    q = (request.args.get("q") or "").strip()
+    region = detect_region()
+    lang = request.args.get("lang", "zh" if region == "zh" else "en")
+    if lang not in ("zh", "en"):
+        lang = "zh" if region == "zh" else "en"
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 100))
+
+    cip = _client_ip()
+    store.record_search_query(q, lang=lang, ip=cip,
+                              country=_client_country(cip))
+    if not q:
+        return jsonify({"ok": True, "query": "", "count": 0,
+                        "history_hits": 0, "terms": []})
+
+    results, history_hits = _do_search(q, lang, limit)
+    return jsonify({"ok": True, "query": q, "count": len(results),
+                    "history_hits": history_hits, "terms": results,
+                    "fetched_at": int(time.time())})
+
+
 # ---------- SEO 路由：robots / sitemap / favicon ----------
 
 @app.route("/robots.txt")
@@ -849,6 +1126,41 @@ def monitor_api():
     except ValueError:
         days = 30
     return jsonify(store.monitor_stats(days))
+
+
+@app.route("/monitor/api/search")
+@admin_required
+def monitor_search_api():
+    """监控页搜索词统计：热门搜索词 Top-N + 近期搜索 + 总量。"""
+    days = request.args.get("days", "30")
+    try:
+        days = max(1, min(int(days), 90))
+    except ValueError:
+        days = 30
+    try:
+        top_n = int(request.args.get("top", "20"))
+    except ValueError:
+        top_n = 20
+    return jsonify(store.search_stats(days, top_n))
+
+
+@app.route("/monitor/api/search/funnel")
+@admin_required
+def monitor_search_funnel_api():
+    """搜索→点击漏斗：每个热门搜索词的搜索次数、点击次数、点击率。
+
+    数据源：search_queries + search_clicks。供 monitor.html 漏斗卡用。
+    """
+    days = request.args.get("days", "30")
+    try:
+        days = max(1, min(int(days), 90))
+    except ValueError:
+        days = 30
+    try:
+        top_n = int(request.args.get("top", "15"))
+    except ValueError:
+        top_n = 15
+    return jsonify(store.search_funnel(days, top_n))
 
 
 if __name__ == "__main__":

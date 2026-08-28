@@ -157,6 +157,19 @@ RSS_SOURCES = [
     {"name": "MIT TechReview", "feed": "https://www.technologyreview.com/topic/artificial-intelligence/feed", "region": "国际", "default_dim": "行业动态", "lang": "en"},
     {"name": "VentureBeat AI", "feed": "https://venturebeat.com/category/ai/feed/",                "region": "国际", "default_dim": "投融资", "lang": "en"},
     {"name": "The Gradient",   "feed": "https://thegradient.pub/rss/",                             "region": "国际", "default_dim": "研究论文", "lang": "en"},
+    # —— 补充更多英文 AI 媒体（确保英文源数量 > 中文源，扩大报道覆盖）——
+    {"name": "The Verge AI",   "feed": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "Wired AI",       "feed": "https://www.wired.com/feed/tag/ai/latest/rss",            "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "Ars Technica",   "feed": "https://feeds.arstechnica.com/arstechnica/features",      "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "AI News",        "feed": "https://www.artificialintelligence-news.com/feed/",       "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "MarkTechPost",   "feed": "https://www.marktechpost.com/feed/",                      "region": "国际", "default_dim": "研究论文", "lang": "en"},
+    {"name": "Unite AI",       "feed": "https://www.unite.ai/feed/",                              "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "AWS ML Blog",    "feed": "https://aws.amazon.com/blogs/machine-learning/feed/",     "region": "国际", "default_dim": "产品发布", "lang": "en"},
+    # —— 独立 AI 技术评论（高质量一手分析，链接直指原文）——
+    {"name": "Simon Willison", "feed": "https://simonwillison.net/atom/everything/",              "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "Latent Space",   "feed": "https://www.latent.space/feed",                           "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "Ethan Mollick",  "feed": "https://www.oneusefulthing.org/feed",                     "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "Sebastian Raschka", "feed": "https://sebastianraschka.com/rss_feed.xml",            "region": "国际", "default_dim": "研究论文", "lang": "en"},
     # —— 无官方 RSS 的厂商 → Google News 聚合（official_url 为媒体域名，非文章直链）——
     {"name": "Anthropic (GN)", "feed": "https://news.google.com/rss/search?q=Anthropic+when:3d&hl=en-US&gl=US&ceid=US:en",  "region": "国际", "default_dim": "产品发布", "is_gnews": True, "lang": "en"},
     {"name": "Meta AI (GN)",   "feed": "https://news.google.com/rss/search?q=%22Meta+AI%22+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品发布", "is_gnews": True, "lang": "en"},
@@ -453,7 +466,9 @@ def _reddit_points(title, dimension):
     return 0, 0
 
 
-# 国内源兜底权重：HN/Reddit 都没命中时按源给 floor（与 model likes 同量级）
+# 无社区信号时的兜底权重（与 model likes 同量级）。
+# 国内源按媒体影响力给 floor；英文源统一 floor=20（覆盖面广、无单一权重锚点）。
+# 仅在 HN/Reddit 都未命中时启用，避免无社区信号的小维度卡全员并列。
 _SOURCE_WEIGHT = {
     "量子位": 60, "InfoQ中文": 50, "极客公园": 45, "少数派": 40,
 }
