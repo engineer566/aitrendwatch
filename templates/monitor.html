@@ -175,6 +175,37 @@
 
   footer { text-align: center; padding: 24px; color: var(--text-dim); font-size: 12px; }
 
+  /* ---- 搜索→点击漏斗（v2）---- */
+  .funnel-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .funnel-row {
+    display: grid; grid-template-columns: 1fr 60px 60px 80px; align-items: center;
+    gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .funnel-row:last-child { border-bottom: none; }
+  .funnel-query {
+    font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .funnel-bar-wrap {
+    height: 8px; background: var(--bg-hover); border-radius: 4px; overflow: hidden;
+    position: relative;
+  }
+  .funnel-bar-search {
+    height: 100%; background: linear-gradient(90deg, var(--cyan), var(--accent));
+    border-radius: 4px;
+  }
+  .funnel-bar-rate {
+    height: 100%; background: linear-gradient(90deg, var(--green), var(--cyan));
+    border-radius: 4px;
+  }
+  .funnel-rate-text {
+    font-variant-numeric: tabular-nums; font-weight: 600; color: var(--green);
+  }
+  .funnel-rate-text.low { color: var(--orange); }
+  .funnel-rate-text.zero { color: var(--text-dim); }
+  .funnel-count { font-variant-numeric: tabular-nums; text-align: right; color: var(--text-dim); }
+  .funnel-count strong { color: var(--text); font-weight: 600; }
+
   @media (max-width: 640px) {
     header { padding: 10px 16px; }
     main { padding: 0 16px; }
@@ -239,6 +270,23 @@
     <div id="search-top"></div>
     <h2 style="font-size:13px;margin-top:18px">近期搜索词 <span class="sub">最近 30 条</span></h2>
     <div id="search-recent"></div>
+  </div>
+
+  <!-- v2: 搜索→点击漏斗（哪些搜索词真有转化） -->
+  <div class="card">
+    <h2>🎯 搜索→点击漏斗 <span class="sub" id="funnel-sub">近 30 天 · Top 15</span></h2>
+    <div class="funnel-stats" id="funnel-stats-row">
+      <div class="stat-box"><div class="label">近 30 天搜索次数</div><div class="value accent num" id="funnel-total-search">—</div></div>
+      <div class="stat-box"><div class="label">近 30 天点击次数</div><div class="value green num" id="funnel-total-click">—</div></div>
+      <div class="stat-box"><div class="label">整体点击率</div><div class="value purple num" id="funnel-overall-rate">—</div></div>
+    </div>
+    <div class="funnel-row" style="font-size:11px;color:var(--text-dim);font-weight:600;border-bottom:2px solid var(--border)">
+      <span>搜索词</span>
+      <span style="text-align:right">搜索</span>
+      <span style="text-align:right">点击</span>
+      <span style="text-align:right">点击率</span>
+    </div>
+    <div id="funnel-list"></div>
   </div>
 </main>
 
@@ -392,6 +440,10 @@ function skeleton() {
     '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(6);
   document.getElementById("search-recent").innerHTML =
     '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
+  document.getElementById("funnel-stats-row").innerHTML =
+    '<div class="sk sk-stat"></div>'.repeat(3);
+  document.getElementById("funnel-list").innerHTML =
+    '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
 }
 
 // ==================== 搜索统计渲染 ====================
@@ -446,6 +498,45 @@ function renderSearchStats(d) {
   }
 }
 
+// v2: 搜索→点击漏斗渲染
+function renderFunnel(d) {
+  const row = document.getElementById("funnel-stats-row");
+  const boxes = [
+    { id: "funnel-total-search", label: "近 30 天搜索次数", cls: "accent", val: d.total_searches },
+    { id: "funnel-total-click",  label: "近 30 天点击次数", cls: "green",  val: d.total_clicks },
+    { id: "funnel-overall-rate", label: "整体点击率",     cls: "purple",
+      val: d.total_searches ? (d.total_clicks / d.total_searches * 100).toFixed(1) + "%" : "—" },
+  ];
+  const missing = boxes.some(b => !document.getElementById(b.id));
+  if (missing) {
+    row.innerHTML = boxes.map(b =>
+      `<div class="stat-box"><div class="label">${b.label}</div>` +
+      `<div class="value ${b.cls} num" id="${b.id}">—</div></div>`
+    ).join("");
+  }
+  boxes.forEach(b => {
+    const el = document.getElementById(b.id);
+    if (el) el.textContent = typeof b.val === "number" ? fmtNum(b.val) : b.val;
+  });
+
+  const listEl = document.getElementById("funnel-list");
+  const items = d.items || [];
+  if (!items.length) {
+    listEl.innerHTML = '<div class="empty-state">暂无漏斗数据（用户尚未在搜索结果页产生点击）</div>';
+    return;
+  }
+  const maxS = Math.max(...items.map(x => x.searches), 1);
+  listEl.innerHTML = items.map(it => {
+    const rateClass = it.rate === 0 ? "zero" : (it.rate < 20 ? "low" : "");
+    return `<div class="funnel-row">
+      <span class="funnel-query" title="${escapeHtml(it.query)}">${escapeHtml(it.query)}</span>
+      <span class="funnel-count"><strong>${fmtNum(it.searches)}</strong></span>
+      <span class="funnel-count"><strong>${fmtNum(it.clicks)}</strong></span>
+      <span class="funnel-rate-text ${rateClass}">${it.rate}%</span>
+    </div>`;
+  }).join("");
+}
+
 // ==================== 数据拉取 ====================
 const lastUpdateEl = document.getElementById("last-update");
 let loading = false;
@@ -454,9 +545,10 @@ async function load() {
   loading = true;
   lastUpdateEl.textContent = "加载中…";
   try {
-    const [visRes, searchRes] = await Promise.all([
+    const [visRes, searchRes, funnelRes] = await Promise.all([
       fetch("/monitor/api", { headers: { "Accept": "application/json" } }),
       fetch("/monitor/api/search", { headers: { "Accept": "application/json" } }),
+      fetch("/monitor/api/search/funnel", { headers: { "Accept": "application/json" } }),
     ]);
     if (!visRes.ok) throw new Error(visRes.status);
     const d = await visRes.json();
@@ -464,9 +556,12 @@ async function load() {
     renderChart(d.daily);
     renderRegions(d.regions);
     renderRecent(d.recent);
-    // 搜索统计独立拉取，失败不阻塞访问统计
+    // 搜索统计 + 漏斗独立拉取，失败不阻塞访问统计
     try {
       if (searchRes.ok) renderSearchStats(await searchRes.json());
+    } catch (e) {}
+    try {
+      if (funnelRes && funnelRes.ok) renderFunnel(await funnelRes.json());
     } catch (e) {}
     lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
   } catch (e) {
