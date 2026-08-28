@@ -649,6 +649,108 @@ def health():
     return jsonify({"ok": True})
 
 
+# ---------- 全站搜索（跨 model + news 历史库）----------
+def _match_card(card, q):
+    """内存模糊匹配单张卡（model 卡 + 当轮 news 卡，无历史库时兜底）。"""
+    ql = q.lower()
+    fields = (card.get("title"), card.get("term"), card.get("summary"),
+              card.get("source"), card.get("author"),
+              card.get("title_zh"), card.get("title_en"),
+              card.get("summary_zh"), card.get("summary_en"))
+    return any(ql in (f or "").lower() for f in fields)
+
+
+@app.route("/api/search")
+def api_search():
+    """全站关键词搜索：合并 model 卡（当轮）+ news 卡（当轮 + 历史库）。
+
+    参数：
+      q：搜索关键词（必填，空串返回空结果）。
+      lang：zh/en，默认按 Accept-Language。投影对应语言 + 决定历史库匹配字段。
+      limit：返回上限，默认 50，最大 100。
+
+    流程：
+      1) 记录搜索词到 search_queries 表（供后台监控，best-effort）。
+      2) model 卡只在当轮文件缓存里内存匹配（HF 模型名/作者，量小够用）。
+      3) news 卡先在当轮缓存里内存匹配，再查历史库（news_store.search_history，
+         近 30 天全字段 LIKE）扩大召回，按 official_url 去重。
+      返回 {ok, query, fetched_at, count, terms}，terms 为统一卡片流 schema。
+    """
+    q = (request.args.get("q") or "").strip()
+    region = detect_region()
+    lang = request.args.get("lang", "zh" if region == "zh" else "en")
+    if lang not in ("zh", "en"):
+        lang = "zh" if region == "zh" else "en"
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 100))
+
+    cip = _client_ip()
+    store.record_search_query(q, lang=lang, ip=cip,
+                              country=_client_country(cip))
+
+    if not q:
+        return jsonify({"ok": True, "query": "", "fetched_at": int(time.time()),
+                        "count": 0, "terms": []})
+
+    # 1) model 卡：当轮文件缓存内存匹配
+    results = []
+    seen_ids = set()
+    try:
+        model_cards, _ = tracker.get_model_cards(lang)
+        for c in model_cards:
+            if _match_card(c, q):
+                cid = c.get("id") or c.get("term")
+                if cid and cid in seen_ids:
+                    continue
+                seen_ids.add(cid)
+                results.append(c)
+    except Exception:
+        pass
+
+    # 2) news 卡：当轮缓存内存匹配
+    try:
+        news_cards, n_at = dims.get_news_cards(lang)
+        for c in news_cards:
+            if _match_card(c, q):
+                cid = c.get("id") or c.get("official_url")
+                if cid and cid in seen_ids:
+                    continue
+                seen_ids.add(cid)
+                results.append(c)
+    except Exception:
+        n_at = 0
+
+    # 3) news 历史库 LIKE 搜索（扩大召回，跨近 30 天归档）
+    try:
+        import news_store
+        if news_store._DB_OK:
+            hist = news_store.search_history(q, lang=lang, limit=limit * 2)
+            for hc in hist:
+                pc = dims._project_card(hc, lang)
+                pc["kind"] = "news"
+                url = pc.get("official_url") or pc.get("title", "")
+                pc["id"] = url
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
+                              else pc.get("summary_en", ""))
+                if url and url in seen_ids:
+                    continue
+                seen_ids.add(url)
+                results.append(pc)
+    except Exception:
+        pass
+
+    # 统一排序：hot（score）降序兜底，让高热度匹配优先
+    results.sort(key=lambda x: x.get("hot", 0) or x.get("score", 0), reverse=True)
+    results = results[:limit]
+    return jsonify({"ok": True, "query": q, "fetched_at": int(time.time()),
+                    "count": len(results), "terms": results})
+
+
 # ---------- SEO 路由：robots / sitemap / favicon ----------
 
 @app.route("/robots.txt")
@@ -849,6 +951,22 @@ def monitor_api():
     except ValueError:
         days = 30
     return jsonify(store.monitor_stats(days))
+
+
+@app.route("/monitor/api/search")
+@admin_required
+def monitor_search_api():
+    """监控页搜索词统计：热门搜索词 Top-N + 近期搜索 + 总量。"""
+    days = request.args.get("days", "30")
+    try:
+        days = max(1, min(int(days), 90))
+    except ValueError:
+        days = 30
+    try:
+        top_n = int(request.args.get("top", "20"))
+    except ValueError:
+        top_n = 20
+    return jsonify(store.search_stats(days, top_n))
 
 
 if __name__ == "__main__":

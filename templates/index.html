@@ -490,12 +490,54 @@ themeBtn.addEventListener("click", () => {
 paintThemeBtn();
 
 // ==================== 搜索 ====================
-searchInput.addEventListener("input", () => { query = searchInput.value.trim().toLowerCase(); render(); });
+// 搜索体验：本地即时过滤（已加载卡片，毫秒级）+ 后端历史库搜索（防抖 350ms，
+// 跨近 30 天归档 news + 当轮 model 卡，扩大召回）。后端结果到达后合并去重，
+// 让用户既能秒看到当前流匹配，又能搜到不在当前流里的历史内容。
+// 每次后端搜索会落库 search_queries，供后台监控页统计热门搜索词。
+let _searchTimer = null;
+let _searchCtrl = null;          // 当前 /api/search 请求的 AbortController
+let _searchResultQuery = "";     // 最近一次后端结果对应的 query（避免乱序覆盖）
+let _searchExtra = [];           // 后端搜出的、当前流之外的额外卡（合并进渲染）
+function runBackendSearch(rawQ) {
+  // 防抖：350ms 内连续输入只发最后一次；切语言/清空时 abort 旧请求
+  if (_searchTimer) clearTimeout(_searchTimer);
+  if (_searchCtrl) { try { _searchCtrl.abort(); } catch (e) {} _searchCtrl = null; }
+  if (!rawQ) {
+    _searchExtra = []; _searchResultQuery = ""; render(); return;
+  }
+  _searchTimer = setTimeout(async () => {
+    _searchCtrl = new AbortController();
+    const url = `/api/search?q=${encodeURIComponent(rawQ)}&lang=${encodeURIComponent(LANG)}&limit=50`;
+    try {
+      const res = await fetch(url, { signal: _searchCtrl.signal });
+      if (!res.ok) return;
+      const d = await res.json();
+      if (_searchResultQuery && rawQ !== _searchResultQuery) return;  // 旧结果迟到，丢弃
+      _searchResultQuery = rawQ;
+      const terms = (d && Array.isArray(d.terms)) ? d.terms : [];
+      // 去重：后端结果里去掉当前 allData 已有的卡（按 id/title），余下作为 extra
+      const localIds = new Set(allData.map(t => t.id || t.full_id || t.term || t.official_url || t.title));
+      _searchExtra = terms.filter(t => {
+        const id = t.id || t.full_id || t.term || t.official_url || t.title;
+        return !localIds.has(id);
+      });
+      render();
+    } catch (e) {}
+  }, 350);
+}
+searchInput.addEventListener("input", () => {
+  query = searchInput.value.trim().toLowerCase();
+  render();
+  runBackendSearch(searchInput.value.trim());
+});
 document.addEventListener("keydown", e => {
   if (e.key === "/" && document.activeElement !== searchInput) {
     e.preventDefault(); searchInput.focus();
   } else if (e.key === "Escape" && document.activeElement === searchInput) {
-    searchInput.value = ""; query = ""; render(); searchInput.blur();
+    searchInput.value = ""; query = ""; _searchExtra = []; _searchResultQuery = "";
+    if (_searchTimer) clearTimeout(_searchTimer);
+    if (_searchCtrl) { try { _searchCtrl.abort(); } catch (e) {} _searchCtrl = null; }
+    render(); searchInput.blur();
   }
 });
 
@@ -786,6 +828,18 @@ function visibleData() {
       (t.summary||"").toLowerCase().includes(q) ||
       (t.source||"").toLowerCase().includes(q) ||
       (t.author||"").toLowerCase().includes(q));
+    // 合并后端历史库搜索的额外结果（当前流之外的匹配卡），扩大召回
+    if (currentCat === "all") {
+      const localIds = new Set(items.map(t => t.id || t.full_id || t.term || t.official_url || t.title));
+      const extra = _searchExtra.filter(t => {
+        const id = t.id || t.full_id || t.term || t.official_url || t.title;
+        return !localIds.has(id);
+      });
+      items = items.concat(extra);
+    } else {
+      // 选了维度时，extra 也要按维度过滤
+      items = items.concat(_searchExtra.filter(t => (t.dimension || "其他") === currentCat));
+    }
   }
   // 统一排序键：rise→trend, hot→score, new→published
   const key = { rise: "trend", hot: "score", new: "published" }[currentSort];

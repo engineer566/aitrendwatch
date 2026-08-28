@@ -121,6 +121,17 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_visits_date ON visits(date);
             CREATE INDEX IF NOT EXISTS idx_visits_ip_date ON visits(ip, date);
+            CREATE TABLE IF NOT EXISTS search_queries (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                query   TEXT NOT NULL,             -- 用户输入的搜索关键词（原样，已 trim+限长）
+                lang    TEXT,                      -- zh / en（搜索时前端语言，便于分语言看热词）
+                ip      TEXT,                      -- 搜索者 IP（与 visits 同策略，供去重/细查）
+                country TEXT,                      -- ISO 国家码或 "Unknown"
+                ts      TEXT NOT NULL,             -- 完整时间戳 ISO，用于时序
+                date    TEXT NOT NULL              -- YYYY-MM-DD，索引化便于按日聚合
+            );
+            CREATE INDEX IF NOT EXISTS idx_search_date ON search_queries(date);
+            CREATE INDEX IF NOT EXISTS idx_search_query ON search_queries(query);
         """)
         conn.commit()
         _DB_OK = True
@@ -449,6 +460,74 @@ def monitor_stats(days=30):
             "total_pv": agg["pv"], "total_uv": agg["uv"],
             "today_pv": td["pv"], "today_uv": td["uv"],
             "regions": regions, "daily": daily, "recent": recent,
+        }
+    except Exception:
+        return empty
+
+
+# ---------- 用户搜索记录（搜索功能 + 后台监控）----------
+def record_search_query(query, lang=None, ip=None, country=None):
+    """记录一次用户搜索关键词到 search_queries 表。
+
+    best-effort，失败静默（与 record_visit / record_pageview 同模式）。
+    query 经 trim + 限长 80 字符，空串不入库。每次搜索一行，供监控页统计
+    热门搜索词 / 近期搜索词 / 搜索 PV。
+    """
+    if not _DB_OK or not config.ANALYTICS_ENABLED:
+        return
+    q = (query or "").strip()
+    if not q:
+        return
+    q = q[:80]   # 限长，防超长输入撑库
+    now = datetime.datetime.now()
+    try:
+        with _db_lock:
+            conn = _conn()
+            conn.execute(
+                "INSERT INTO search_queries(query, lang, ip, country, ts, date) "
+                "VALUES(?,?,?,?,?,?)",
+                (q, lang, ip or "", country or "Unknown",
+                 now.isoformat(timespec="seconds"), now.date().isoformat()))
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+
+def search_stats(days=30, top_n=20):
+    """返回监控页搜索统计：总搜索次数、独立关键词数、热门词 Top-N、近期搜索。
+
+    DB 不可用返回零值，与 monitor_stats() 同模式，绝不抛异常。
+    """
+    empty = {"total": 0, "unique": 0, "today": 0,
+             "top": [], "recent": []}
+    if not _DB_OK:
+        return empty
+    try:
+        conn = _conn()
+        today = _today()
+        since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+        agg = conn.execute(
+            "SELECT COUNT(*) AS c, COUNT(DISTINCT query) AS u "
+            "FROM search_queries WHERE date >= ?", (since,)).fetchone()
+        td = conn.execute(
+            "SELECT COUNT(*) AS c FROM search_queries WHERE date = ?",
+            (today,)).fetchone()
+        top_rows = conn.execute(
+            """SELECT query, COUNT(*) AS c FROM search_queries
+               WHERE date >= ? GROUP BY query ORDER BY c DESC, query ASC LIMIT ?""",
+            (since, top_n)).fetchall()
+        top = [{"query": r["query"], "count": r["c"]} for r in top_rows]
+        recent_rows = conn.execute(
+            """SELECT query, lang, country, ts FROM search_queries
+               ORDER BY id DESC LIMIT 30""").fetchall()
+        recent = [{"query": r["query"], "lang": r["lang"],
+                   "country": r["country"] or "Unknown", "ts": r["ts"]}
+                  for r in recent_rows]
+        conn.close()
+        return {
+            "total": agg["c"], "unique": agg["u"], "today": td["c"],
+            "top": top, "recent": recent,
         }
     except Exception:
         return empty
