@@ -1,0 +1,198 @@
+# 模块函数索引
+
+> 6 个 Python 模块的结构、函数签名、行号、职责。配合 [INDEX.md](../INDEX.md) 使用。
+> 行号基于 dev 分支实读。`_` 前缀为模块内部函数，归组列出但不展开细节。
+
+---
+
+## app.py  （859 行）— Flask 入口 + 路由 + 直连抓取
+
+### 分区清单
+| 行号范围 | 分区（`# ----------` 注释段） |
+|----------|------------------------------|
+| 42–51 | 通用配置（UA/HEADERS/TIMEOUT/CACHE_TTL/`_cache`） |
+| 73–91 | SEO 辅助 |
+| 177–292 | 各数据源抓取函数（8 个 `fetch_*`） |
+| 293–368 | 直连官方接口源（zhihu/douyin/weibo） |
+| 369–468 | 路由（+ `SOURCES`/`SOURCE_META`/region/ip 辅助） |
+| 471–597 | 页面 + 热词追踪路由 |
+| 599–651 | dims/stream/health 路由 |
+| 652–741 | SEO 路由（robots/sitemap/favicon） |
+| 742–749 | 赞助位点击跳转 |
+| 752–852 | 管理后台 + 流量监控 |
+| 854–859 | `__main__` 入口 |
+
+### 公开函数（被路由/外部调用）
+| 函数 | 行号 | 职责 |
+|------|------|------|
+| `fetch_baidu()` | 178 | 百度热搜官方接口 |
+| `fetch_bilibili()` | 200 | B站热门官方接口 |
+| `fetch_toutiao()` | 220 | 今日头条热榜 |
+| `fetch_hackernews()` | 237 | HN Firebase API（逐条拉取，慢） |
+| `fetch_github()` | 265 | GitHub Trending HTML 抓取 |
+| `fetch_zhihu()` | 295 | 知乎热榜（直连） |
+| `fetch_douyin()` | 319 | 抖音热搜（直连） |
+| `fetch_weibo()` | 341 | 微博热搜（需登录态，常失败） |
+| `detect_region()` | 395 | Accept-Language → zh/global |
+| `_client_ip()` | 401 | 取真实 IP（信任 X-Forwarded-For） |
+| `_client_country(ip)` | 409 | 反代头优先 + GeoLite2 兜底 |
+| `get_source(source)` | 423 | 带缓存单源抓取 |
+| `get_source_timeout(source)` | 438 | 带硬性截止时间单源抓取 |
+| 37 个 view 函数 | 见 [api_routes.md](api_routes.md) | 路由处理 |
+
+### 模块级常量
+`SOURCES`（source→fetcher 映射，`app.py:372`）、`SOURCE_META`（8 源元信息，`app.py:383`）、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
+
+---
+
+## config.py  （101 行）— 配置集中地
+
+### 分区清单
+| 行号范围 | 分区 |
+|----------|------|
+| 12–16 | Flask 会话签名 `SECRET_KEY` |
+| 17–19 | 管理后台令牌 `ADMIN_TOKEN` |
+| 21–26 | 站点信息 `SITE_NAME`/`BASE_URL`/`CONTACT_EMAIL` |
+| 28–49 | 数据存储路径 + GeoIP + 缓存目录 |
+| 51–64 | DeepSeek LLM + dims 定点预热 `DIMS_REFRESH_HOURS` |
+| 65–78 | 分析开关 + SEO 开关 |
+| 81–93 | 第三方广告（AdSense/百度联盟）+ 赞助位展示 |
+| 95–101 | `ensure_data_dir()` |
+
+### 公开函数
+| 函数 | 行号 | 职责 |
+|------|------|------|
+| `_as_bool(v, default)` | 66 | 字符串→布尔 |
+| `ensure_data_dir()` | 96 | 建 `DATA_DIR`（容器 /app/data，本地 ./data） |
+
+### 关键常量
+`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`DEEPSEEK_API_KEY`/`DEEPSEEK_MODEL`、`DIMS_REFRESH_HOURS=(13,19,1,7)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
+
+---
+
+## dims.py  （1110 行）— 维度事件层（RSS + 热度 + DeepSeek）
+
+### 分区清单
+| 行号范围 | 分区 |
+|----------|------|
+| 49–64 | DeepSeek LLM 配置 |
+| 66–135 | 文件缓存（`cache/dims.json`） |
+| 137–172 | RSS 源定义 `RSS_SOURCES`（17 源） |
+| 174–316 | RSS 解析 + 抓取 |
+| 317–624 | 社区热度增强（HN/Reddit/复合分/趋势分） |
+| 625–809 | DeepSeek LLM 批量打标 |
+| 810–979 | 顶层聚合（`get_dims`/`get_news_cards`） |
+| 980–1110 | 后台预热线程 + 跨进程锁 + 定点刷新 |
+
+### 公开函数（被 app.py 调用）
+| 函数 | 行号 | 职责 |
+|------|------|------|
+| `get_dims(dimension=None, lang="zh")` | 896 | 维度热词分组（只读缓存）；`/api/dims` |
+| `get_news_cards(lang="zh")` | 930 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
+| `enrich_with_signals(items)` | 594 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
+| `start_background_dims_refresher()` | 1102 | 启动后台预热线程（app.py 启动时调） |
+
+### 内部函数（按分区归组）
+- 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
+- RSS：`_norm_date`/`_strip_cdata`/`_parse_rss`/`fetch_one_rss`/`fetch_all_rss`
+- 热度：`_has_cjk`/`_clean_title`/`_hn_points`/`_reddit_points`/`_buzz`/`_age_hours`/`_time_decay`/`_composite_score`/`_trend_score`
+- LLM：`_llm_classify_batch`/`enrich_with_llm`
+- 聚合：`_to_card`/`_fetch_dims_raw`/`_project_card`
+- 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
+
+### 模块级常量
+`RSS_SOURCES`（17 源，`dims.py:145`）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
+
+---
+
+## tracker.py  （590 行）— 热词追踪层（HF + arXiv）
+
+### 分区清单
+| 行号范围 | 分区 |
+|----------|------|
+| 34–63 | 文件缓存（`cache/terms.json`）+ 内存缓存 |
+| 110–161 | HF 模型热词抓取 |
+| 162–354 | arXiv 论文检索（限速 + 检索式构造） |
+| 355–462 | 顶层聚合（`get_terms`/`get_model_cards`） |
+| 463–589 | 后台预热线程 + 跨进程锁 |
+
+### 公开函数（被 app.py 调用）
+| 函数 | 行号 | 职责 |
+|------|------|------|
+| `get_terms(sort="trending")` | 399 | 热词榜（trending/top 两种 sort，读缓存）；`/api/trending` `/api/top` |
+| `get_model_cards(lang="zh")` | 424 | model 卡列表（读缓存）；`/api/stream` |
+| `get_term_detail(term_name)` | 551 | 单热词详情：live HF + 同步 arXiv（~1-4s）；`/api/term/` `/term/` |
+| `start_background_refresher()` | 540 | 启动后台预热线程（app.py 启动时调） |
+
+### 内部函数
+- 缓存：`_cached`/`_set_cache`/`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
+- HF：`fetch_hf_models`/`_model_to_term`/`community_links`
+- arXiv：`_base_model_key`/`_dedupe_by_base_model`/`_arxiv_throttle`/`_search_query_for`/`search_arxiv_papers`/`enrich_with_papers`
+- 聚合：`_fetch_terms_raw`/`_fetch_terms_quick`
+- 后台：`_cross_proc_lock`/`_refresh_once`/`_bg_refresher`
+
+### 模块级常量
+`HF_BASE="https://hf-mirror.com"`（官方 HF 不可达走镜像）、`ARXIV_API`、`ARXIV_GAP=3.0`（限速）、`ARXIV_ENRICH_LIMIT=8`（只检索前 N 热词）、`UA`/`HEADERS`/`TIMEOUT=8`。
+
+---
+
+## store.py  （474 行）— 赞助位/统计/GeoIP SQLite
+
+### 分区清单
+| 行号范围 | 分区 |
+|----------|------|
+| 27–78 | HTML 净化 + 初始化 `init_db` |
+| 131–153 | 连接 + 行映射 |
+| 154–276 | 赞助位 CRUD |
+| 277–326 | 统计（PV/曝光/点击） |
+| 353–384 | GeoLite2 离线地域查询 |
+| 385–456 | 访问记录 + `monitor_stats` |
+| 457–474 | 降级回退 `_fallback_slots` |
+
+### 公开函数（被 app.py 调用）
+| 函数 | 行号 | 职责 |
+|------|------|------|
+| `init_db()` | 80 | 建表 + 开 WAL（失败 `_DB_OK=False`） |
+| `list_slots(region, active_only)` | 155 | 列赞助位 |
+| `get_slot(slot_id)` | 181 | 取单条 |
+| `upsert_slot(data)` | 194 | 新建/更新 |
+| `delete_slot(slot_id)` | 241 | 删除 |
+| `toggle_slot(slot_id)` | 256 | 上下架切换 |
+| `record_pageview()` | 278 | PV+1 |
+| `record_impression(slot_id)` | 295 | 曝光+1 |
+| `record_click(slot_id)` | 311 | 点击+1 |
+| `stats_30d()` | 327 | 30 天统计 |
+| `geoip_country(ip)` | 359 | GeoLite2 查国家码（无库返 Unknown） |
+| `record_visit(ip, country, path)` | 386 | 写 visits 表（监控页数据源） |
+| `monitor_stats(days=30)` | 408 | 监控页聚合（PV/UV/地域） |
+
+### SQLite 表
+`sponsor_slots`、`sponsor_stats`、`pageviews`、`visits`（见 [data_flow.md](data_flow.md) §SQLite）。
+
+---
+
+## news_store.py  （251 行）— 事件卡历史库 SQLite
+
+### 分区清单
+| 行号范围 | 分区 |
+|----------|------|
+| 34–74 | 初始化 `init_db` |
+| 82–181 | 写：`upsert_cards` |
+| 182–251 | 读：`list_history_cards`/`count_history` |
+
+### 公开函数（被 dims.py 调用）
+| 函数 | 行号 | 职责 |
+|------|------|------|
+| `init_db()` | 34 | 建 `news_cards` 表 + 索引 + WAL |
+| `upsert_cards(cards)` | 83 | 刷新后 upsert 本轮全部 cards（重算 score/trend） |
+| `list_history_cards(limit, include_inactive, days)` | 183 | 合并历史库扩大内容池 |
+| `count_history()` | 215 | 历史条数 |
+
+### SQLite 表
+`news_cards`（见 [data_flow.md](data_flow.md) §SQLite）。
+
+---
+
+## version.py  （23 行）— 版本号
+- `_read_version()` (10) 读 `VERSION` 文件；`__version__` (22) / `version` 别名。
+- 单一真相源：同目录 `VERSION` 文件（当前 `0.2.1`）。
