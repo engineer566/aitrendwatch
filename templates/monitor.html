@@ -146,6 +146,18 @@
   .country-badge { font-size: 11px; padding: 1px 7px; border-radius: 9px; font-weight: 600;
                    background: color-mix(in srgb, var(--cyan) 14%, transparent); color: var(--cyan); }
 
+  /* ---- 搜索词条形列表（复用 region-row 视觉）---- */
+  .query-row { display: flex; align-items: center; gap: 10px; padding: 7px 0;
+               border-bottom: 1px solid var(--border); }
+  .query-row:last-child { border-bottom: none; }
+  .query-text { flex: 0 0 auto; max-width: 60%; font-size: 13px; font-weight: 600;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .query-bar-wrap { flex: 1; height: 8px; background: var(--bg-hover);
+                    border-radius: 4px; overflow: hidden; }
+  .query-bar { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--accent));
+               border-radius: 4px; transition: width .3s; }
+  .query-count { font-size: 13px; font-weight: 600; min-width: 50px; text-align: right; }
+
   /* ---- 空状态 / 骨架屏 ---- */
   .empty-state { text-align: center; color: var(--text-dim); font-size: 13px; padding: 30px 10px; }
   .sk { border-radius: 6px; background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border) 50%, var(--bg-hover) 75%);
@@ -205,6 +217,20 @@
   <div class="card">
     <h2>🕐 近期访问明细 <span class="sub">最近 30 条</span></h2>
     <div id="recent-wrap"></div>
+  </div>
+
+  <!-- 搜索词统计 -->
+  <div class="card">
+    <h2>🔍 用户搜索关键词 <span class="sub" id="search-sub">近 30 天</span></h2>
+    <div class="stats-row" id="search-stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+      <div class="stat-box"><div class="label">近 30 天搜索次数</div><div class="value accent num" id="search-total">—</div></div>
+      <div class="stat-box"><div class="label">独立关键词数</div><div class="value green num" id="search-unique">—</div></div>
+      <div class="stat-box"><div class="label">今日搜索次数</div><div class="value purple num" id="search-today">—</div></div>
+    </div>
+    <h2 style="font-size:13px;margin-top:18px">热门搜索词 Top 20 <span class="sub">按次数降序</span></h2>
+    <div id="search-top"></div>
+    <h2 style="font-size:13px;margin-top:18px">近期搜索词 <span class="sub">最近 30 条</span></h2>
+    <div id="search-recent"></div>
   </div>
 </main>
 
@@ -354,6 +380,62 @@ function skeleton() {
     '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(6);
   document.getElementById("recent-wrap").innerHTML =
     '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
+  document.getElementById("search-top").innerHTML =
+    '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(6);
+  document.getElementById("search-recent").innerHTML =
+    '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
+}
+
+// ==================== 搜索统计渲染 ====================
+function renderSearchStats(d) {
+  const ids = [
+    { id: "search-total",  val: d.total },
+    { id: "search-unique", val: d.unique },
+    { id: "search-today",  val: d.today },
+  ];
+  // 元素可能被骨架覆盖，缺失则重建
+  const row = document.getElementById("search-stats-row");
+  const labels = ["近 30 天搜索次数", "独立关键词数", "今日搜索次数"];
+  const cls = ["accent", "green", "purple"];
+  if (row && ids.some(b => !document.getElementById(b.id))) {
+    row.innerHTML = ids.map((b, i) =>
+      `<div class="stat-box"><div class="label">${labels[i]}</div>` +
+      `<div class="value ${cls[i]} num" id="${b.id}">—</div></div>`
+    ).join("");
+  }
+  ids.forEach(b => {
+    const el = document.getElementById(b.id);
+    if (el) el.textContent = fmtNum(b.val);
+  });
+
+  const topEl = document.getElementById("search-top");
+  const top = d.top || [];
+  if (!top.length) {
+    topEl.innerHTML = '<div class="empty-state">暂无搜索数据</div>';
+  } else {
+    const maxC = Math.max(...top.map(x => x.count), 1);
+    topEl.innerHTML = top.map(r =>
+      `<div class="query-row">
+        <span class="query-text" title="${escapeHtml(r.query)}">${escapeHtml(r.query)}</span>
+        <div class="query-bar-wrap"><div class="query-bar" style="width:${(r.count/maxC*100).toFixed(1)}%"></div></div>
+        <span class="query-count num">${fmtNum(r.count)}</span>
+      </div>`).join("");
+  }
+
+  const recentEl = document.getElementById("search-recent");
+  const recent = d.recent || [];
+  if (!recent.length) {
+    recentEl.innerHTML = '<div class="empty-state">暂无搜索记录</div>';
+  } else {
+    recentEl.innerHTML = `<table>
+      <thead><tr><th>时间</th><th>关键词</th><th>语言</th><th>地域</th></tr></thead>
+      <tbody>${recent.map(r => `<tr>
+        <td class="num">${escapeHtml(r.ts)}</td>
+        <td class="mono">${escapeHtml(r.query)}</td>
+        <td>${escapeHtml(r.lang || "")}</td>
+        <td><span class="country-badge">${flagEmoji(r.country)} ${escapeHtml(r.country)}</span></td>
+      </tr>`).join("")}</tbody></table>`;
+  }
 }
 
 // ==================== 数据拉取 ====================
@@ -364,13 +446,20 @@ async function load() {
   loading = true;
   lastUpdateEl.textContent = "加载中…";
   try {
-    const res = await fetch("/monitor/api", { headers: { "Accept": "application/json" } });
-    if (!res.ok) throw new Error(res.status);
-    const d = await res.json();
+    const [visRes, searchRes] = await Promise.all([
+      fetch("/monitor/api", { headers: { "Accept": "application/json" } }),
+      fetch("/monitor/api/search", { headers: { "Accept": "application/json" } }),
+    ]);
+    if (!visRes.ok) throw new Error(visRes.status);
+    const d = await visRes.json();
     renderStats(d);
     renderChart(d.daily);
     renderRegions(d.regions);
     renderRecent(d.recent);
+    // 搜索统计独立拉取，失败不阻塞访问统计
+    try {
+      if (searchRes.ok) renderSearchStats(await searchRes.json());
+    } catch (e) {}
     lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
   } catch (e) {
     lastUpdateEl.textContent = "加载失败";

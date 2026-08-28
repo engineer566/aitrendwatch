@@ -225,6 +225,35 @@ def count_history():
         return 0
 
 
+def search_history(query, lang="zh", limit=50):
+    """在历史 news 库中按关键词搜索，返回匹配卡列表（与 dims 卡同 schema）。
+
+    全字段 LIKE 模糊匹配（title_zh / title_en / summary_zh / summary_en /
+    source / dimension），覆盖中英文标题与摘要。DB 不可用或空 query 返回 []。
+    结果按 score 降序 + published 降序兜底，limit 截断。
+    """
+    if not _DB_OK or not query:
+        return []
+    q = "%" + query.replace("%", "\\%").replace("_", "\\_") + "%"
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            """SELECT * FROM news_cards
+               WHERE title_zh LIKE ? ESCAPE '\\'
+                  OR title_en LIKE ? ESCAPE '\\'
+                  OR summary_zh LIKE ? ESCAPE '\\'
+                  OR summary_en LIKE ? ESCAPE '\\'
+                  OR source LIKE ? ESCAPE '\\'
+                  OR dimension LIKE ? ESCAPE '\\'
+               ORDER BY score DESC, published DESC LIMIT ?""",
+            (q, q, q, q, q, q, limit),
+        ).fetchall()
+        conn.close()
+        return [_row_to_card(r) for r in rows]
+    except Exception:
+        return []
+
+
 def _row_to_card(r):
     """DB 行 → 与 dims 卡同 schema 的 dict。"""
     d = dict(r)
