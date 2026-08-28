@@ -30,6 +30,11 @@ import dims
 import config
 import store
 
+try:
+    import terms as terms_mod  # 词粒度聚合层（词榜/详情/搜索联动）；失败自动降级
+except Exception:
+    terms_mod = None
+
 # 启动后台预热线程：定时抓取 HF + arXiv 写文件缓存，请求路径只读缓存秒回。
 # 每个 gunicorn worker 各起一个 daemon 线程；通过 fcntl 跨进程文件锁串行化，
 # 整个容器内任意时刻只有一个 worker 在抓取（省 arXiv 配额 + 防多 worker 并发撑爆内存）。
@@ -89,6 +94,89 @@ def _detail_set_cache(name, data):
         _detail_cache[name] = (time.time(), data)
 
 
+def _word_detail(term_name, lang="zh"):
+    """通用词聚合数据装配（/api/word 与 /term/<name> 详情页共用）。
+
+    1. normalize → 查 terms 词主表：命中（任何词都有页）→ 词元信息 +
+       关联报道（news_cards LIKE，≤50，按语言投影）；
+       origin ∈ {hf,both} 时额外调 tracker.get_term_detail 拿 live
+       官方/社区/arXiv 区块（沿用进程内 TTL 缓存，~1-4s 慢路径只在详情页）。
+    2. 未命中词池 → 回退 tracker live（HF 长尾模型仍可直达）。
+    3. 都未命中 → {"ok": False}，调用方 404。
+    """
+    lang = lang if lang in ("zh", "en") else "zh"
+    if not terms_mod:
+        return {"ok": False}
+    canon = terms_mod.normalize_term(term_name)
+    if not canon:
+        return {"ok": False}
+
+    def _project(c):
+        title = (c.get("title_zh") if lang == "zh" else c.get("title_en")) \
+            or c.get("title") or ""
+        summary = (c.get("summary_zh") if lang == "zh" else c.get("summary_en")) \
+            or c.get("summary_zh") or c.get("summary_en") or ""
+        return {**c, "title": title, "summary": summary}
+
+    def _hf_live(full_id):
+        """HF live 区块（官方/社区/论文），进程内 TTL 缓存，失败静默。"""
+        if not full_id:
+            return None
+        ck = f"hf:{full_id.lower()}"
+        cached = _detail_cached(ck)
+        if cached is None:
+            try:
+                cached = tracker.get_term_detail(full_id)
+            except Exception:
+                cached = {"ok": False}
+            _detail_set_cache(ck, cached)
+        return (cached.get("term") or {}) if cached.get("ok") else None
+
+    row = terms_mod.get_term_row(term_name)
+    if row:
+        hf = None
+        if row.get("hf_json"):
+            try:
+                hf = json.loads(row["hf_json"])
+            except (json.JSONDecodeError, ValueError):
+                hf = None
+        news = [_project(c) for c in
+                terms_mod.get_term_news(term_name, limit=50, lang=lang)]
+        term_info = {
+            "term": row.get("display") or canon,
+            "display_zh": row.get("display_zh") or "",
+            "origin": row.get("origin") or "news",
+            "news_cnt": row.get("total_mentions", 0),
+            "hot": row.get("cur_hot", 0),
+            "rise": row.get("cur_rise", 0),
+            "novelty": row.get("cur_novelty", 0),
+            "first_seen_at": row.get("first_seen_at") or "",
+            "last_seen_at": row.get("last_seen_at") or "",
+        }
+        return {"ok": True, "term": term_info, "news": news, "hf": hf,
+                "hf_detail": _hf_live((hf or {}).get("full_id")),
+                "legacy_hf": False}
+
+    # 未命中词池：HF 长尾模型直达（保持旧详情页可达性）
+    hf_detail = _hf_live(term_name)
+    if hf_detail:
+        return {"ok": True,
+                "term": {"term": hf_detail.get("term") or term_name,
+                         "display_zh": "", "origin": "hf",
+                         "news_cnt": 0, "hot": 0, "rise": 0, "novelty": 0,
+                         "first_seen_at": "", "last_seen_at": ""},
+                "news": [],
+                "hf": {"full_id": hf_detail.get("full_id", ""),
+                       "likes": hf_detail.get("likes", 0),
+                       "trending_score": hf_detail.get("trending_score", 0),
+                       "downloads": hf_detail.get("downloads", 0),
+                       "official_url": hf_detail.get("official_url", ""),
+                       "author": hf_detail.get("author", ""),
+                       "tags": hf_detail.get("tags") or []},
+                "hf_detail": hf_detail, "legacy_hf": True}
+    return {"ok": False}
+
+
 def _base_url():
     """站点根 URL（末尾无斜杠）。BASE_URL 未设 → 返回 ''，调用方据此降级。"""
     return (config.BASE_URL or "").rstrip("/")
@@ -108,61 +196,60 @@ SSR_INITIAL_LIMIT = 20
 
 
 def _initial_terms_for_ssr():
-    """首页 SSR 用的首屏热词：合并 model 卡 + news 卡，按热度取 Top-N。
+    """首页 SSR 用的首屏词卡：按热度取词卡，每维度配额保证小维度露出。
 
-    读 tracker / dims 文件缓存（不触发 arXiv），任何失败返回 []，模板兜底骨架屏。
-
-    关键：必须同时取 model 卡（模型发布）+ news 卡（产品发布/研究论文/投融资/
-    行业动态/其他），否则首屏 20 条全是模型发布，分类条只剩「全部」+「模型发布」
-    两个标签。前端的 fetchAll() 首屏短路逻辑（allData 非空就 return，不再请求
-    /api/stream）会固化这个首屏状态，用户看到的永远只有两类。
-
-    进一步：单纯按 score 取 Top-N 仍会被高分 model 卡垄断（model 卡 score 普遍
-    高于 news 卡），导致首屏仍只有「模型发布/行业动态/产品发布」三类可见，研究
-    论文、投融资等维度被挤出。这里改为「每维度配额」——各维度先各取 Top-Quota，
-    合并后再按 score 降序截断 SSR_INITIAL_LIMIT，保证 6 个维度都在首屏露出，
-    分类条即可渲染全部标签，爬虫也能索引各类内容。
+    词维度重构后，首屏 SSR 注入词卡（kind=word，含 top_news 迷你列表），
+    爬虫可见「词 + 代表报道」结构；JS 接管后拉 /api/stream?view=words 全量替换。
+    每维度配额逻辑沿用旧版（避免高分词垄断首屏导致分类条标签缺失）。
+    任何失败返回 []，模板兜底骨架屏。
     """
     try:
-        region = "zh"  # SSR 无 request 上下文，默认中文；JS 接管后按用户语言重取
-        model_cards, _ = tracker.get_model_cards(region)
-        news_cards, _ = dims.get_news_cards(region)
-        cards = model_cards + news_cards
+        if not terms_mod:
+            return []
+        cards, _ = terms_mod.get_word_cards(sort="hot", lang="zh",
+                                            limit=SSR_INITIAL_LIMIT * 3)
         if not cards:
             return []
-
-        # 按维度分桶，每桶按 score 降序
+        # 按维度分桶，每桶按 hot 降序
         by_dim = {}
         for c in cards:
             by_dim.setdefault(c.get("dimension") or "其他", []).append(c)
         for d in by_dim:
-            by_dim[d].sort(key=lambda x: x.get("score", 0), reverse=True)
-
-        # 每维度至少取 PER_DIM_QUOTA 条，保证小维度也在首屏可见；
-        # 配额取完后合并、整体按 score 降序截断 SSR_INITIAL_LIMIT。
+            by_dim[d].sort(key=lambda x: x.get("hot", 0), reverse=True)
+        # 每维度至少取 PER_DIM_QUOTA 条，合并后按 hot 降序截断
         quota = max(2, SSR_INITIAL_LIMIT // max(1, len(by_dim)))
         pooled = []
         for d, lst in by_dim.items():
             pooled.extend(lst[:quota])
-        pooled.sort(key=lambda x: x.get("score", 0), reverse=True)
+        pooled.sort(key=lambda x: x.get("hot", 0), reverse=True)
         return pooled[:SSR_INITIAL_LIMIT]
     except Exception:
         return []
 
 
 def _sitemap_terms():
-    """sitemap.xml 用热词列表：双榜合并去重，受 SITEMAP_MAX_URLS 限制。"""
+    """sitemap.xml 用词列表：读 terms 词主表（词维度重构），按热度降序。
+
+    词表为空（冷启动）时回退 tracker HF 榜单，保证 sitemap 不至空转。
+    """
     try:
-        terms = []
-        seen = set()
+        if terms_mod:
+            words = terms_mod.list_terms_for_sitemap(
+                max(0, config.SITEMAP_MAX_URLS - 2))
+            if words:
+                return words
+    except Exception:
+        pass
+    try:
+        seen, out = set(), []
         for sort in ("trending", "top"):
             d = tracker.get_terms(sort=sort)
             for t in (d.get("terms") or []):
-                tid = t.get("full_id") or t.get("term")
-                if tid and tid not in seen:
-                    seen.add(tid)
-                    terms.append(t)
-        return terms[:max(0, config.SITEMAP_MAX_URLS - 1)]
+                slug = t.get("term")
+                if slug and slug not in seen:
+                    seen.add(slug)
+                    out.append(slug)
+        return out[:max(0, config.SITEMAP_MAX_URLS - 2)]
     except Exception:
         return []
 
@@ -520,50 +607,40 @@ def api_all():
 
 
 # ---------- 热词追踪路由（新主功能）----------
-
-@app.route("/api/trending")
-def api_trending():
-    """7 日上升最快热词（HF trendingScore 降序）。"""
-    return jsonify(tracker.get_terms(sort="trending"))
-
-
-@app.route("/api/top")
-def api_top():
-    """热度最高热词（HF likes 降序）。"""
-    return jsonify(tracker.get_terms(sort="top"))
-
-
-@app.route("/api/term/<path:term_name>")
-def api_term(term_name):
-    """单个热词详情：官方链接 + 社区讨论 + 相关论文。"""
-    return jsonify(tracker.get_term_detail(term_name))
+# 注：词维度重构后，旧 JSON API /api/trending /api/top /api/term 已删除。
+# tracker 层仅作内部数据源（HF 模型卡进词池、详情页 HF 区块）。
 
 
 @app.route("/term/<path:term_name>")
 def term_detail(term_name):
-    """单个热词 HTML 详情页（SEO 可索引长尾页）。
+    """通用热词聚合 HTML 详情页（SEO 可索引长尾页）。
 
-    走进程内 TTL 缓存（get_term_detail 是 live HF + 同步 arXiv，~1-4s）。
-    未找到 → 404 HTML + noindex。
+    词维度重构后：任何词（新闻抽词 / HF 模型词）都有页——主体是该词的
+    相关报道聚合 + 词热度信息；HF 模型词额外保留官方/社区/arXiv 区块。
+    进程内 TTL 缓存（HF live 区块是慢路径）。未找到 → 404 HTML + noindex。
     """
-    key = term_name.lower()
+    region = detect_region()
+    lang = "zh" if region == "zh" else "en"
+    key = f"{lang}:{term_name.lower()}"
     data = _detail_cached(key)
     if data is None:
-        data = tracker.get_term_detail(term_name)
-        # 无论成败都缓存，避免未命中的 term 被反复打上游
+        data = _word_detail(term_name, lang=lang)
         _detail_set_cache(key, data)
 
     if not data.get("ok"):
         abort(404)
 
-    term = data.get("term") or {}
-    # 详情页 canonical：用短名（term），URL 更友好
-    slug = term.get("term") or term_name
+    t = data["term"]
+    slug = t.get("term") or term_name
     canonical = _abs(f"/term/{quote(slug)}")
-    desc = (f"{term.get('term','')} — {term.get('author','')} · "
-            f"{term.get('official_label','HuggingFace')} · "
-            f"趋势 {term.get('trending_score','-')} · ❤ {term.get('likes','-')}")
-    return render_template("term_detail.html", term=term, site_name=config.SITE_NAME,
+    if lang == "zh":
+        desc = (f"{slug} 最新动态聚合：{t.get('news_cnt', 0)} 篇相关报道，"
+                f"热度 {t.get('hot', 0)}，追踪 {slug} 的模型、产品与行业进展。")
+    else:
+        desc = (f"{slug}: {t.get('news_cnt', 0)} related reports aggregated, "
+                f"hotness {t.get('hot', 0)}. Track the latest on {slug}.")
+    return render_template("term_detail.html", word=data, lang=lang,
+                           site_name=config.SITE_NAME,
                            site_desc=desc[:160], base_url=_base_url(),
                            canonical=canonical, seo_enabled=_seo_enabled())
 
@@ -599,8 +676,8 @@ def not_found(e):
 
 @app.route("/api/dims")
 def api_dims():
-    """维度热词：按 AI 维度（模型发布/产品发布/投融资/...）分组的热点卡。
-    可选 ?dimension=模型发布 只返回该维度；?lang=zh/en 投影对应语言（默认 zh）。
+    """维度热词：按 AI 维度（模型与技术/产品与应用/商业与投融资/...）分组的热点卡。
+    可选 ?dimension=模型与技术 只返回该维度；?lang=zh/en 投影对应语言（默认 zh）。
     每张卡含 official_url 直链官方原文。"""
     lang = request.args.get("lang", "zh")
     return jsonify(dims.get_dims(dimension=request.args.get("dimension"), lang=lang))
@@ -608,22 +685,39 @@ def api_dims():
 
 @app.route("/api/stream")
 def api_stream():
-    """统一卡片流：合并 model 卡（tracker）+ news 卡（dims）为一个扁平列表。
+    """统一卡片流：view=words（词卡，默认）| view=news（逐条新闻，旧逻辑原样）。
 
     参数：
       lang：默认按 Accept-Language（detect_region → zh/global → zh/en）。
-      sort：rise（上升最快，按 trend 降序）/ hot（最热，按 score 降序）/
-            new（最新，按 published 降序），默认 rise。
-    返回 {ok, fetched_at, count, dimension_list, terms}。
-    两类卡只读各自文件缓存，秒回，无需并发。
+      view：words | news，默认 words。words 读 terms 层 cache/words.json，
+            词卡内嵌 top-3 报道；news 合并 model 卡（tracker）+ news 卡（dims）。
+      sort：rise（上升/环比）/ hot（热度）/ new（words 视图=新奇度新词发现，
+            news 视图=published 时间序），默认 rise。
+    返回 {ok, view, fetched_at, count, dimension_list, terms}。
+    只读各自文件缓存，秒回，无需并发。
     """
     region = detect_region()
     lang = request.args.get("lang", "zh" if region == "zh" else "en")
     if lang not in ("zh", "en"):
         lang = "zh" if region == "zh" else "en"
+    view = request.args.get("view", "words")
+    if view not in ("words", "news"):
+        view = "words"
     sort = request.args.get("sort", "rise")
     if sort not in ("rise", "hot", "new"):
         sort = "rise"
+
+    if view == "words":
+        cards, fetched_at = (terms_mod.get_word_cards(sort, lang)
+                             if terms_mod else ([], 0))
+        return jsonify({
+            "ok": True,
+            "view": "words",
+            "fetched_at": fetched_at,
+            "count": len(cards),
+            "dimension_list": dims.DIMENSIONS,
+            "terms": cards,
+        })
 
     model_cards, m_at = tracker.get_model_cards(lang)
     news_cards, n_at = dims.get_news_cards(lang)
@@ -638,11 +732,25 @@ def api_stream():
     fetched_at = max(m_at, n_at)
     return jsonify({
         "ok": True,
+        "view": "news",
         "fetched_at": fetched_at,
         "count": len(cards),
         "dimension_list": dims.DIMENSIONS,
         "terms": cards,
     })
+
+
+@app.route("/api/word/<path:term_name>")
+def api_word(term_name):
+    """单词聚合 JSON：词元信息 + 全量关联报道（≤50）。
+
+    主页词卡「展开更多」与 /term/<name> 详情页共用数据源。
+    读 terms 表 + news_cards LIKE 查询，进程内 TTL 缓存 300s。
+    """
+    data = _word_detail(term_name, lang=request.args.get("lang", "zh"))
+    if not data.get("ok"):
+        return jsonify({"ok": False, "error": "term not found"}), 404
+    return jsonify(data)
 
 
 @app.route("/health")
@@ -678,7 +786,8 @@ def _highlight(value, q):
 
 # 字段权重：标题命中权重最高，摘要次之，来源/作者最弱（v2 加权打分）
 _FIELD_WEIGHTS = {
-    "title_zh": 30, "title_en": 30, "term": 30,   # 标题/模型名
+    "title_zh": 30, "title_en": 30, "term": 30,   # 标题/模型名/热词名
+    "display_zh": 30,                              # 热词中文别名（词维度重构）
     "summary_zh": 12, "summary_en": 12, "summary": 12,  # 摘要
     "source": 8, "author": 8,                              # 来源/作者
     "title": 25,                                           # 兜底 title（zh/en 投影后字段）
@@ -704,6 +813,7 @@ def _score_card(card, q):
         "title_zh": card.get("title_zh"),
         "title_en": card.get("title_en"),
         "term": card.get("term"),
+        "display_zh": card.get("display_zh"),
         "summary": card.get("summary"),
         "summary_zh": card.get("summary_zh"),
         "summary_en": card.get("summary_en"),
@@ -792,6 +902,18 @@ def _search_pool(lang):
                 pool.append(pc)
     except Exception:
         pass
+    # 词卡实体（词维度重构）：搜词时顶部可命中「热词卡」，点击进词聚合页
+    try:
+        if terms_mod:
+            word_cards, _ = terms_mod.get_word_cards("hot", lang, limit=200)
+            for wc in word_cards:
+                wid = "word:" + (wc.get("id") or "")
+                if not wc.get("id") or wid in seen:
+                    continue
+                seen.add(wid)
+                pool.append(wc)
+    except Exception:
+        pass
     return pool
 
 
@@ -800,9 +922,12 @@ def _do_search(q, lang, limit):
 
     terms 每项含 _score / _matched_fields / _highlight_* 字段。
     matched_in_history：命中是否来自历史库（前端显示「含历史归档」标记）。
+    词维度重构：kind=="word" 的热词卡从主结果流剥离，经 word_hits 单独返回
+    （≤3），前端在结果顶部渲染热词卡区，避免与逐条报道重复。
     """
     pool = _search_pool(lang)
     scored = []
+    word_hits = []
     history_hits = 0
     for c in pool:
         s = _score_card(c, q)
@@ -812,9 +937,13 @@ def _do_search(q, lang, limit):
         if c.get("_from_history"):
             s["_from_history"] = True
             history_hits += 1
+        if c.get("kind") == "word":
+            word_hits.append(s)
+            continue
         scored.append(s)
     scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
-    return scored[:limit], history_hits
+    word_hits.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    return scored[:limit], word_hits[:3], history_hits
 
 
 @app.route("/search")
@@ -842,16 +971,16 @@ def search_page():
     store.record_search_query(q, lang=lang, ip=cip,
                               country=_client_country(cip))
 
-    results, history_hits = [], 0
+    results, word_hits, history_hits = [], [], 0
     suggest = []
     if q:
-        results, history_hits = _do_search(q, lang, limit)
-        if not results:
+        results, word_hits, history_hits = _do_search(q, lang, limit)
+        if not results and not word_hits:
             suggest = store.search_suggest(q[:20], limit=8)
 
     return render_template(
         "search.html",
-        q=q, lang=lang, terms=results,
+        q=q, lang=lang, terms=results, word_hits=word_hits,
         count=len(results), history_hits=history_hits,
         suggest=suggest, site_name=config.SITE_NAME,
     )
@@ -918,11 +1047,12 @@ def api_search():
                               country=_client_country(cip))
     if not q:
         return jsonify({"ok": True, "query": "", "count": 0,
-                        "history_hits": 0, "terms": []})
+                        "history_hits": 0, "terms": [], "word_hits": []})
 
-    results, history_hits = _do_search(q, lang, limit)
+    results, word_hits, history_hits = _do_search(q, lang, limit)
     return jsonify({"ok": True, "query": q, "count": len(results),
                     "history_hits": history_hits, "terms": results,
+                    "word_hits": word_hits,
                     "fetched_at": int(time.time())})
 
 
@@ -958,8 +1088,7 @@ def sitemap():
         if _seo_enabled():
             # 服务条款页（静态，常驻索引）
             urls.append(f"{base}/terms")
-            for t in _sitemap_terms():
-                slug = t.get("term")
+            for slug in _sitemap_terms():
                 if not slug:
                     continue
                 urls.append(f"{base}/term/{quote(slug)}")

@@ -1,0 +1,906 @@
+"""
+词粒度聚合层 —— 热词池归并 + 词维度三榜打分 + 周期快照 + 历史回填。
+
+在 tracker.py（HF 模型）与 dims.py（新闻 pipeline）之上新增的一层：
+- 热词来源：dims 新闻卡的 keywords（DeepSeek 抽取；无 key 降级为本模块词典匹配）
+  + tracker HF 模型名，canonical 键碰撞归并成统一词池。
+- 三榜口径（词维度）：
+  - 热度 hot     = Σ 近 7 天关联报道 score + HF likes（score 已含时效衰减，不二次衰减）
+  - 上升 rise    = 活动量环比增速 (m_cur - m_prev) / max(m_prev, 0.5)；新词冷启动 ln(1+m)
+  - 最新 novelty = 新词/罕见词发现：fresh(first_seen) × rarity(total_mentions)，
+                   不是按报道时间排序——词库里少见或首次出现的词优先。
+- 周期快照 term_snapshots 支撑环比；news_cards.keywords 列支撑词-新闻关联。
+
+设计原则（复刻 news_store.py）：
+- 纯 stdlib（sqlite3），零新依赖。
+- 任何失败都不阻塞服务：DB 缺失/不可写 → 降级，绝不抛异常。
+- 词聚合/打分只在 dims 后台刷新锁内执行（refresh_words），请求路径只读
+  cache/words.json + SQLite（秒回）。
+"""
+
+import os
+import re
+import sys
+import json
+import math
+import sqlite3
+import threading
+import datetime
+
+import config
+
+try:
+    import news_store  # 历史库读取（回填/聚合扫描）；失败自动降级
+except Exception:
+    news_store = None
+
+_DB_OK = False
+_db_lock = threading.Lock()
+_now_iso = lambda: datetime.datetime.now().isoformat(timespec="seconds")
+
+# ---------- 词池规模控制 ----------
+MAX_NEW_TERMS_PER_CYCLE = 150   # 单轮最多新增的非词典词数（防 LLM 词爆炸）
+WORD_CARDS_LIMIT = 200          # words.json 最多保留的词卡数（展示层再截 60）
+HOT_WINDOW_DAYS = 7             # 热度聚合窗口（天）
+
+# ---------- 文件缓存（words.json，模式复刻 dims.py）----------
+WORDS_CACHE_FILE = os.path.join(config.CACHE_DIR, "words.json")
+_file_cache = {}
+_file_cache_lock = threading.Lock()
+_file_cache_loaded = False
+_file_cache_mtime = 0
+
+
+def _load_file_cache(force=False):
+    """加载 words.json 到内存；靠 mtime 感知其他 worker/线程的磁盘刷新。"""
+    global _file_cache_loaded, _file_cache_mtime
+    with _file_cache_lock:
+        try:
+            cur_mtime = os.path.getmtime(WORDS_CACHE_FILE)
+        except OSError:
+            cur_mtime = 0
+        if _file_cache_loaded and not force and cur_mtime == _file_cache_mtime:
+            return
+        if cur_mtime:
+            try:
+                with open(WORDS_CACHE_FILE, "r", encoding="utf-8") as f:
+                    _file_cache.update(json.load(f))
+            except (json.JSONDecodeError, OSError):
+                pass
+        _file_cache_loaded = True
+        _file_cache_mtime = cur_mtime
+
+
+def _save_file_cache():
+    try:
+        os.makedirs(config.CACHE_DIR, exist_ok=True)
+        tmp = WORDS_CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_file_cache, f, ensure_ascii=False)
+        os.replace(tmp, WORDS_CACHE_FILE)
+    except OSError:
+        pass
+
+
+def _file_cache_set(data, fetched_at):
+    with _file_cache_lock:
+        _file_cache["words"] = {"data": data, "fetched_at": fetched_at}
+    _save_file_cache()
+    global _file_cache_mtime
+    try:
+        with _file_cache_lock:
+            _file_cache_mtime = os.path.getmtime(WORDS_CACHE_FILE)
+    except OSError:
+        pass
+
+
+def _file_cache_get():
+    _load_file_cache()
+    with _file_cache_lock:
+        ent = _file_cache.get("words")
+        if ent:
+            return ent.get("data"), ent.get("fetched_at", 0)
+    return None, 0
+
+
+# ---------- SQLite（news.db 内的词粒度表，与 news_store 同库不同表）----------
+def init_db():
+    """建 terms / term_snapshots 表 + WAL。失败置 _DB_OK=False，全部降级。"""
+    global _DB_OK
+    config.ensure_data_dir()
+    try:
+        conn = _conn()
+        conn.executescript("""
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE IF NOT EXISTS terms (
+                term           TEXT PRIMARY KEY,  -- canonical 键（小写归一），如 "gpt-5"
+                display        TEXT,              -- 最佳展示形（如 "GPT-5"）
+                display_zh     TEXT DEFAULT '',   -- 中文别名（词典提供，可空）
+                origin         TEXT DEFAULT 'news', -- news | hf | both
+                first_seen_at  TEXT,              -- 首次进入词池（取关联报道最早 published 兜底）
+                last_seen_at   TEXT,
+                total_mentions INTEGER DEFAULT 0, -- 累计关联报道数（按 url 去重）
+                hf_json        TEXT DEFAULT '',   -- HF 模型词快照 JSON
+                cur_hot        INTEGER DEFAULT 0, -- 本周期热度（每轮重算）
+                cur_rise       REAL DEFAULT 0,    -- 本周期环比增速
+                cur_novelty    REAL DEFAULT 0     -- 本周期新奇度
+            );
+            CREATE INDEX IF NOT EXISTS idx_terms_hot ON terms(cur_hot DESC);
+            CREATE TABLE IF NOT EXISTS term_snapshots (
+                term       TEXT,
+                cycle      TEXT,              -- "2026-08-28-13"（Asia/Shanghai 小时）
+                news_cnt   INTEGER DEFAULT 0, -- 本周期关联报道数
+                score_sum  INTEGER DEFAULT 0, -- 本周期 Σ score
+                signal_sum REAL DEFAULT 0,    -- 本周期 Σ 社区信号
+                PRIMARY KEY (term, cycle)
+            );
+        """)
+        conn.commit()
+        conn.close()
+        _DB_OK = True
+    except Exception:
+        _DB_OK = False
+
+
+def _conn():
+    conn = sqlite3.connect(config.NEWS_DB_PATH, timeout=3.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# ---------- 关键词词典（canonical → 表面形式列表）----------
+# 词典是「归一锚点」而非唯一词源：LLM 抽出的新词不在词典里也收（canonical=自身
+# 小写归一）。词典三大用途：① 无 LLM key 时的降级抽词；② 历史库零成本回填；
+# ③ 常见异形归一并提供 display_zh。
+# 表面形式约定：ASCII 小写（词边界匹配，大小写不敏感）；CJK 直接子串匹配。
+_LEXICON = {
+    # —— 头部模型/产品 ——
+    "gpt-5":        ["gpt-5", "gpt5", "gpt 5"],
+    "gpt-4o":       ["gpt-4o", "gpt4o", "gpt 4o"],
+    "chatgpt":      ["chatgpt", "chat gpt"],
+    "openai":       ["openai"],
+    "claude":       ["claude"],
+    "anthropic":    ["anthropic"],
+    "gemini":       ["gemini", "双子星"],
+    "google-deepmind": ["deepmind", "google deepmind"],
+    "llama":        ["llama", "羊驼"],
+    "qwen":         ["qwen", "通义千问", "千问"],
+    "deepseek":     ["deepseek", "深度求索"],
+    "kimi":         ["kimi", "月之暗面"],
+    "doubao":       ["doubao", "豆包"],
+    "wenxin":       ["wenxin", "文心一言", "文心"],
+    "glm":          ["glm", "智谱", "chatglm", "智谱清言"],
+    "hunyuan":      ["hunyuan", "混元"],
+    "mistral":      ["mistral"],
+    "grok":         ["grok"],
+    "copilot":      ["copilot"],
+    "sora":         ["sora"],
+    "midjourney":   ["midjourney"],
+    "stable-diffusion": ["stable diffusion", "stability ai"],
+    "flux":         ["flux.1", "flux 1", "black forest labs"],
+    "veo":          ["veo"],
+    "suno":         ["suno"],
+    "cursor":       ["cursor"],
+    "devin":        ["devin"],
+    "manus":        ["manus"],
+    "perplexity":   ["perplexity"],
+    "huggingface":  ["huggingface", "hugging face", "抱抱脸"],
+    "ollama":       ["ollama"],
+    "vllm":         ["vllm"],
+    "nvidia":       ["nvidia", "英伟达"],
+    "cuda":         ["cuda"],
+    "amd":          ["amd"],
+    "apple-intelligence": ["apple intelligence", "苹果智能"],
+    "siri":         ["siri"],
+    "meta-ai":      ["meta ai", "meta人工智能"],
+    "xai":          ["xai"],
+    "microsoft":    ["microsoft", "微软"],
+    "google":       ["google", "谷歌"],
+    "bytedance":    ["bytedance", "字节跳动", "字节"],
+    "alibaba":      ["alibaba", "阿里"],
+    "tencent":      ["tencent", "腾讯"],
+    "baidu":        ["baidu", "百度"],
+    "huawei":       ["huawei", "华为"],
+    "tsinghua":     ["tsinghua", "清华"],
+    # —— 技术概念 ——
+    "llm":          ["llm", "llms", "大模型", "大语言模型"],
+    "agent":        ["agent", "agents", "智能体", "ai agent"],
+    "rag":          ["rag", "retrieval-augmented", "检索增强"],
+    "mcp":          ["mcp", "model context protocol"],
+    "multimodal":   ["multimodal", "多模态"],
+    "diffusion":    ["diffusion", "扩散模型"],
+    "transformer":  ["transformer"],
+    "fine-tuning":  ["fine-tuning", "finetuning", "fine tuning", "微调"],
+    "rlhf":         ["rlhf", "人类反馈强化学习"],
+    "reinforcement-learning": ["reinforcement learning", "强化学习"],
+    "reasoning":    ["reasoning", "推理模型", "思维链", "chain-of-thought", "cot"],
+    "embedding":    ["embedding", "embeddings", "向量", "词向量"],
+    "vector-db":    ["vector database", "向量数据库"],
+    "prompt":       ["prompt engineering", "提示词", "提示工程"],
+    "context-window": ["context window", "上下文窗口", "长上下文", "long context"],
+    "kv-cache":     ["kv cache", "kv-cache"],
+    "quantization": ["quantization", "量化"],
+    "distillation": ["distillation", "蒸馏", "知识蒸馏"],
+    "lora":         ["lora", "qlora"],
+    "moe":          ["moe", "mixture of experts", "混合专家"],
+    "benchmark":    ["benchmark", "benchmarks", "基准测试", "评测"],
+    "agi":          ["agi", "通用人工智能"],
+    "alignment":    ["alignment", "对齐", "价值对齐"],
+    "hallucination": ["hallucination", "幻觉"],
+    "token":        ["token", "tokens"],
+    "inference":    ["inference", "推理加速", "推理优化"],
+    "training":     ["pretraining", "pre-training", "预训练"],
+    "open-source":  ["open source", "open-source", "开源"],
+    "robotics":     ["robotics", "humanoid", "机器人", "具身智能", "人形机器人"],
+    "autonomous-driving": ["autonomous driving", "self-driving", "自动驾驶", "智能驾驶"],
+    "text-to-video": ["text-to-video", "text to video", "文生视频", "视频生成"],
+    "text-to-image": ["text-to-image", "text to image", "文生图", "图像生成"],
+    "voice":        ["voice ai", "语音", "语音合成", "tts"],
+    "coding":       ["ai coding", "code generation", "代码生成", "ai 编程", "ai编程"],
+    "search":       ["ai search", "ai 搜索", "ai搜索"],
+    "wearable":     ["ai glasses", "智能眼镜"],
+    "chip":         ["ai chip", "ai芯片", "芯片", "算力"],
+    "regulation":   ["ai regulation", "ai act", "监管", "法案"],
+    "safety":       ["ai safety", "ai 安全", "ai安全"],
+    "copyright":    ["copyright", "版权", "侵权"],
+    "funding":      ["funding", "融资", "ipo", "估值"],
+    "workflow":     ["workflow", "工作流"],
+    "edge-ai":      ["edge ai", "端侧", "端侧ai", "on-device"],
+    "world-model":  ["world model", "世界模型"],
+    "memory":       ["long-term memory", "记忆", "长期记忆"],
+    "sandbox":      ["sandbox", "沙盒"],
+}
+
+# 由 _LEXICON 反查构建：表面形式（小写）→ canonical
+_ALIAS = {}
+for _canon, _forms in _LEXICON.items():
+    for _f in _forms:
+        _ALIAS.setdefault(_f.lower(), _canon)
+# 少量手工别名（词典表面形式未覆盖的常见异形）
+_ALIAS.update({
+    "gpt5": "gpt-5", "gpt4o": "gpt-4o",
+    "千问": "qwen", "通义": "qwen",
+    "智谱ai": "glm", "智谱清言": "glm",
+    "月之暗面": "kimi",
+    "深度求索": "deepseek",
+    "苹果智能": "apple-intelligence",
+})
+
+# ASCII 表面形式预编译词边界正则（复用 tracker.py 词边界模式）；
+# CJK 表面形式走子串匹配，无需正则。
+_ASCII_PATTERNS = {}
+for _canon, _forms in _LEXICON.items():
+    for _f in _forms:
+        fl = _f.lower()
+        if all(ord(c) < 128 for c in fl):
+            # 词边界：前后不能是字母/数字；额外排除「版本后缀」误匹配——
+            # "GPT-5.5" 不应命中 gpt-5（(?!\.\d) 挡掉 ".数字"），"GPT-5." 句点结尾仍匹配。
+            _ASCII_PATTERNS[fl] = (
+                re.compile(r"(?<![a-z0-9])" + re.escape(fl)
+                           + r"(?!\.\d)(?![a-z0-9])", re.I),
+                _canon,
+            )
+
+
+def normalize_term(s):
+    """任意词形 → canonical 键。单点收口，抽词/查询/详情页都用它。
+
+    规则：strip/lower → 空白与连字符归一为单 '-' → 查别名表 → 保守去复数
+    （仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃（返回 ""）。
+    """
+    if not s:
+        return ""
+    t = re.sub(r"[\s_]+", "-", str(s).strip().lower())
+    t = re.sub(r"-{2,}", "-", t).strip("-")
+    if not t:
+        return ""
+    if t in _ALIAS:
+        return _ALIAS[t]
+    # 保守去复数：仅纯 ASCII 词、长度>3、不以 ss 结尾
+    if t.isascii() and len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
+        cand = t[:-1]
+        if cand in _ALIAS:
+            return _ALIAS[cand]
+    if len(t) < 2 or t.isdigit():
+        return ""
+    return t
+
+
+def extract_keywords_dict(title):
+    """词典匹配抽词（零 LLM 成本）。无 API key 时的降级路径 + 历史回填用。
+
+    对标题（可传多段拼接文本）做：ASCII 表面形式词边界匹配 + CJK 子串匹配，
+    返回 canonical 词键列表，去重，上限 3 个。
+    """
+    if not title:
+        return []
+    text = str(title)
+    hits = []
+    # ASCII 词边界匹配
+    for pat, canon in _ASCII_PATTERNS.values():
+        if canon not in hits and pat.search(text):
+            hits.append(canon)
+    # CJK 子串匹配
+    for canon, forms in _LEXICON.items():
+        if canon in hits:
+            continue
+        for f in forms:
+            if any(ord(c) >= 128 for c in f) and f in text:
+                hits.append(canon)
+                break
+    return hits[:3]
+
+
+def _display_of(term, surfaces):
+    """从命中表面形式里挑展示名：优先含大写的最长形式，否则首字母大写化。"""
+    best = ""
+    for s in surfaces:
+        if any(c.isupper() for c in s) and len(s) > len(best):
+            best = s
+    if best:
+        return best
+    # 词典 canonical 的常见美化：按 '-' 分词，已知缩写全大写
+    UPPER = {"gpt", "llm", "rag", "mcp", "agi", "rlhf", "moe", "lora", "ai",
+             "kv", "tts", "ipo", "cuda", "amd", "xai", "cot"}
+    parts = term.split("-")
+    pretty = " ".join(p.upper() if p in UPPER else p.capitalize() for p in parts)
+    pretty = pretty.replace("Gpt ", "GPT-").replace("Gpt", "GPT")
+    return pretty
+
+
+def _display_zh_of(term):
+    """词典里该词的第一个 CJK 表面形式作为中文别名，无则 ""。"""
+    for f in _LEXICON.get(term, []):
+        if any(ord(c) >= 128 for c in f):
+            return f
+    return ""
+
+
+# ---------- 词聚合 + 三榜打分（仅 dims 后台刷新锁内调用）----------
+def _match_hf_term(canon, display, card_titles_lower):
+    """HF 模型词是否命中某新闻标题：词边界匹配归一化短名。"""
+    if not display:
+        return False
+    d = display.lower()
+    if all(ord(c) < 128 for c in d):
+        pat = re.compile(r"(?<![a-z0-9])" + re.escape(d)
+                         + r"(?!\.\d)(?![a-z0-9])", re.I)
+        return any(pat.search(t) for t in card_titles_lower)
+    return any(d in t for t in card_titles_lower)
+
+
+# 与 tracker.py:_base_model_key 同款的量化/变体后缀剥离（修改时需两边同步）。
+# 让 HF 模型变体（GPT-5-Chat / Qwen3-27B-GGUF）与新闻关键词（gpt-5）归并到同一词。
+_HF_SUFFIX_RE = re.compile(
+    r"-(gguf|fp8|fp16|bf16|mlx|awq|gptq|int8|int4|uncensored"
+    r"|obli?(terat)?ed|instruct|chat|base)(-.*)?$")
+
+
+def _hf_canon(mc):
+    """HF 模型卡 → canonical 词键：full_id 末段剥量化/变体后缀 → normalize_term。"""
+    full_id = mc.get("full_id") or mc.get("id") or ""
+    display = (mc.get("term") or "").strip()
+    name = full_id.split("/")[-1].lower() if full_id else display.lower()
+    name = _HF_SUFFIX_RE.sub("", name)
+    return normalize_term(name or display)
+
+
+def refresh_words(all_cards, model_cards, fetched_at=None):
+    """一轮刷新的词聚合：关联 → 归并 → 打分 → 快照 → 写 words.json。
+
+    输入：all_cards（dims 当轮全量新闻卡，含 keywords）、
+          model_cards（tracker 当轮 HF 模型卡）。
+    数据源：新闻关联以**历史库全量扫描**为准（跨周期累积 total_mentions /
+    7 天热窗），当轮 all_cards 只用于本周期快照 news_cnt/score_sum。
+    失败静默，绝不阻塞 dims 刷新主流程。
+    """
+    if not _DB_OK:
+        return
+    try:
+        _refresh_words_inner(all_cards or [], model_cards or [],
+                             fetched_at or int(datetime.datetime.now().timestamp()))
+    except Exception:
+        pass
+
+
+def _refresh_words_inner(all_cards, model_cards, fetched_at):
+    now = _now_iso()
+    today = datetime.date.today()
+    hot_cutoff = (today - datetime.timedelta(days=HOT_WINDOW_DAYS)).isoformat()
+    cycle = datetime.datetime.now().strftime("%Y-%m-%d-%H")  # 容器 TZ=Asia/Shanghai
+
+    # ---- 1. HF 模型词归一化 + 元数据（底模键归并变体，与新闻关键词碰撞合并）----
+    hf_terms = {}  # canon → {display, hf_meta}
+    for mc in model_cards:
+        canon = _hf_canon(mc)
+        if not canon:
+            continue
+        display = (mc.get("term") or "").strip()
+        # 同底模多变体：保留 trending_score 最高的展示名与元数据
+        prev = hf_terms.get(canon)
+        if prev and (prev["hf"].get("trending_score", 0)
+                     >= int(mc.get("trending_score", 0) or 0)):
+            continue
+        hf_terms[canon] = {
+            "display": display or canon,
+            "hf": {
+                "full_id": mc.get("full_id") or mc.get("id") or "",
+                "likes": int(mc.get("likes", 0) or 0),
+                "trending_score": int(mc.get("trending_score", 0) or 0),
+                "downloads": int(mc.get("downloads", 0) or 0),
+                "official_url": mc.get("official_url", ""),
+                "author": mc.get("author", ""),
+                "tags": mc.get("tags") or [],
+            },
+        }
+
+    # ---- 2. 全量历史库扫描：词 → 关联聚合（total_mentions / 7 天热窗 / dims / top news）----
+    agg = {}  # canon → {mentions, hot_score, urls:set, dims:Counter, top:[...], latest_pub, earliest_pub, pubs:set, cur_cnt, cur_score, cur_signal}
+    cur_urls = {c.get("official_url") or c.get("title", "") for c in all_cards}
+    cur_signal_by_url = {}
+    for c in all_cards:
+        u = c.get("official_url") or c.get("title", "")
+        cur_signal_by_url[u] = (c.get("hn_points", 0) or 0) * 10 + \
+            (c.get("reddit_score", 0) or 0) + (c.get("reddit_comments", 0) or 0) * 0.5
+
+    rows = []
+    if news_store:
+        try:
+            conn = _conn()
+            rows = conn.execute(
+                "SELECT url, title, title_zh, title_en, dimension, published, "
+                "score, keywords FROM news_cards"
+            ).fetchall()
+            conn.close()
+        except Exception:
+            rows = []
+
+    # 预编译 HF 词匹配用的标题小写缓存
+    for r in rows:
+        kws = []
+        try:
+            v = json.loads(r["keywords"] or "[]")
+            kws = [normalize_term(k) for k in v] if isinstance(v, list) else []
+        except (json.JSONDecodeError, ValueError, TypeError):
+            kws = []
+        kws = [k for k in kws if k]
+        # HF 词标题命中（即使抽词没抽到）
+        titles_lower = [str(r["title"] or "").lower(),
+                        str(r["title_zh"] or "").lower(),
+                        str(r["title_en"] or "").lower()]
+        for canon, meta in hf_terms.items():
+            if canon in kws:
+                continue
+            last_seg = (meta["hf"].get("full_id") or "").split("/")[-1]
+            if (_match_hf_term(canon, meta["display"], titles_lower)
+                    or _match_hf_term(canon, last_seg, titles_lower)
+                    or _match_hf_term(canon, canon, titles_lower)):
+                kws.append(canon)
+        for canon in set(kws):
+            a = agg.setdefault(canon, {
+                "mentions": 0, "hot_score": 0, "urls": set(),
+                "dims": {}, "top": [], "latest_pub": "", "earliest_pub": "9999",
+                "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
+            })
+            url = r["url"] or ""
+            if url not in a["urls"]:
+                a["urls"].add(url)
+                a["mentions"] += 1
+            pub = r["published"] or ""
+            if pub:
+                a["pubs"].add(pub)
+            if pub >= hot_cutoff:
+                a["hot_score"] += int(r["score"] or 0)
+            d = r["dimension"] or "其他"
+            a["dims"][d] = a["dims"].get(d, 0) + 1
+            if pub > a["latest_pub"]:
+                a["latest_pub"] = pub
+            if pub and pub < a["earliest_pub"]:
+                a["earliest_pub"] = pub
+            if url in cur_urls:
+                a["cur_cnt"] += 1
+                a["cur_score"] += int(r["score"] or 0)
+                a["cur_signal"] += cur_signal_by_url.get(url, 0.0)
+
+    # top news（每词按 score 取前 3，裁剪 6 字段）
+    for r in rows:
+        kws = []
+        try:
+            v = json.loads(r["keywords"] or "[]")
+            kws = [normalize_term(k) for k in v] if isinstance(v, list) else []
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+        for canon in set(k for k in kws if k):
+            a = agg.get(canon)
+            if a is None:
+                continue
+            a["top"].append({
+                "score": int(r["score"] or 0),
+                "card": {
+                    "title_zh": r["title_zh"] or r["title"] or "",
+                    "title_en": r["title_en"] or r["title"] or "",
+                    "official_url": r["url"] or "",
+                    "source": "",
+                    "published": r["published"] or "",
+                    "hot": int(r["score"] or 0),
+                },
+            })
+    for a in agg.values():
+        a["top"].sort(key=lambda x: -x["score"])
+        a["top"] = [t["card"] for t in a["top"][:3]]
+
+    # ---- 3. 归并 HF 词（无新闻命中也入池，origin=hf）----
+    for canon, meta in hf_terms.items():
+        agg.setdefault(canon, {
+            "mentions": 0, "hot_score": 0, "urls": set(), "dims": {},
+            "top": [], "latest_pub": "", "earliest_pub": "9999",
+            "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
+        })
+
+    # ---- 4. 读旧 terms 表（保留 first_seen_at / display 演进）----
+    old = {}
+    try:
+        conn = _conn()
+        for r in conn.execute("SELECT * FROM terms").fetchall():
+            old[r["term"]] = dict(r)
+        conn.close()
+    except Exception:
+        old = {}
+
+    # ---- 5. 噪词过滤 + 新增 cap ----
+    kept = {}
+    new_budget = MAX_NEW_TERMS_PER_CYCLE
+    for canon, a in agg.items():
+        in_lexicon = canon in _LEXICON
+        is_hf = canon in hf_terms
+        existed = canon in old
+        if not in_lexicon and not is_hf and not existed:
+            # 全新非词典词：单轮新增预算 + 噪词过滤（单次出现且 ASCII 短词丢弃）
+            if a["mentions"] <= 1 and canon.isascii() and len(canon) < 4:
+                continue
+            if new_budget <= 0:
+                continue
+            new_budget -= 1
+        kept[canon] = a
+
+    # ---- 6. 三榜打分 + 写 terms 主表 + 快照 ----
+    with _db_lock:
+        conn = _conn()
+        for canon, a in kept.items():
+            o = old.get(canon) or {}
+            is_hf = canon in hf_terms
+            hf_meta = {}
+            if is_hf:
+                hf_meta = hf_terms[canon]["hf"]
+            elif o.get("hf_json"):
+                try:
+                    hf_meta = json.loads(o["hf_json"])
+                except (json.JSONDecodeError, ValueError):
+                    hf_meta = {}
+            origin = ("both" if a["mentions"] > 0 and is_hf else
+                      ("hf" if is_hf else "news"))
+            hot = a["hot_score"] + int(hf_meta.get("likes", 0) or 0)
+
+            # rise：活动量环比
+            m_cur = a["cur_cnt"] + a["cur_score"] / 2000.0
+            try:
+                prev = conn.execute(
+                    "SELECT news_cnt, score_sum FROM term_snapshots "
+                    "WHERE term=? AND cycle<>? ORDER BY cycle DESC LIMIT 1",
+                    (canon, cycle)).fetchone()
+            except Exception:
+                prev = None
+            if prev:
+                m_prev = prev["news_cnt"] + prev["score_sum"] / 2000.0
+                rise = (m_cur - m_prev) / max(m_prev, 0.5)
+            else:
+                rise = math.log(1 + m_cur) if m_cur > 0 else 0.0
+            rise = max(-1.0, min(10.0, rise))
+
+            # novelty：fresh × rarity
+            healed_first_seen = False
+            first_seen = o.get("first_seen_at") or ""
+            earliest = a["earliest_pub"] if a["earliest_pub"] != "9999" else ""
+            # first_seen 自愈：存档日期若不再被任何关联卡锚定（词表被脏关联污染过），
+            # 用当前最早报道回填；仍被锚定则保留（真·历史首现，immutable）。
+            if first_seen and first_seen[:10] not in a["pubs"]:
+                first_seen = ""
+                healed_first_seen = True
+            if earliest and (not first_seen or earliest < first_seen[:10]):
+                first_seen = earliest
+            if not first_seen:
+                first_seen = now
+            try:
+                age_days = (datetime.datetime.now() -
+                            datetime.datetime.fromisoformat(first_seen[:19])).days
+            except (ValueError, TypeError):
+                age_days = 0
+            fresh = 2.0 if age_days <= 2 else math.exp(-age_days / 10.0)
+            rarity = 1.0 / (1.0 + math.log(1 + a["mentions"]))
+            novelty = round(fresh * rarity, 4)
+
+            # display 演进：优先 HF 展示名/旧展示名/新构造
+            display = (hf_terms.get(canon, {}).get("display")
+                       or o.get("display") or _display_of(canon, []))
+            display_zh = o.get("display_zh") or _display_zh_of(canon)
+
+            conn.execute(
+                """INSERT INTO terms (term, display, display_zh, origin,
+                       first_seen_at, last_seen_at, total_mentions, hf_json,
+                       cur_hot, cur_rise, cur_novelty)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(term) DO UPDATE SET
+                       display=excluded.display, display_zh=excluded.display_zh,
+                       origin=excluded.origin, last_seen_at=excluded.last_seen_at,
+                       total_mentions=excluded.total_mentions,
+                       hf_json=excluded.hf_json, cur_hot=excluded.cur_hot,
+                       cur_rise=excluded.cur_rise, cur_novelty=excluded.cur_novelty""",
+                (canon, display, display_zh, origin,
+                 first_seen, now, a["mentions"],
+                 json.dumps(hf_meta, ensure_ascii=False) if hf_meta else "",
+                 hot, round(rise, 4), novelty),
+            )
+            conn.execute(
+                """INSERT INTO term_snapshots (term, cycle, news_cnt, score_sum, signal_sum)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(term, cycle) DO UPDATE SET
+                       news_cnt=excluded.news_cnt, score_sum=excluded.score_sum,
+                       signal_sum=excluded.signal_sum""",
+                (canon, cycle, a["cur_cnt"], a["cur_score"], round(a["cur_signal"], 1)),
+            )
+            if healed_first_seen:
+                # ON CONFLICT 不更新 first_seen_at；自愈场景需显式回填
+                conn.execute("UPDATE terms SET first_seen_at=? WHERE term=?",
+                             (first_seen, canon))
+        # 本轮未命中的词：三分清零（不出榜），历史字段保留
+        if kept:
+            placeholders = ",".join("?" * len(kept))
+            conn.execute(
+                f"UPDATE terms SET cur_hot=0, cur_rise=0, cur_novelty=0 "
+                f"WHERE term NOT IN ({placeholders})", list(kept.keys()))
+        conn.commit()
+        conn.close()
+
+    # ---- 7. 组装词卡写 words.json（一次性读回主表，避免逐词开连接）----
+    try:
+        conn = _conn()
+        final_rows = {r["term"]: dict(r) for r in conn.execute(
+            "SELECT * FROM terms").fetchall()}
+        conn.close()
+    except Exception:
+        final_rows = {}
+    cards = []
+    for canon, a in kept.items():
+        row = final_rows.get(canon)
+        if not row:
+            continue
+        dims_counter = a["dims"]
+        main_dim = max(dims_counter, key=dims_counter.get) if dims_counter else "其他"
+        try:
+            hf_meta = json.loads(row["hf_json"]) if row["hf_json"] else None
+        except (json.JSONDecodeError, ValueError):
+            hf_meta = None
+        cards.append({
+            "kind": "word",
+            "id": canon,
+            "term": row["display"] or canon,
+            "display_zh": row["display_zh"] or "",
+            "origin": row["origin"],
+            "news_cnt": a["mentions"],
+            "hot": row["cur_hot"],
+            "score": row["cur_hot"],       # 兼容 hot 排序键
+            "rise": row["cur_rise"],
+            "trend": row["cur_rise"],      # 兼容 rise 排序键
+            "novelty": row["cur_novelty"],
+            "first_seen_at": row["first_seen_at"],
+            "published": a["latest_pub"],  # 兼容 new 排序键/前端展示
+            "dimension": main_dim,
+            "dims": sorted(dims_counter, key=lambda d: -dims_counter[d]),
+            "top_news": a["top"],
+            "hf": hf_meta,
+        })
+    cards.sort(key=lambda c: -c["hot"])
+    _file_cache_set({"ok": True, "terms": cards[:WORD_CARDS_LIMIT],
+                     "count": len(cards)}, fetched_at)
+
+
+# ---------- 读：请求路径 ----------
+_SORT_KEYS = {"rise": "rise", "hot": "hot", "new": "novelty"}
+
+
+def get_word_cards(sort="rise", lang="zh", limit=60):
+    """返回词卡列表（/api/stream?view=words 数据源）。只读 words.json，秒回。
+
+    sort: rise（环比增速）/ hot（热度）/ new（新奇度，非时间序）。
+    lang 投影：zh 优先 display_zh，en 用 display；top_news 标题投影对应语言。
+    """
+    lang = lang if lang in ("zh", "en") else "zh"
+    key = _SORT_KEYS.get(sort, "rise")
+    data, fetched_at = _file_cache_get()
+    cards = []
+    for c in (data or {}).get("terms", []):
+        wc = dict(c)
+        if lang == "zh" and wc.get("display_zh"):
+            wc["term_display"] = wc["display_zh"]
+        else:
+            wc["term_display"] = wc.get("term", "")
+        topn = []
+        for n in wc.get("top_news", []):
+            n2 = dict(n)
+            n2["title"] = (n.get("title_zh") if lang == "zh" else n.get("title_en")) \
+                or n.get("title_zh") or ""
+            topn.append(n2)
+        wc["top_news"] = topn
+        cards.append(wc)
+    cards.sort(key=lambda c: (c.get(key, 0) or 0, c.get("hot", 0) or 0),
+               reverse=True)
+    return cards[:limit], fetched_at
+
+
+def get_term_row(term):
+    """查 terms 主表（按 canonical 键）。未命中返回 None。"""
+    if not _DB_OK:
+        return None
+    canon = normalize_term(term)
+    if not canon:
+        return None
+    try:
+        conn = _conn()
+        r = conn.execute("SELECT * FROM terms WHERE term=?", (canon,)).fetchone()
+        conn.close()
+        return dict(r) if r else None
+    except Exception:
+        return None
+
+
+def get_term_news(term, limit=50, lang="zh"):
+    """词 → 关联报道（news_cards keywords LIKE + 标题命中兜底）。
+
+    返回与 dims 卡同 schema 的投影卡列表，published 降序 + score 降序。
+    """
+    if not _DB_OK or not news_store:
+        return []
+    canon = normalize_term(term)
+    if not canon:
+        return []
+    try:
+        conn = _conn()
+        like_kw = f'%"{canon}%"'
+        rows = conn.execute(
+            """SELECT * FROM news_cards
+               WHERE keywords LIKE ?
+               ORDER BY published DESC, score DESC LIMIT ?""",
+            (like_kw, limit)).fetchall()
+        kw_urls = {r["url"] for r in rows}
+        # 标题兜底：仅拉 keywords 未命中的卡，再用版本感知词边界过滤
+        # （"GPT-5.5" 不会命中 gpt-5），避免子串误配。
+        like_t = f"%{term}%"
+        placeholder = ",".join("?" * len(kw_urls)) if kw_urls else "''"
+        rows += conn.execute(
+            """SELECT * FROM news_cards
+               WHERE (title LIKE ? OR title_zh LIKE ? OR title_en LIKE ?)
+                 AND url NOT IN (%s)
+               ORDER BY published DESC, score DESC LIMIT ?""" % placeholder,
+            [like_t, like_t, like_t] + (list(kw_urls) if kw_urls else []) + [limit],
+        ).fetchall()
+        conn.close()
+        pat = re.compile(r"(?<![a-z0-9])" + re.escape(canon)
+                         + r"(?!\.\d)(?![a-z0-9])", re.I)
+        out = []
+        for r in rows:
+            if r["url"] in kw_urls:
+                out.append(r)
+                continue
+            titles = [str(r["title"] or ""), str(r["title_zh"] or ""),
+                      str(r["title_en"] or "")]
+            if any(pat.search(t) for t in titles):
+                out.append(r)
+        return [news_store._row_to_card(r) for r in out]
+    except Exception:
+        return []
+
+
+def list_terms_for_sitemap(limit=200):
+    """sitemap 用：按热度降序返回词 display 列表。"""
+    if not _DB_OK:
+        return []
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT display FROM terms ORDER BY cur_hot DESC, total_mentions DESC "
+            "LIMIT ?", (limit,)).fetchall()
+        conn.close()
+        return [r["display"] for r in rows if r["display"]]
+    except Exception:
+        return []
+
+
+# ---------- 历史回填（零 LLM 成本）----------
+def backfill_history(days=30, force=False):
+    """用词典匹配回填 news_cards.keywords + 合成历史 term_snapshots。
+
+    - 默认只处理 keywords 为空（'[]'/NULL）的行，重复跑零副作用；--force 全量重算。
+    - 按 published 日期分桶合成快照（cycle=f"{published}-00"），让 rise 环比
+      上线首日即有历史基数。
+    返回处理行数（CLI 打印用）。
+    """
+    if not _DB_OK or not news_store:
+        print("[backfill] DB 不可用，跳过")
+        return 0
+    cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    try:
+        conn = _conn()
+        if force:
+            # --force：全量重算（不限日期，覆盖归档老卡），用于词典/正则升级后清理
+            where, params = "WHERE 1=1", []
+        else:
+            where = "WHERE published >= ? AND (keywords IS NULL OR keywords = '[]')"
+            params = [cutoff]
+        rows = conn.execute(
+            f"SELECT url, title, title_zh, title_en, published, score FROM news_cards "
+            f"{where}", params).fetchall()
+    except Exception as e:
+        print(f"[backfill] 读取失败: {e}")
+        return 0
+
+    updated = 0
+    snap = {}  # (term, date) → {cnt, score_sum}
+    try:
+        with _db_lock:
+            for r in rows:
+                text = " ".join([str(r["title"] or ""),
+                                 str(r["title_zh"] or ""),
+                                 str(r["title_en"] or "")])
+                kws = extract_keywords_dict(text)
+                if not kws:
+                    # force 模式：抽不出词的行把残留 keywords 清空（词典/正则升级后清理脏数据）
+                    if force:
+                        conn.execute("UPDATE news_cards SET keywords='[]' WHERE url=?",
+                                     (r["url"],))
+                        updated += 1
+                    continue
+                conn.execute("UPDATE news_cards SET keywords=? WHERE url=?",
+                             (json.dumps(kws, ensure_ascii=False), r["url"]))
+                updated += 1
+                pub = r["published"] or ""
+                if pub:
+                    for k in kws:
+                        key = (k, pub)
+                        s = snap.setdefault(key, {"cnt": 0, "score_sum": 0})
+                        s["cnt"] += 1
+                        s["score_sum"] += int(r["score"] or 0)
+                if updated % 500 == 0:
+                    conn.commit()
+            # 合成历史快照（不覆盖真实刷新产生的快照）
+            for (term, pub), s in snap.items():
+                conn.execute(
+                    """INSERT INTO term_snapshots (term, cycle, news_cnt, score_sum, signal_sum)
+                       VALUES (?,?,?,?,0)
+                       ON CONFLICT(term, cycle) DO NOTHING""",
+                    (term, f"{pub}-00", s["cnt"], s["score_sum"]))
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"[backfill] 写入失败: {e}")
+    print(f"[backfill] 完成：回填 {updated}/{len(rows)} 行，合成快照 {len(snap)} 条")
+    return updated
+
+
+init_db()
+
+
+if __name__ == "__main__":
+    # CLI：python terms.py backfill [--days 30] [--force]
+    args = sys.argv[1:]
+    if args and args[0] == "backfill":
+        days = 30
+        force = "--force" in args
+        for i, a in enumerate(args):
+            if a == "--days" and i + 1 < len(args):
+                try:
+                    days = int(args[i + 1])
+                except ValueError:
+                    pass
+        backfill_history(days=days, force=force)
+    else:
+        print("用法: python terms.py backfill [--days 30] [--force]")

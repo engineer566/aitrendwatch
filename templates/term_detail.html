@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{% if lang == 'en' %}en{% else %}zh-CN{% endif %}">
 <head>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
@@ -11,7 +11,7 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ term.term }} · {{ site_name }}</title>
+<title>{{ word.term.term }} · {{ site_name }}</title>
 <meta name="description" content="{{ site_desc }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -22,13 +22,13 @@
 <!-- Open Graph -->
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ term.term }} · {{ site_name }}">
+<meta property="og:title" content="{{ word.term.term }} · {{ site_name }}">
 <meta property="og:description" content="{{ site_desc }}">
-<meta property="og:locale" content="zh_CN">
+<meta property="og:locale" content="{% if lang == 'en' %}en_US{% else %}zh_CN{% endif %}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="{{ term.term }} · {{ site_name }}">
+<meta name="twitter:title" content="{{ word.term.term }} · {{ site_name }}">
 <meta name="twitter:description" content="{{ site_desc }}">
 {% else %}
 <meta name="robots" content="noindex,nofollow">
@@ -82,7 +82,7 @@
   .btn:hover { color: var(--text); border-color: var(--accent); }
   main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
 
-  .term-card {
+  .word-card {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 18px 22px; box-shadow: var(--shadow);
   }
@@ -92,10 +92,16 @@
     color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
     white-space: nowrap;
   }
-  .term-name { font-size: 22px; font-weight: 700; word-break: break-all; }
+  .origin-badge {
+    font-size: 11px; padding: 1px 8px; border-radius: 9px; font-weight: 600;
+    color: var(--text-dim); background: color-mix(in srgb, var(--text) 7%, transparent);
+    white-space: nowrap;
+  }
+  .term-name { font-size: 24px; font-weight: 800; word-break: break-all; }
   .term-name a { color: var(--text); text-decoration: none; }
   .term-name a:hover { color: var(--accent); }
   .term-name .author { color: var(--text-dim); font-weight: 500; font-size: 15px; }
+  .term-name .zh { color: var(--text-dim); font-weight: 600; }
   .term-meta { font-size: 14px; color: var(--text-dim); margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
   .term-meta .m-up { color: var(--green); font-weight: 600; }
   .term-meta .m-hot { color: var(--orange); font-weight: 600; }
@@ -110,6 +116,17 @@
   .link-btn:hover { color: var(--text); border-color: var(--accent); background: var(--bg-hover); }
   .link-btn.official { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
   .link-btn.official:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+  .news-list { margin-top: 16px; }
+  .news-item {
+    padding: 10px 0; border-top: 1px dashed var(--border); display: flex; gap: 8px; align-items: baseline;
+  }
+  .news-item a { color: var(--text); text-decoration: none; word-break: break-all; font-size: 14px; }
+  .news-item a:hover { color: var(--accent); }
+  .news-item .hd { color: var(--orange); font-size: 12px; white-space: nowrap; }
+  .news-item .src { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+  .news-item .pm { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+  .news-item .sum { color: var(--text-dim); font-size: 12px; }
 
   .papers { margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 12px; }
   .papers-title { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
@@ -127,25 +144,58 @@
   @media (max-width: 640px) {
     header { padding: 10px 16px; }
     main { padding: 0 16px; }
-    .term-name { font-size: 18px; }
+    .term-name { font-size: 19px; }
   }
 </style>
-{% if seo_enabled and term %}
+{% if seo_enabled and word %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": {{ (word.term.term or '') | tojson }},
+  "description": {{ (site_desc or '') | tojson }},
+  {% if word.term.news_cnt %}"usageInfo": "{{ word.term.news_cnt }} related reports aggregated",{% endif %}
+  "url": {{ (canonical or '') | tojson }}
+}
+</script>
+{% if word.news %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "Reports about {{ (word.term.term or '') | tojson }}",
+  "itemListElement": [
+    {% for n in word.news[:20] %}
+    {
+      "@type": "ListItem",
+      "position": {{ loop.index }},
+      "name": {{ (n.title_zh or n.title_en or n.title or '') | tojson }},
+      "url": {{ (n.official_url or '') | tojson }},
+      {% if n.published %}"datePublished": {{ n.published | tojson }},{% endif %}
+      "author": { "@type": "Organization", "name": {{ (n.source or '') | tojson }} }
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+</script>
+{% endif %}
+{% if word.hf %}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": {{ (term.term or '') | tojson }},
+  "name": {{ (word.term.term or '') | tojson }},
   "applicationCategory": "AI Model",
   "operatingSystem": "Any",
-  "author": { "@type": "Organization", "name": {{ (term.author or '') | tojson }} },
-  "url": {{ (term.official_url or '') | tojson }},
-  {% if term.downloads %}"downloadCount": {{ term.downloads }},{% endif %}
-  {% if term.likes %}"aggregateRating": { "@type": "AggregateRating", "ratingValue": {{ term.likes }}, "ratingCount": {{ term.likes }} },{% endif %}
+  "author": { "@type": "Organization", "name": {{ (word.hf.author or '') | tojson }} },
+  "url": {{ (word.hf.official_url or '') | tojson }},
+  {% if word.hf.downloads %}"downloadCount": {{ word.hf.downloads }},{% endif %}
+  {% if word.hf.likes %}"aggregateRating": { "@type": "AggregateRating", "ratingValue": {{ word.hf.likes }}, "ratingCount": {{ word.hf.likes }} },{% endif %}
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
-{% for p in (term.papers or []) %}
+{% endif %}
+{% for p in (word.hf_detail.papers or []) %}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -164,39 +214,49 @@
   <div class="header-inner">
     <h1>🤖 <a href="/">{{ site_name }}</a></h1>
     <div class="header-right">
-      <a class="btn" href="/">← 返回首页</a>
+      <a class="btn" href="/">← {% if lang == 'en' %}Home{% else %}返回首页{% endif %}</a>
     </div>
   </div>
 </header>
 
 <main>
-<div class="term-card">
+<div class="word-card">
   <div class="term-head">
-    <span class="cat-badge">🧠 {{ term.type or '模型' }}</span>
+    <span class="cat-badge">{% if word.hf %}{% if word.legacy_hf %}🤗 HF 模型{% else %}🧠 / 🤗{% endif %}{% else %}🔤 热词{% endif %}</span>
     <span class="term-name">
-      {% if term.author %}<span class="author">{{ term.author }} / </span>{% endif %}<a href="{{ term.official_url }}" target="_blank" rel="noopener">{{ term.term }}</a>
+      {% if lang == 'zh' and word.term.display_zh %}<span class="zh">{{ word.term.display_zh }}</span>{% if word.term.term and word.term.display_zh != word.term.term %}（<a href="{{ word.hf.official_url or '/' }}">{{ word.term.term }}</a>）{% endif %}
+      {% else %}<a href="{{ word.hf.official_url or '/' }}" target="_blank" rel="noopener">{{ word.term.term }}</a>{% endif %}
     </span>
+    {% if word.term.origin == 'hf' %}<span class="origin-badge">🤗 HuggingFace</span>{% elif word.term.origin == 'both' %}<span class="origin-badge">📰 + 🤗</span>{% endif %}
   </div>
-  {% if term.trending_score != none or term.likes != none or term.downloads != none %}
+  {% if word.term.hot or word.term.rise or word.term.news_cnt %}
   <div class="term-meta">
-    {% if term.trending_score != none %}<span class="m-up">📈 趋势 <span class="num">{{ term.trending_score }}</span></span>{% endif %}
-    {% if term.likes != none %}<span class="m-hot">❤ <span class="num">{{ term.likes }}</span></span>{% endif %}
-    {% if term.downloads != none %}<span>↓ <span class="num">{{ term.downloads }}</span></span>{% endif %}
-    {% if term.created_at %}<span>📅 {{ term.created_at }}</span>{% endif %}
-    {% if term.pipeline_tag %}<span>🔧 {{ term.pipeline_tag }}</span>{% endif %}
+    {% if word.term.hot %}<span class="m-hot">🔥 {% if lang == 'en' %}Hotness{% else %}热度{% endif %} <span class="num">{{ word.term.hot }}</span></span>{% endif %}
+    {% if word.term.rise != none %}<span class="m-up">📈 {% if lang == 'en' %}Rise{% else %}上升{% endif %} <span class="num">{{ '%.2f' | format(word.term.rise) }}</span></span>{% endif %}
+    {% if word.term.news_cnt %}<span>📄 <span class="num">{{ word.term.news_cnt }}</span> {% if lang == 'en' %}reports{% else %}篇报道{% endif %}</span>{% endif %}
+    {% if word.term.first_seen_at %}<span>🗓 {% if lang == 'en' %}First seen{% else %}首次出现{% endif %} {{ word.term.first_seen_at[:10] }}</span>{% endif %}
   </div>
   {% endif %}
-  {% if term.tags %}
-  <div class="tags">{% for tg in term.tags %}<span class="tag">{{ tg }}</span>{% endfor %}</div>
+
+  {% if word.hf %}
+  <div class="term-meta">
+    {% if word.hf.trending_score != none %}<span class="m-up">📈 Trend <span class="num">{{ word.hf.trending_score }}</span></span>{% endif %}
+    {% if word.hf.likes != none %}<span class="m-hot">❤ <span class="num">{{ word.hf.likes }}</span></span>{% endif %}
+    {% if word.hf.downloads != none %}<span>↓ <span class="num">{{ word.hf.downloads }}</span></span>{% endif %}
+  </div>
   {% endif %}
+  {% if word.hf.tags %}
+  <div class="tags">{% for tg in word.hf.tags %}<span class="tag">{{ tg }}</span>{% endfor %}</div>
+  {% endif %}
+  {% if word.hf.official_url %}
   <div class="links">
-    <a class="link-btn official" href="{{ term.official_url }}" target="_blank" rel="noopener">🔗 {{ term.official_label or 'HuggingFace' }}</a>
-    {% for c in (term.community or []) %}<a class="link-btn" href="{{ c.url }}" target="_blank" rel="noopener">💬 {{ c.site }}</a>{% endfor %}
+    <a class="link-btn official" href="{{ word.hf.official_url }}" target="_blank" rel="noopener">🔗 HuggingFace</a>
+    {% for c in (word.hf_detail.community or []) %}<a class="link-btn" href="{{ c.url }}" target="_blank" rel="noopener">💬 {{ c.site }}</a>{% endfor %}
   </div>
-  {% if term.papers %}
+  {% if word.hf_detail.papers %}
   <div class="papers">
-    <div class="papers-title">📄 相关论文（arXiv）</div>
-    {% for p in term.papers %}
+    <div class="papers-title">📄 {% if lang == 'en' %}Related papers (arXiv){% else %}相关论文（arXiv）{% endif %}</div>
+    {% for p in word.hf_detail.papers %}
     <div class="paper">
       <a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a><span class="pm">{{ p.published or '' }}</span>
       {% if p.authors %}<span class="authors">{{ p.authors | join(' · ') }}</span>{% endif %}
@@ -204,14 +264,31 @@
     {% endfor %}
   </div>
   {% endif %}
+  {% endif %}
 </div>
 
-<div class="back-link"><a class="btn" href="/">← 查看更多 AI 热点</a></div>
+{% if word.news %}
+<div class="section-title">🗞 {% if lang == 'en' %}Related reports{% else %}相关报道{% endif %}（{{ word.news | length }}）</div>
+<div class="word-card news-list">
+  {% for n in word.news %}
+  <div class="news-item">
+    <a href="{{ n.official_url }}" target="_blank" rel="noopener">{% if lang == 'zh' %}{{ n.title_zh or n.title_en or n.title }}{% else %}{{ n.title_en or n.title_zh or n.title }}{% endif %}</a>
+    {% if n.hot %}<span class="hd">🔥 {{ n.hot }}</span>{% endif %}
+    {% if n.source %}<span class="src">{{ n.source }}</span>{% endif %}
+    {% if n.published %}<span class="pm">{{ n.published }}</span>{% endif %}
+    {% if n.summary %}<div class="sum">{{ n.summary }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="back-link"><a class="btn" href="/">← {% if lang == 'en' %}More AI trends{% else %}查看更多 AI 热点{% endif %}</a></div>
 </main>
 
 <footer>
-  数据来源：HuggingFace（模型趋势）· arXiv（相关论文）· 知乎/B站/GitHub（社区讨论）<br>
-  纯程序聚合，零 LLM
+  {# 词维度聚合：热词=新闻关键词（DeepSeek 抽取 / 词典匹配）+ HuggingFace 模型榜归并。#}
+  {{ site_name }} · AI 热词聚合：模型 / 产品 / 论文 / 投融资 / 政策<br>
+  纯程序聚合，链接均指向官方原文
 </footer>
 </body>
 </html>

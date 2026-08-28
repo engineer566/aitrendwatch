@@ -199,6 +199,24 @@
   .paper a:hover { text-decoration: underline; }
   .paper .pm { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
 
+  /* ===== 词卡（词维度重构） ===== */
+  .word-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .word-name { font-size: 18px; font-weight: 800; word-break: break-all; }
+  .word-name a { color: var(--accent); text-decoration: none; }
+  .word-name a:hover { text-decoration: underline; }
+  .word-name .zh { color: var(--text); }
+  .origin-badge { font-size: 11px; padding: 1px 7px; border-radius: 9px; font-weight: 600; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text-dim); }
+  .word-count { font-size: 12px; color: var(--text-dim); }
+  .word-top { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
+  .word-top-item { font-size: 13px; padding: 3px 0; display: flex; gap: 6px; align-items: baseline; }
+  .word-top-item a { color: var(--text); text-decoration: none; word-break: break-all; }
+  .word-top-item a:hover { color: var(--accent); }
+  .word-top-item .src { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+  .word-top-item .hd { color: var(--orange); font-size: 11px; white-space: nowrap; }
+  .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; margin-top: 8px; }
+  .word-expand-btn:hover { background: var(--bg-hover); }
+  .word-expand { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
+
   /* ---- 骨架屏 ---- */
   .sk-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; }
   .sk { border-radius: 6px; background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border) 50%, var(--bg-hover) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
@@ -310,6 +328,10 @@
 <div class="controls">
   <div class="cat-bar" id="cat-bar"></div>
   <div class="sort-row">
+    <div class="seg" id="view-seg">
+      <button class="active" data-view="words">🔤 热词</button>
+      <button data-view="news">📰 逐条新闻</button>
+    </div>
     <div class="seg" id="sort-seg">
       <button class="active" data-sort="rise">📈 上升最快</button>
       <button data-sort="hot">🔥 最热</button>
@@ -322,8 +344,30 @@
 {% if seo_enabled and initial_terms %}
 {# ===== SSR 首屏热词卡（爬虫可见，JS 启动后接管） ===== #}
 {% for t in initial_terms %}
-{% set dim = t.dimension or ('模型发布' if t.kind == 'model' else '其他') %}
-{% set dim_icon = '🧠' if dim == '模型发布' else ('📱' if dim == '产品发布' else ('📄' if dim == '研究论文' else ('💰' if dim == '投融资' else ('📰' if dim == '行业动态' else '✨')))) %}
+{% if t.kind == 'word' %}
+{% set dim = t.dimension or '其他' %}
+<div class="term-card" style="--cat-color:#4f8cff">
+  <div class="word-head">
+    <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
+    <span class="cat-badge">🔤 {{ dim }}</span>
+    <span class="word-name"><a href="/term/{{ t.id }}"><span class="zh">{{ t.display_zh or t.term }}</span></a></span>
+    <span class="head-right"><span>{{ t.news_cnt }} 篇报道 · {{ t.published or '' }}</span></span>
+  </div>
+  <div class="term-meta">
+    <span class="m-hot">🔥 <span class="num">{{ t.hot }}</span></span>
+    {% if t.rise != none and t.rise != 0 %}<span class="m-up">📈 <span class="num">{{ t.rise }}</span></span>{% endif %}
+  </div>
+  {% if t.top_news %}
+  <div class="word-top">
+    {% for n in t.top_news[:3] %}
+    <div class="word-top-item"><a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title_zh or n.title_en or '' }}</a><span class="hd">🔥 {{ n.hot }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+{% set dim = t.dimension or ('模型与技术' if t.kind == 'model' else '其他') %}
+{% set dim_icon = '🧠' if dim == '模型与技术' else ('📱' if dim == '产品与应用' else ('📄' if dim == '研究与论文' else ('💰' if dim == '商业与投融资' else ('📰' if dim == '政策与行业' else '✨')))) %}
 <div class="term-card" style="--cat-color:#4f8cff">
   <div class="term-head">
     <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
@@ -351,6 +395,7 @@
     </div>
     {% endif %}
   {% endif %}
+{% endif %}
 </div>
 {% endfor %}
 {% endif %}
@@ -364,7 +409,7 @@
 <footer>
   统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论<br>
   新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）<br>
-  分类：模型发布 / 产品发布 / 研究论文 / 投融资 / 行业动态 / 其他<br>
+  分类：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 / 政策与行业 / 其他<br>
   <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">服务条款 / Terms of Service</a></span>
 </footer>
 
@@ -383,15 +428,17 @@ const I18N = {
     search_ph: "搜索热点 / 作者…",
     all: "全部",
     sort_rise: "📈 上升最快", sort_hot: "🔥 最热", sort_new: "🕒 最新",
+    view_words: "🔤 热词", view_news: "📰 逐条新闻",
     loading: "加载中…",
     updated: "更新于 ",
     empty: "没有匹配的热点",
     empty_q: "（搜索「",
     official_default: "官方原文",
+    news_cnt: " 篇报道", more_btn: "展开更多", detail_link: "查看聚合页 →", related: "相关报道",
     demo_pill: "⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据",
     footer_l1: "统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论",
     footer_l2: "新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）",
-    footer_l3: "分类：模型发布 / 产品发布 / 研究论文 / 投融资 / 行业动态 / 其他",
+    footer_l3: "分类：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 / 政策与行业 / 其他",
     footer_terms: "服务条款",
     today: "今天", yesterday: "昨天", days_ago: " 天前", months_ago: " 个月前", years_ago: " 年前",
     warming: "维度热词预热中，请稍后刷新",
@@ -401,11 +448,13 @@ const I18N = {
     search_ph: "Search trends / authors…",
     all: "All",
     sort_rise: "📈 Trending", sort_hot: "🔥 Hottest", sort_new: "🕒 Newest",
+    view_words: "🔤 Words", view_news: "📰 News feed",
     loading: "Loading…",
     updated: "Updated ",
     empty: "No matching trends",
     empty_q: " (search: «",
     official_default: "Source",
+    news_cnt: " reports", more_btn: "Show more", detail_link: "View page →", related: "Reports",
     demo_pill: "⚠ Demo preview · built-in mock data; switches to real data once backend is ready",
     footer_l1: "Unified feed: HuggingFace models (trends/likes/downloads) · arXiv papers · Zhihu/Bilibili/GitHub discussion",
     footer_l2: "News: OpenAI/TechCrunch/HF/arXiv/QbitAI etc. official RSS · Hacker News + Reddit community heat · DeepSeek tagging (links go to official sources)",
@@ -425,18 +474,20 @@ const searchInput = document.getElementById("search-input");
 const catBar = document.getElementById("cat-bar");
 const sortSeg = document.getElementById("sort-seg");
 
-let allData = [];            // 统一卡片流全量数据（model + news）
+let allData = [];            // 当前 view 的全量数据（词卡 或 model+news）
 let currentCat = "all";      // 当前维度筛选：all 或维度中文 key
 let currentSort = "rise";    // rise / hot / new
+let currentView = "words";   // words（热词，默认）/ news（逐条新闻）
 // v2: 搜索已独立为 /search 页面，首页不再持有本地 query 状态
 let LANG = "{{ default_lang or 'zh' }}";   // zh | en（SSR 注入默认，可被 localStorage / ?lang= 覆盖）
 let dimensionList = [];      // 后端下发的维度顺序
 
-// URL 参数恢复状态（?cat=&sort=&lang= 可分享）
+// URL 参数恢复状态（?view=&cat=&sort=&lang= 可分享）
 (function initFromURL() {
   const p = new URLSearchParams(location.search);
   const lp = p.get("lang");
   if (lp === "zh" || lp === "en") LANG = lp;
+  if (p.get("view") && ["words","news"].includes(p.get("view"))) currentView = p.get("view");
   if (p.get("sort") && ["rise","hot","new"].includes(p.get("sort"))) currentSort = p.get("sort");
   if (p.get("cat")) currentCat = p.get("cat");
 })();
@@ -444,10 +495,13 @@ let dimensionList = [];      // 后端下发的维度顺序
 try {
   const saved = localStorage.getItem("aitw_lang");
   if (saved === "zh" || saved === "en") LANG = saved;
+  const v = localStorage.getItem("aitw_view");
+  if (v === "words" || v === "news") currentView = v;
 } catch (e) {}
 function syncURL() {
   const p = new URLSearchParams();
   if (LANG !== "zh") p.set("lang", LANG);
+  if (currentView !== "words") p.set("view", currentView);
   if (currentCat !== "all") p.set("cat", currentCat);
   if (currentSort !== "rise") p.set("sort", currentSort);
   const qs = p.toString();
@@ -459,6 +513,10 @@ const langBtn = document.getElementById("lang-btn");
 function localizeStatic() {
   document.title = `{{ site_name }} · ${t("site_subtitle")}`;
   searchInput.placeholder = t("search_ph");
+  document.querySelectorAll("#view-seg button").forEach(b => {
+    if (b.dataset.view === "words") b.textContent = t("view_words");
+    if (b.dataset.view === "news")  b.textContent = t("view_news");
+  });
   document.querySelectorAll("#sort-seg button").forEach(b => {
     if (b.dataset.sort === "rise") b.textContent = t("sort_rise");
     if (b.dataset.sort === "hot")  b.textContent = t("sort_hot");
@@ -622,11 +680,11 @@ function inlineSponsors() {
 // ==================== 分类条 & 排序 ====================
 // 维度分类映射：dims.py 的中文维度 → 前端展示配置（统一卡片流主分类）
 const DIMS_CATEGORY = {
-  "模型发布": { label: "模型发布", label_en: "Model Releases", icon: "🧠", color: "#4f8cff", key: "模型发布" },
-  "产品发布": { label: "产品发布", label_en: "Product Launches", icon: "📱", color: "#3ecf8e", key: "产品发布" },
-  "研究论文": { label: "研究论文", label_en: "Research Papers", icon: "📄", color: "#22d3ee", key: "研究论文" },
-  "投融资":   { label: "投融资",   label_en: "Funding", icon: "💰", color: "#ffa940", key: "投融资" },
-  "行业动态": { label: "行业动态", label_en: "Industry News", icon: "📰", color: "#8b91a3", key: "行业动态" },
+  "模型与技术": { label: "模型与技术", label_en: "Models & Tech", icon: "🧠", color: "#4f8cff", key: "模型与技术" },
+  "产品与应用": { label: "产品与应用", label_en: "Products & Apps", icon: "📱", color: "#3ecf8e", key: "产品与应用" },
+  "研究与论文": { label: "研究与论文", label_en: "Research & Papers", icon: "📄", color: "#22d3ee", key: "研究与论文" },
+  "商业与投融资":   { label: "商业与投融资",   label_en: "Business & Funding", icon: "💰", color: "#ffa940", key: "商业与投融资" },
+  "政策与行业": { label: "政策与行业", label_en: "Policy & Industry", icon: "📰", color: "#8b91a3", key: "政策与行业" },
   "其他":     { label: "其他",     label_en: "Other", icon: "✨", color: "#8b91a3", key: "其他" },
 };
 function dimLabel(dim) {
@@ -634,11 +692,19 @@ function dimLabel(dim) {
   return { icon: c.icon, lbl: LANG === "en" ? (c.label_en || c.label) : c.label, color: c.color };
 }
 
-// 统一卡片流分类条：按 dimension 计数，用后端 dimensionList 顺序展示
+// 统一卡片流分类条：按 dimension 计数，用后端 dimensionList 顺序展示。
+// words 视图：词卡可能跨领域（dims 数组），成员资格过滤——词涉及任一领域即计入该 pill；
+// news 视图：按单标签 dimension 计数（旧逻辑）。
 function renderCatBar() {
   const order = dimensionList.length ? dimensionList : Object.keys(DIMS_CATEGORY);
   const counts = {};
-  allData.forEach(t => { const d = t.dimension || "其他"; counts[d] = (counts[d] || 0) + 1; });
+  allData.forEach(t => {
+    if (currentView === "words" && Array.isArray(t.dims)) {
+      (t.dims.length ? t.dims : [t.dimension || "其他"]).forEach(d => { counts[d] = (counts[d] || 0) + 1; });
+    } else {
+      const d = t.dimension || "其他"; counts[d] = (counts[d] || 0) + 1;
+    }
+  });
   const keys = order.filter(k => counts[k]);
   if (!keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
   let html = `<button class="cat-pill ${currentCat==="all"?"active":""}" data-cat="all"
@@ -655,6 +721,22 @@ catBar.addEventListener("click", e => {
   currentCat = b.dataset.cat;
   syncURL(); render();
 });
+
+// 视图切换：热词 / 逐条新闻。仅本地过滤排序，不重启拉取（数据同源 /api/stream，
+// 已带 view 参数；切视图只换渲染分支 + 清展开缓存）。记忆到 localStorage + URL。
+const viewSeg = document.getElementById("view-seg");
+viewSeg.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.view === currentView) return;
+  document.querySelectorAll("#view-seg button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  currentView = b.dataset.view;
+  try { localStorage.setItem("aitw_view", currentView); } catch (err) {}
+  _wordDetailCache = {};   // 换视图清词展开缓存
+  syncURL(); render(); fetchAll();
+});
+document.querySelectorAll("#view-seg button").forEach(x =>
+  x.classList.toggle("active", x.dataset.view === currentView));
 
 sortSeg.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -726,8 +808,104 @@ function metricsHTML(t) {
   return m.length ? `<div class="term-meta">${m.join("")}</div>` : "";
 }
 
+// ==================== 词卡渲染（词维度重构） ====================
+let _wordDetailCache = {};      // term → /api/word 响应缓存（按词），展开态共用
+
+function escapeTerm(term) {
+  return encodeURIComponent(String(term || ""));
+}
+
+function renderWordCard(w, i) {
+  const dim = w.dimension || "其他";
+  const dInfo = dimLabel(dim);
+  const d = rankDelta(w, i);
+  const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
+    : d ? `<span class="delta ${d>0?"up":"down"}">${d>0?"↑":"↓"}${Math.abs(d)}</span>` : "";
+  const published = w.published || "";
+  const nameHtml = (w.term_display || w.term || w.id)
+    ? `<a href="/term/${escapeTerm(w.term || w.id)}">${escapeHtml(w.term_display || w.term || w.id)}</a>` : "";
+  const originMap = { news: "📰", hf: "🤗", both: "📰🤗" };
+  const originBadge = originMap[w.origin]
+    ? `<span class="origin-badge">${originMap[w.origin]}</span>` : "";
+  let metrics = `<span class="m-hot">🔥 <span class="num">${fmtNum(w.hot)}</span></span>`;
+  if (currentSort === "rise" && w.rise != null)
+    metrics += `<span class="m-up">📈 <span class="num">${Number(w.rise).toFixed(2)}</span></span>`;
+  if (currentSort === "new" && w.novelty != null)
+    metrics += `<span class="m-up">✨ <span class="num">${Number(w.novelty).toFixed(2)}</span></span>`;
+  const topHtml = (w.top_news && w.top_news.length)
+    ? `<div class="word-top">${w.top_news.slice(0, 3).map(n =>
+        `<div class="word-top-item">
+          <a href="${escapeHtml(n.official_url || "#")}" target="_blank" rel="noopener">${escapeHtml(n.title || "")}</a>
+          ${n.hot ? `<span class="hd">🔥 ${fmtNum(n.hot)}</span>` : ""}
+          ${n.source ? `<span class="src">${escapeHtml(n.source)}</span>` : ""}
+        </div>`).join("")}</div>` : "";
+  const expandBtn = (w.news_cnt || 0) > (w.top_news || []).length
+    ? `<button class="word-expand-btn" data-term="${escapeHtml(w.term || w.id)}">${t("more_btn")} (${w.news_cnt || 0}) · <a class="word-detail-link" href="/term/${escapeTerm(w.term || w.id)}" onclick="event.stopPropagation()">${t("detail_link")}</a></button>`
+    : `<a class="link-btn official" href="/term/${escapeTerm(w.term || w.id)}" style="margin-top:8px">${t("detail_link")}</a>`;
+  return `<div class="term-card" style="--cat-color:${dInfo.color}" data-wid="${escapeHtml(w.id)}">
+    <div class="word-head">
+      <span class="rank ${i<3?"top":""} num">${i+1}</span>
+      <span class="cat-badge">${dInfo.icon} ${escapeHtml(dInfo.lbl)}</span>
+      <span class="word-name">${nameHtml}</span>
+      ${originBadge}
+      <span class="head-right">
+        ${deltaHtml}
+        ${isFresh(published) ? `<span class="new-badge">NEW</span>` : ""}
+        <span class="word-count">📄 ${w.news_cnt || 0}${t("news_cnt")}</span>
+      </span>
+    </div>
+    <div class="term-meta">${metrics}</div>
+    ${topHtml}
+    ${expandBtn}
+    <div class="word-expand" id="word-expand-${escapeHtml(w.id)}" style="display:none"></div>
+  </div>`;
+}
+
+// 词卡展开：拉 /api/word/<term> 全量报道，渲染到卡内展开区。独立 AbortController。
+const _wordFetchCtrls = {};
+async function toggleWordExpand(term, btn) {
+  const card = btn.closest(".term-card");
+  const box = card && card.querySelector(".word-expand");
+  if (!box) return;
+  if (box.style.display !== "none") { box.style.display = "none"; return; }
+  // 已缓存过：直接渲染
+  if (_wordDetailCache[term]) { renderWordExpand(box, _wordDetailCache[term], term); box.style.display = "block"; return; }
+  btn.disabled = true;
+  const oldText = btn.textContent;
+  btn.textContent = "…";
+  const ctrl = new AbortController();
+  _wordFetchCtrls[term] = ctrl;
+  const d = await fetchJSON(`/api/word/${encodeURIComponent(term)}`, ctrl.signal);
+  delete _wordFetchCtrls[term];
+  btn.disabled = false;
+  btn.textContent = oldText;
+  if (d && d.ok) {
+    _wordDetailCache[term] = d;
+    renderWordExpand(box, d, term);
+    box.style.display = "block";
+  }
+}
+function renderWordExpand(box, d, term) {
+  const news = d.news || [];
+  let html = `<div class="word-top"><div class="papers-title">${t("related")}</div>`;
+  news.forEach(n => {
+    html += `<div class="word-top-item">
+      <a href="${escapeHtml(n.official_url || "#")}" target="_blank" rel="noopener">${escapeHtml(n.title || "")}</a>
+      ${n.hot ? `<span class="hd">🔥 ${fmtNum(n.hot)}</span>` : ""}
+      ${n.published ? `<span class="src">${escapeHtml(n.published)}</span>` : ""}
+    </div>`;
+  });
+  if (!news.length) html += `<div class="word-top-item">—</div>`;
+  html += `<div class="word-top-item"><a href="/term/${escapeTerm(term)}" class="link-btn official">${t("detail_link")}</a></div></div>`;
+  box.innerHTML = html;
+}
+listEl.addEventListener("click", e => {
+  const b = e.target.closest(".word-expand-btn");
+  if (b && b.dataset.term) toggleWordExpand(b.dataset.term, b);
+});
+
 function renderCard(t, i) {
-  const dim = t.dimension || (t.kind === "model" ? "模型发布" : "其他");
+  const dim = t.dimension || (t.kind === "model" ? "模型与技术" : "其他");
   const dInfo = dimLabel(dim);
   const d = rankDelta(t, i);
   const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
@@ -799,10 +977,18 @@ function skeletonHTML() {
 }
 
 function visibleData() {
+  if (currentView === "words") {
+    let items = allData;
+    // words 视图分类过滤：成员资格（词跨领域，涉及任一选中的领域即入选）
+    if (currentCat !== "all") items = items.filter(t =>
+      (Array.isArray(t.dims) && t.dims.length ? t.dims : [t.dimension || "其他"]).includes(currentCat));
+    // 词视图排序键：rise→rise, hot→score(兼容), new→novelty（新奇度）
+    const key = { rise: "rise", hot: "score", new: "novelty" }[currentSort] || "score";
+    return [...items].sort((a, b) => (Number(b[key])||0) - (Number(a[key])||0));
+  }
   let items = allData;
   if (currentCat !== "all") items = items.filter(t => (t.dimension || "其他") === currentCat);
   // v2: 首页不再做 query 过滤——搜索已独立为 /search 页面，避免「混合过滤器」体验。
-  // 用户在搜索框输入后按 Enter 跳转 /search?q=... 看独立结果（带相关性打分 + <mark> 高亮）。
   // 统一排序键：rise→trend, hot→score, new→published
   const key = { rise: "trend", hot: "score", new: "published" }[currentSort];
   return [...items].sort((a, b) => {
@@ -833,7 +1019,8 @@ function render() {
   let adsInlineCount = 0;
   let html = "";
   items.forEach((t, i) => {
-    html += renderCard(t, i);
+    if (currentView === "words" && t.kind === "word") html += renderWordCard(t, i);
+    else html += renderCard(t, i);
     if ((i + 1) % INLINE_EVERY_N === 0) {
       if (inline.length) {
         const s = inline[Math.floor((i + 1) / INLINE_EVERY_N - 1) % inline.length];
@@ -900,10 +1087,16 @@ async function fetchAll() {
     } catch (e) {}
     if (!allData.length) listEl.innerHTML = skeletonHTML();
   }
+  // SSR 注入的是词卡，但用户已切到 news 视图 → 立即拉 news 全量，避免用词卡渲染新闻视图
+  if (hadSSR && currentView === "news") {
+    allData = [];
+    listEl.innerHTML = skeletonHTML();
+  }
 
   // 无论是否命中 SSR，都拉取全量 /api/stream 替换首屏小池，
   // 保证 rise/hot/new 有足够大的内容池产生区分度，且数量稳定。
-  const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}`, _fetchCtrl.signal);
+  // view 参数：words=热词卡（默认）/ news=逐条新闻。后端按 view 返回不同 terms。
+  const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}&view=${currentView}`, _fetchCtrl.signal);
 
   let terms = null;
   if (d && d.ok !== false && Array.isArray(d.terms)) {
@@ -938,36 +1131,49 @@ setInterval(fetchAll, 6 * 60 * 60 * 1000);
 function MOCK_DATA() {
   const base = [
     {kind:"model", id:"Qwen/Qwen3.8-27B", term:"Qwen3.8-27B", full_id:"Qwen/Qwen3.8-27B", author:"Qwen",
-     dimension:"模型发布", published:"2026-08-05", score:12117, trend:1990, hot:12117,
+     dimension:"模型与技术", published:"2026-08-05", score:12117, trend:1990, hot:12117,
      official_url:"https://huggingface.co/Qwen/Qwen3.8-27B", official_label:"HuggingFace · Qwen/Qwen3.8-27B",
      trending_score:1990, likes:12117, downloads:2090699, created_at:"2026-08-05",
      tags:["transformers","safetensors","qwen3_5","image-text-to-text"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Qwen3.8-27B"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Qwen3.8-27B"},{site:"GitHub",url:"https://github.com/search?q=Qwen3.8-27B"}],
      papers:[{title:"Qwen3.8 Technical Report: Multimodal Reasoning at Scale",url:"http://arxiv.org/abs/2608.20001",published:"2026-08-19"}]},
     {kind:"model", id:"deepseek-ai/DeepSeek-V4-Flash", term:"DeepSeek-V4-Flash", full_id:"deepseek-ai/DeepSeek-V4-Flash", author:"deepseek-ai",
-     dimension:"模型发布", published:"2026-08-11", score:13200, trend:1740, hot:13200,
+     dimension:"模型与技术", published:"2026-08-11", score:13200, trend:1740, hot:13200,
      official_url:"https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash", official_label:"HuggingFace · deepseek-ai/DeepSeek-V4-Flash",
      trending_score:1740, likes:13200, downloads:8800000, created_at:"2026-08-11",
      tags:["transformers","deepseek","moe"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=DeepSeek-V4-Flash"},{site:"B站",url:"https://search.bilibili.com/all?keyword=DeepSeek-V4-Flash"},{site:"GitHub",url:"https://github.com/search?q=DeepSeek-V4-Flash"}],
      papers:[]},
     {kind:"news", id:"mock-agent-1", title:"某 Agent 框架单周 Star 破万",
-     dimension:"产品发布", published:"2026-08-22", score:342, trend:342, hot:342,
+     dimension:"产品与应用", published:"2026-08-22", score:342, trend:342, hot:342,
      official_url:"https://github.com/search?q=agent", source:"GitHub",
      summary:"开源多智能体框架本周 Star 破万，社区热度持续攀升。", hn_points:120, reddit_score:88, reddit_comments:34},
     {kind:"news", id:"mock-funding-1", title:"某 AI 编程产品完成 B 轮融资",
-     dimension:"投融资", published:"2026-08-20", score:260, trend:260, hot:260,
+     dimension:"商业与投融资", published:"2026-08-20", score:260, trend:260, hot:260,
      official_url:"https://www.zhihu.com/search?q=AI%E8%9E%8D%E8%B5%84", source:"36氪",
      summary:"AI 编程赛道再迎大额融资，红杉领投 5000 万美元 B 轮。", hn_points:0, reddit_score:40, reddit_comments:12},
+    {kind:"word", id:"gpt-5", term:"GPT-5", display_zh:"", origin:"both",
+     dimension:"模型与技术", dims:["模型与技术","研究与论文"], published:"2026-08-28",
+     score:9200, hot:9200, rise:1.95, novelty:0.95, news_cnt:2, first_seen_at:"2026-08-27",
+     top_news:[
+       {title:"OpenAI 发布 GPT-5", title_en:"OpenAI launches GPT-5", official_url:"https://openai.com", hot:5000, source:"OpenAI"},
+       {title:"GPT-5 评测泄露", title_en:"GPT-5 benchmarks leaked", official_url:"https://techcrunch.com", hot:3000, source:"TC"},
+     ]},
+    {kind:"word", id:"agent", term:"Agent", display_zh:"智能体", origin:"news",
+     dimension:"产品与应用", dims:["产品与应用","商业与投融资"], published:"2026-08-26",
+     score:800, hot:800, rise:2.10, novelty:0.9, news_cnt:1, first_seen_at:"2026-08-26",
+     top_news:[
+       {title:"智能体创业公司融资", title_en:"Agent startup funding", official_url:"https://qbitai.com", hot:800, source:"量子位"},
+     ]},
     {kind:"model", id:"moonshotai/Kimi-K3", term:"Kimi-K3", full_id:"moonshotai/Kimi-K3", author:"moonshotai",
-     dimension:"模型发布", published:"2026-06-13", score:10923, trend:1520, hot:10923,
+     dimension:"模型与技术", published:"2026-06-13", score:10923, trend:1520, hot:10923,
      official_url:"https://huggingface.co/moonshotai/Kimi-K3", official_label:"HuggingFace · moonshotai/Kimi-K3",
      trending_score:1520, likes:10923, downloads:2612739, created_at:"2026-06-13",
      tags:["transformers","moonshot","long-context"],
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=Kimi-K3"},{site:"B站",url:"https://search.bilibili.com/all?keyword=Kimi-K3"},{site:"GitHub",url:"https://github.com/search?q=Kimi-K3"}],
      papers:[]},
     {kind:"model", id:"black-forest-labs/FLUX.1-dev", term:"FLUX.1-dev", full_id:"black-forest-labs/FLUX.1-dev", author:"black-forest-labs",
-     dimension:"模型发布", published:"2024-07-31", score:14223, trend:980, hot:14223,
+     dimension:"模型与技术", published:"2024-07-31", score:14223, trend:980, hot:14223,
      official_url:"https://huggingface.co/black-forest-labs/FLUX.1-dev", official_label:"HuggingFace · black-forest-labs/FLUX.1-dev",
      trending_score:980, likes:14223, downloads:631339, created_at:"2024-07-31",
      tags:["diffusers","flux","text-to-image"],
