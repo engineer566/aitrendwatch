@@ -11,23 +11,25 @@ AI 热点聚合单页应用：Flask 后端聚合 17 个 RSS 源 + HuggingFace �
 
 ```
 aitrendwatch/
-├── app.py          # Flask 入口 + 37 条路由 + 8 个直连抓取源（859 行）
+├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源（1300 行）
 ├── config.py       # 全部配置/环境变量/降级开关（101 行）
-├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + DeepSeek 打标（1110 行）
+├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + DeepSeek 打标/抽词（1164 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
+├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填（906 行，新增）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（474 行）
-├── news_store.py   # SQLite：事件卡历史库（upsert/list_history）（251 行）
+├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列）（335 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（0.2.1）
-├── templates/      # 6 个 Jinja2 模板（共 2337 行）
-│   ├── index.html         # 首页主单页（970 行，含 JS fetch + i18n）
-│   ├── terms.html         # 热词榜页（363 行）
-│   ├── term_detail.html   # 单热词详情页（209 行）
+├── templates/      # 6 个 Jinja2 模板
+│   ├── index.html         # 首页主单页（1192 行：词卡/逐条新闻双视图，JS fetch + i18n）
+│   ├── terms.html         # 服务条款页（363 行）
+│   ├── term_detail.html   # 通用热词聚合页（293 行：相关报道聚合 + HF 区块）
+│   ├── search.html        # 搜索结果页（496 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（345 行）
 │   ├── admin_login.html   # 管理员登录（60 行）
 │   └── monitor.html       # 流量监控页（390 行）
 ├── data/           # SQLite 库（sponsors.db, news.db）+ GeoLite2（运行产物，.gitkeep 占位）
-├── cache/          # 文件缓存产物（terms.json, dims.json + .refresh.lock）
+├── cache/          # 文件缓存产物（terms.json, dims.json, words.json + .refresh.lock）
 ├── history/        # 开发任务备忘（非代码）
 ├── docs/           # 本索引
 ├── vendor/         # ⚠️ vendored 依赖（flask/gunicorn/requests…），勿索引勿读
@@ -41,20 +43,21 @@ aitrendwatch/
 
 ## 三句话架构
 
-1. **Flask 单体**：`app.py` 一个进程，gunicorn 多 worker，路由直接调 `tracker`/`dims`/`store` 读缓存秒回。
-2. **两层后台预热**：`tracker` 和 `dims` 各起一个 daemon 线程，定时抓取写文件缓存；请求路径只读缓存。用 `fcntl` 跨进程文件锁串行化，整个容器任意时刻只有一个 worker 在抓取。
-3. **三级缓存**：进程内 `dict`（秒级）→ 文件 `cache/*.json`（跨 worker 共享，TTL 5–30 分钟）→ SQLite（赞助位/统计/事件卡历史库）。
+1. **Flask 单体**：`app.py` 一个进程，gunicorn 多 worker，路由直接调 `tracker`/`dims`/`terms`/`store` 读缓存秒回。
+2. **三层后台预热**：`tracker`（6h）和 `dims`（定点 13/19/01/07）各起 daemon 线程抓取写文件缓存；dims 刷新锁内再调 `terms.refresh_words` 归并热词池 + 三榜打分写 `words.json`。用 `fcntl` 跨进程文件锁串行化，整个容器任意时刻只有一个 worker 在抓取。
+3. **三级缓存**：进程内 `dict`（秒级）→ 文件 `cache/*.json`（跨 worker 共享）→ SQLite（赞助位/统计/事件卡历史库/词池）。
 
 ## 模块速查表
 
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
-| `app.py` | 859 | Flask 入口、路由、8 直连源抓取 | 37 个路由 view 函数 | tracker, dims, config, store |
+| `app.py` | 1300 | Flask 入口、路由、8 直连源抓取、词详情装配 | 37 个路由 view 函数 + `_word_detail` | tracker, dims, terms, config, store |
 | `config.py` | 101 | 配置集中地 + `ensure_data_dir()` | `ensure_data_dir` | os |
-| `dims.py` | 1110 | RSS 事件层 + DeepSeek 打标 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals` | config, requests |
-| `tracker.py` | 590 | HF 热词 + arXiv 论文 | `get_terms`, `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
+| `dims.py` | 1164 | RSS 事件层 + DeepSeek 打标/抽词 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch` | config, requests, terms |
+| `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
+| `terms.py` | 906 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store |
 | `store.py` | 474 | 赞助位/统计/GeoIP SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country` | config, sqlite3 |
-| `news_store.py` | 251 | 事件卡历史库 SQLite | `upsert_cards`, `list_history_cards`, `count_history` | config, sqlite3 |
+| `news_store.py` | 335 | 事件卡历史库 SQLite（含 keywords 列） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3 |
 | `version.py` | 23 | 版本号 | `__version__` | pathlib |
 
 ## 按任务跳转表
@@ -63,11 +66,12 @@ aitrendwatch/
 |----------|------------------|----------|
 | 加/改一条路由 | `index/api_routes.md` | `app.py` 对应 view |
 | 改某个抓取源（RSS/HF/arXiv） | `index/data_flow.md` | `dims.py`/`tracker.py` 对应函数 |
+| 改抽词/词典/词聚合/三榜打分 | `index/modules.md`（terms.py） | `terms.py` 对应函数 |
 | 理解模块结构/找某函数 | `index/modules.md` | 目标 `.py` 文件 |
 | 改前端页面/JS fetch | `index/frontend.md` | 目标 `templates/*.html` |
-| 理解请求链路/缓存/后台预热 | `index/architecture.md` | `app.py` + `tracker.py`/`dims.py` |
+| 理解请求链路/缓存/后台预热 | `index/architecture.md` | `app.py` + `tracker.py`/`dims.py`/`terms.py` |
 | 改配置/环境变量/降级开关 | `index/data_flow.md` §环境变量 | `config.py` |
-| 改 SQLite 表/统计逻辑 | `index/data_flow.md` §SQLite schema | `store.py`/`news_store.py` |
+| 改 SQLite 表/统计逻辑 | `index/data_flow.md` §SQLite schema | `store.py`/`news_store.py`/`terms.py` |
 | 加 Google Analytics / 广告 | `index/api_routes.md` + `index/frontend.md` | `templates/index.html` |
 
 ## L2 索引清单

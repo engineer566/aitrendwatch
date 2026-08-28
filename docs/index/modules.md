@@ -1,11 +1,11 @@
 # 模块函数索引
 
-> 6 个 Python 模块的结构、函数签名、行号、职责。配合 [INDEX.md](../INDEX.md) 使用。
+> 7 个 Python 模块的结构、函数签名、行号、职责。配合 [INDEX.md](../INDEX.md) 使用。
 > 行号基于 dev 分支实读。`_` 前缀为模块内部函数，归组列出但不展开细节。
 
 ---
 
-## app.py  （859 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （1300 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
@@ -171,25 +171,59 @@
 
 ---
 
-## news_store.py  （251 行）— 事件卡历史库 SQLite
+## news_store.py  （335 行）— 事件卡历史库 SQLite
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
-| 34–74 | 初始化 `init_db` |
-| 82–181 | 写：`upsert_cards` |
-| 182–251 | 读：`list_history_cards`/`count_history` |
+| 34–80 | 初始化 `init_db` + `_migrate`（keywords 列 + 维度映射） |
+| 82–198 | 写：`upsert_cards`（含 keywords） |
+| 199–290 | 读：`list_history_cards`/`count_history`/`search_history` |
 
-### 公开函数（被 dims.py 调用）
+### 公开函数（被 dims.py / terms.py / app.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `init_db()` | 34 | 建 `news_cards` 表 + 索引 + WAL |
-| `upsert_cards(cards)` | 83 | 刷新后 upsert 本轮全部 cards（重算 score/trend） |
-| `list_history_cards(limit, include_inactive, days)` | 183 | 合并历史库扩大内容池 |
-| `count_history()` | 215 | 历史条数 |
+| `init_db()` | 34 | 建 `news_cards` 表 + 索引 + WAL + 幂等迁移 |
+| `_migrate(conn)` | 79 | 加 keywords 列；旧维度值 → 新 6 类映射 |
+| `upsert_cards(cards)` | 83 | 刷新后 upsert 本轮全部 cards（含 keywords 落库） |
+| `list_history_cards(limit, include_inactive, days)` | 199 | 合并历史库扩大内容池 |
+| `count_history()` | 232 | 历史条数 |
+| `search_history(query, lang, limit)` | 244 | 历史库 LIKE 搜索（含 keywords 字段） |
 
 ### SQLite 表
-`news_cards`（见 [data_flow.md](data_flow.md) §SQLite）。
+`news_cards`（含 `keywords` JSON 列；见 [data_flow.md](data_flow.md) §SQLite）。
+
+---
+
+## terms.py  （906 行）— 词粒度聚合层（词维度重构，新增）
+
+### 分区清单
+| 行号范围 | 分区 |
+|----------|------|
+| 30–105 | 词池规模控制 + words.json 文件缓存（复刻 dims.py） |
+| 107–154 | SQLite `init_db`：`terms` / `term_snapshots` 表 + WAL |
+| 156–283 | 关键词词典 `_LEXICON`/`_ALIAS`/`_ASCII_PATTERNS`（版本感知词边界） |
+| 285–358 | `normalize_term` / `extract_keywords_dict` / display 构造 |
+| 360–406 | HF 模型词归一化 `_hf_canon` / 标题边界匹配 |
+| 388–709 | 词聚合 + 三榜打分 + 快照（`refresh_words`，dims 刷新锁内调） |
+| 711–817 | 读：`get_word_cards` / `get_term_row` / `get_term_news` / `list_terms_for_sitemap` |
+| 819–906 | 历史回填 `backfill_history` + CLI |
+
+### 公开函数（被 app.py / dims.py 调用）
+| 函数 | 行号 | 职责 |
+|------|------|------|
+| `init_db()` | 107 | 建 `terms`/`term_snapshots` 表 + WAL（失败 `_DB_OK=False`） |
+| `normalize_term(s)` | 285 | 任意词形 → canonical 键（小写/别名/去复数） |
+| `extract_keywords_dict(title)` | 309 | 词典匹配抽词（无 LLM key 降级 + 回填） |
+| `refresh_words(all_cards, model_cards)` | 388 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json |
+| `get_word_cards(sort, lang, limit)` | 711 | `/api/stream?view=words` 数据源（读 words.json，秒回） |
+| `get_term_row(term)` | 740 | 查 terms 主表（canonical 键） |
+| `get_term_news(term, limit, lang)` | 756 | 词 → 关联报道（keywords 精确 + 标题边界兜底） |
+| `list_terms_for_sitemap(limit)` | 803 | sitemap 词表（热度降序） |
+| `backfill_history(days, force)` | 819 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
+
+### SQLite 表
+`terms`（词主表：term/display/display_zh/origin/first_seen_at/total_mentions/hf_json/cur_hot/cur_rise/cur_novelty）、`term_snapshots`（(term,cycle) 周期快照支撑环比）。
 
 ---
 

@@ -430,7 +430,7 @@ def get_model_cards(lang="zh"):
     用 top sort 兜底；两者都缺失返回空列表（不触发 HF 抓取，请求路径秒回）。
 
     每个 term 补统一 schema 字段：
-      kind=model / id=full_id / dimension=模型发布 / published=created_at /
+      kind=model / id=full_id / dimension=模型与技术 / published=created_at /
       score=likes / trend=trending_score / hot=likes / title=term /
       title_zh=term / title_en=term / summary="" / official_label 透传。
     原 term 卡其余字段（author/tags/pipeline_tag/community/papers/downloads）
@@ -446,7 +446,7 @@ def get_model_cards(lang="zh"):
         c = {**t,
              "kind": "model",
              "id": t.get("full_id", t.get("term", "")),
-             "dimension": "模型发布",
+             "dimension": "模型与技术",
              "published": t.get("created_at", ""),
              "score": t.get("likes", 0),
              "trend": t.get("trending_score", 0),

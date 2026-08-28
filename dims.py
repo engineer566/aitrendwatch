@@ -3,8 +3,8 @@
 
 与 tracker.py 的区别：
 - tracker.py 只覆盖「开源模型」一个维度（靠 HF trendingScore）。
-- dims.py 覆盖 AI 科技圈全维度：模型发布 / 产品发布 / 研究论文 / 投融资 /
-  行业动态 / 其他。数据源是各家官方 RSS + arXiv + Algolia HN + Reddit，
+- dims.py 覆盖 AI 科技圈全维度：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 /
+  政策与行业 / 其他。数据源是各家官方 RSS + arXiv + Algolia HN + Reddit，
   天然带官方原文链接（如 OpenAI 发布 GPT-5 → openai.com/index/...）。
 - 维度打标用 DeepSeek LLM（轻量、批量、temperature=0.3），LLM 只负责分类，
   不碰链接——链接来自 RSS 原文，保证「链接到官方原文」这一硬要求。
@@ -13,8 +13,8 @@
 - 请求路径只读文件缓存（秒回）；抓取 + LLM 打标由后台预热线程定时做。
 - 多源 RSS 并发拉取，单源失败不阻塞（本地网络不可达的源静默跳过，
   云主机上自然生效）。
-- LLM 失败降级：按 RSS 源类型给默认维度（OpenAI→产品发布，arXiv→研究论文，
-  TechCrunch→行业动态），保证即便 DeepSeek 挂了也有热词可看。
+- LLM 失败降级：按 RSS 源类型给默认维度（OpenAI→产品与应用，arXiv→研究与论文，
+  TechCrunch→政策与行业），保证即便 DeepSeek 挂了也有热词可看。
 """
 
 import os
@@ -41,6 +41,11 @@ try:
 except Exception:
     news_store = None
 
+try:
+    import terms as terms_mod  # 词粒度聚合层；失败不阻塞，抽词/词榜自动降级
+except Exception:
+    terms_mod = None
+
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 HEADERS = {"User-Agent": UA, "Accept": "application/json, text/plain, */*"}
@@ -53,13 +58,13 @@ DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
 # 固定维度枚举（LLM 只能从中选；LLM 失败时也用它做默认降级）
 # 维度 key 始终是中文（canonical），前端按语言取 label / label_en。
-DIMENSIONS = ["模型发布", "产品发布", "研究论文", "投融资", "行业动态", "其他"]
+DIMENSIONS = ["模型与技术", "产品与应用", "研究与论文", "商业与投融资", "政策与行业", "其他"]
 DIMENSIONS_EN = {
-    "模型发布": "Model Releases",
-    "产品发布": "Product Launches",
-    "研究论文": "Research Papers",
-    "投融资":   "Funding",
-    "行业动态": "Industry News",
+    "模型与技术": "Models & Tech",
+    "产品与应用": "Products & Apps",
+    "研究与论文": "Research & Papers",
+    "商业与投融资": "Business & Funding",
+    "政策与行业": "Policy & Industry",
     "其他":     "Other",
 }
 
@@ -144,40 +149,40 @@ def _file_cache_set(data, fetched_at):
 # ③ 补充主流 AI 媒体 RSS（MIT Tech Review / VentureBeat / The Gradient）增加多样性。
 RSS_SOURCES = [
     # —— 厂商官方博客（链接直指官方原文）——
-    {"name": "OpenAI",       "feed": "https://openai.com/news/rss.xml",                            "region": "国际", "default_dim": "产品发布", "lang": "en"},
-    {"name": "TechCrunch AI","feed": "https://techcrunch.com/category/artificial-intelligence/feed/", "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "HF Blog",      "feed": "https://hf-mirror.com/blog/feed.xml",                        "region": "国际", "default_dim": "模型发布", "lang": "en"},
-    {"name": "arXiv cs.AI",  "feed": "https://export.arxiv.org/rss/cs.AI",                         "region": "国际", "default_dim": "研究论文", "lang": "en"},
-    {"name": "Microsoft AI", "feed": "https://www.microsoft.com/en-us/ai/blog/rss/",               "region": "国际", "default_dim": "产品发布", "lang": "en"},
-    {"name": "DeepMind",     "feed": "https://blog.google/technology/ai/rss/",                     "region": "国际", "default_dim": "研究论文", "lang": "en"},
-    {"name": "NVIDIA",       "feed": "https://blogs.nvidia.com/feed/",                             "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "Stability AI", "feed": "https://stability.ai/news-updates/rss.xml",                  "region": "国际", "default_dim": "模型发布", "lang": "en"},
-    {"name": "Databricks",   "feed": "https://www.databricks.com/rss.xml",                         "region": "国际", "default_dim": "行业动态", "lang": "en"},
+    {"name": "OpenAI",       "feed": "https://openai.com/news/rss.xml",                            "region": "国际", "default_dim": "产品与应用", "lang": "en"},
+    {"name": "TechCrunch AI","feed": "https://techcrunch.com/category/artificial-intelligence/feed/", "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "HF Blog",      "feed": "https://hf-mirror.com/blog/feed.xml",                        "region": "国际", "default_dim": "模型与技术", "lang": "en"},
+    {"name": "arXiv cs.AI",  "feed": "https://export.arxiv.org/rss/cs.AI",                         "region": "国际", "default_dim": "研究与论文", "lang": "en"},
+    {"name": "Microsoft AI", "feed": "https://www.microsoft.com/en-us/ai/blog/rss/",               "region": "国际", "default_dim": "产品与应用", "lang": "en"},
+    {"name": "DeepMind",     "feed": "https://blog.google/technology/ai/rss/",                     "region": "国际", "default_dim": "研究与论文", "lang": "en"},
+    {"name": "NVIDIA",       "feed": "https://blogs.nvidia.com/feed/",                             "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "Stability AI", "feed": "https://stability.ai/news-updates/rss.xml",                  "region": "国际", "default_dim": "模型与技术", "lang": "en"},
+    {"name": "Databricks",   "feed": "https://www.databricks.com/rss.xml",                         "region": "国际", "default_dim": "政策与行业", "lang": "en"},
     # —— 主流 AI 媒体（增加报道视角多样性，链接直指原文）——
-    {"name": "MIT TechReview", "feed": "https://www.technologyreview.com/topic/artificial-intelligence/feed", "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "VentureBeat AI", "feed": "https://venturebeat.com/category/ai/feed/",                "region": "国际", "default_dim": "投融资", "lang": "en"},
-    {"name": "The Gradient",   "feed": "https://thegradient.pub/rss/",                             "region": "国际", "default_dim": "研究论文", "lang": "en"},
+    {"name": "MIT TechReview", "feed": "https://www.technologyreview.com/topic/artificial-intelligence/feed", "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "VentureBeat AI", "feed": "https://venturebeat.com/category/ai/feed/",                "region": "国际", "default_dim": "商业与投融资", "lang": "en"},
+    {"name": "The Gradient",   "feed": "https://thegradient.pub/rss/",                             "region": "国际", "default_dim": "研究与论文", "lang": "en"},
     # —— 补充更多英文 AI 媒体（确保英文源数量 > 中文源，扩大报道覆盖）——
-    {"name": "The Verge AI",   "feed": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "Wired AI",       "feed": "https://www.wired.com/feed/tag/ai/latest/rss",            "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "Ars Technica",   "feed": "https://feeds.arstechnica.com/arstechnica/features",      "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "AI News",        "feed": "https://www.artificialintelligence-news.com/feed/",       "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "MarkTechPost",   "feed": "https://www.marktechpost.com/feed/",                      "region": "国际", "default_dim": "研究论文", "lang": "en"},
-    {"name": "Unite AI",       "feed": "https://www.unite.ai/feed/",                              "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "AWS ML Blog",    "feed": "https://aws.amazon.com/blogs/machine-learning/feed/",     "region": "国际", "default_dim": "产品发布", "lang": "en"},
+    {"name": "The Verge AI",   "feed": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "Wired AI",       "feed": "https://www.wired.com/feed/tag/ai/latest/rss",            "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "Ars Technica",   "feed": "https://feeds.arstechnica.com/arstechnica/features",      "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "AI News",        "feed": "https://www.artificialintelligence-news.com/feed/",       "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "MarkTechPost",   "feed": "https://www.marktechpost.com/feed/",                      "region": "国际", "default_dim": "研究与论文", "lang": "en"},
+    {"name": "Unite AI",       "feed": "https://www.unite.ai/feed/",                              "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "AWS ML Blog",    "feed": "https://aws.amazon.com/blogs/machine-learning/feed/",     "region": "国际", "default_dim": "产品与应用", "lang": "en"},
     # —— 独立 AI 技术评论（高质量一手分析，链接直指原文）——
-    {"name": "Simon Willison", "feed": "https://simonwillison.net/atom/everything/",              "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "Latent Space",   "feed": "https://www.latent.space/feed",                           "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "Ethan Mollick",  "feed": "https://www.oneusefulthing.org/feed",                     "region": "国际", "default_dim": "行业动态", "lang": "en"},
-    {"name": "Sebastian Raschka", "feed": "https://sebastianraschka.com/rss_feed.xml",            "region": "国际", "default_dim": "研究论文", "lang": "en"},
+    {"name": "Simon Willison", "feed": "https://simonwillison.net/atom/everything/",              "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "Latent Space",   "feed": "https://www.latent.space/feed",                           "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "Ethan Mollick",  "feed": "https://www.oneusefulthing.org/feed",                     "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "Sebastian Raschka", "feed": "https://sebastianraschka.com/rss_feed.xml",            "region": "国际", "default_dim": "研究与论文", "lang": "en"},
     # —— 无官方 RSS 的厂商 → Google News 聚合（official_url 为媒体域名，非文章直链）——
-    {"name": "Anthropic (GN)", "feed": "https://news.google.com/rss/search?q=Anthropic+when:3d&hl=en-US&gl=US&ceid=US:en",  "region": "国际", "default_dim": "产品发布", "is_gnews": True, "lang": "en"},
-    {"name": "Meta AI (GN)",   "feed": "https://news.google.com/rss/search?q=%22Meta+AI%22+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品发布", "is_gnews": True, "lang": "en"},
+    {"name": "Anthropic (GN)", "feed": "https://news.google.com/rss/search?q=Anthropic+when:3d&hl=en-US&gl=US&ceid=US:en",  "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
+    {"name": "Meta AI (GN)",   "feed": "https://news.google.com/rss/search?q=%22Meta+AI%22+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
     # —— 国内 AI 一手媒体（国内厂商无 RSS，用主流媒体官方 RSS 覆盖）——
-    {"name": "量子位",     "feed": "https://www.qbitai.com/feed",   "region": "国内", "default_dim": "行业动态", "lang": "zh"},
-    {"name": "InfoQ中文",  "feed": "https://www.infoq.cn/feed",     "region": "国内", "default_dim": "行业动态", "lang": "zh"},
-    {"name": "极客公园",   "feed": "https://www.geekpark.net/rss",  "region": "国内", "default_dim": "产品发布", "lang": "zh"},
-    {"name": "少数派",     "feed": "https://sspai.com/feed",        "region": "国内", "default_dim": "产品发布", "lang": "zh"},
+    {"name": "量子位",     "feed": "https://www.qbitai.com/feed",   "region": "国内", "default_dim": "政策与行业", "lang": "zh"},
+    {"name": "InfoQ中文",  "feed": "https://www.infoq.cn/feed",     "region": "国内", "default_dim": "政策与行业", "lang": "zh"},
+    {"name": "极客公园",   "feed": "https://www.geekpark.net/rss",  "region": "国内", "default_dim": "产品与应用", "lang": "zh"},
+    {"name": "少数派",     "feed": "https://sspai.com/feed",        "region": "国内", "default_dim": "产品与应用", "lang": "zh"},
 ]
 
 # 每个 RSS 源最多取前 N 条（控制 LLM 批次大小 + 多样性）
@@ -423,11 +428,11 @@ def _hn_points(title, url=None):
 # Reddit 公共 JSON 搜索无需鉴权（pushshift 已停用）。
 # 按 dimension 选一个 subreddit 探测，避免每卡扇出多个请求。
 _REDDIT_SUB = {
-    "模型发布": "LocalLLaMA",
-    "产品发布": "artificial",
-    "研究论文": "MachineLearning",
-    "投融资":   "artificial",
-    "行业动态": "artificial",
+    "模型与技术": "LocalLLaMA",
+    "产品与应用": "artificial",
+    "研究与论文": "MachineLearning",
+    "商业与投融资":   "artificial",
+    "政策与行业": "artificial",
     "其他":     "artificial",
 }
 
@@ -477,7 +482,7 @@ _SOURCE_WEIGHT = {
 def _buzz(url):
     """由 url 哈希派生的确定性「讨论度」抖动（0.0~1.0）。
 
-    issue 2 区分度：研究论文/投融资等小维度卡几乎全无 HN/Reddit 社区信号，
+    issue 2 区分度：研究与论文/商业与投融资等小维度卡几乎全无 HN/Reddit 社区信号，
     rise/hot/new 三排序只剩「时效」一个信号，若 trend/score 都是时效的单调函数
     则三者排序必然相同。_buzz 给每条卡一个稳定且与时效无关的 0~1 扰动，
     让 hot 与 trend 以不同权重叠加它 → 三排序产生区分度。
@@ -558,7 +563,7 @@ def _trend_score(hn, reddit_score, reddit_comments, published, region, source, u
     之前 trend = score，导致「上升最快」与「最热」对 news 卡排序完全相同。
     这里让 trend 反映「正在升温」的势头，与 hot 产生区分度：
 
-    issue 2 区分度原理：研究论文/投融资等小维度卡几乎全无 HN/Reddit 社区信号，
+    issue 2 区分度原理：研究与论文/商业与投融资等小维度卡几乎全无 HN/Reddit 社区信号，
     rise/hot/new 三种排序都只剩「时效」一个信号。若三者都是时效的单调函数则排序必然相同。
     解法：引入确定性「讨论度」抖动 _buzz(url)（0~1，由 url 哈希决定），让 hot 与 rise 沿
     **相反方向**叠加它 —— 这是结构性保证，任一年龄分布下同一 age 桶内 hot 按 buzz 升序、
@@ -586,7 +591,7 @@ def _trend_score(hn, reddit_score, reddit_comments, published, region, source, u
     else:
         fresh_boost = 1.0
     if community < 1:
-        # 无社区信号：小维度（研究论文/投融资）卡的普遍情况。
+        # 无社区信号：小维度（研究与论文/商业与投融资）卡的普遍情况。
         # 旧实现返回 0 → rise 全员并列、退化为与 new 相同。
         # issue 2 区分度：hot 与 rise 沿「相反方向」叠加确定性抖动 _buzz(url) ——
         #   hot  = 对数衰减 × (0.3 + 0.7*buzz)   buzz 越高越热（已发酵）
@@ -668,12 +673,15 @@ def _llm_classify_batch(batch):
     # user 前缀：逐字稳定（规则全在这），构成缓存前缀单元。
     _USER_PREFIX = (
         "对以下AI事件分类并产出中英双标题+双摘要，输出JSON数组，每项"
-        '{"idx","dimension","title_zh","title_en","summary_zh","summary_en"}。规则：\n'
+        '{"idx","dimension","title_zh","title_en","summary_zh","summary_en","keywords"}。规则：\n'
         "- dimension 从 " + json.dumps(DIMENSIONS, ensure_ascii=False) + " 选。\n"
         "- 标注 (en) 的条目：title_en=原标题照抄，title_zh=中文翻译；"
         "summary_en=一句英文<=30词概括，summary_zh=该概括的中文翻译<=30字。\n"
         "- 标注 (zh) 的条目：title_zh=原标题照抄，title_en=英文翻译；"
         "summary_zh=一句中文<=30字概括，summary_en=该概括的英文翻译<=30词。\n"
+        "- keywords：从该事件抽取1-3个AI领域关键实体/技术词，JSON数组；"
+        "英文术语用规范写法（如 GPT-5、Llama、MCP、RAG），中文概念用中文"
+        "（如 智能体、多模态）；无合适词给空数组。\n"
         "- 只输出JSON数组，不要解释：\n"
     )
     # 变化部分：事件条目放尾部，不影响前缀缓存。
@@ -748,14 +756,15 @@ def _llm_classify_batch(batch):
         raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
     parsed = json.loads(m.group(0))
 
-    # DeepSeek 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en]），
+    # DeepSeek 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en,kw]），
     # 统一归一成 dict 再回填，两种格式都能吃。
-    FIELDS = ("idx", "dimension", "title_zh", "title_en", "summary_zh", "summary_en")
+    FIELDS = ("idx", "dimension", "title_zh", "title_en", "summary_zh", "summary_en",
+              "keywords")
     norm = []
     for p in parsed:
         if isinstance(p, dict):
             norm.append(p)
-        elif isinstance(p, list) and len(p) >= 6:
+        elif isinstance(p, list) and len(p) >= 7:
             norm.append(dict(zip(FIELDS, p)))
 
     # 回填到 batch（按 idx 对齐）
@@ -795,6 +804,19 @@ def _llm_classify_batch(batch):
             s_zh = s_zh if s_zh not in BAD else s_en
         it["summary_zh"] = s_zh[:60]
         it["summary_en"] = s_en[:80]
+
+        # 关键词：LLM 抽取 → normalize_term 归一；缺失/异常单独降级为词典匹配，
+        # 不拖累 dimension/翻译字段。每卡 cap 3。
+        kws_raw = p.get("keywords")
+        kws = []
+        if isinstance(kws_raw, list):
+            for k in kws_raw:
+                ck = terms_mod.normalize_term(k) if terms_mod else str(k).strip().lower()
+                if ck and ck not in kws:
+                    kws.append(ck)
+        if not kws and terms_mod:
+            kws = terms_mod.extract_keywords_dict(it["title"])
+        it["keywords"] = kws[:3]
     return batch
 
 
@@ -812,13 +834,16 @@ def enrich_with_llm(items):
             try:
                 _llm_classify_batch(sub)
             except Exception:
-                # LLM 不可用：该子批降级——双 slot 都填原标题（无翻译），保证热词仍可展示
+                # LLM 不可用：该子批降级——双 slot 都填原标题（无翻译），保证热词仍可展示；
+                # keywords 走词典匹配（零 LLM 成本，保证无 key 时词池仍有数据、可测）
                 for it in sub:
                     it["dimension"] = it["default_dim"]
                     it["title_zh"] = it["title"][:200]
                     it["title_en"] = it["title"][:200]
                     it["summary_zh"] = it["title"][:30]
                     it["summary_en"] = it["title"][:30]
+                    it["keywords"] = (terms_mod.extract_keywords_dict(it["title"])
+                                      if terms_mod else [])
     return items
 
 
@@ -839,6 +864,8 @@ def _to_card(it):
         "hn_points":  it.get("hn_points", 0),
         "reddit_score":    it.get("reddit_score", 0),
         "reddit_comments": it.get("reddit_comments", 0),
+        # 关键词（canonical 词键列表）：LLM 抽取或词典匹配降级，供 terms.py 词聚合
+        "keywords":   it.get("keywords") or [],
         # 复合热度分：HN+Reddit+时效衰减+源权重兜底，与 model likes 同量级
         "score":      _composite_score(
             it.get("hn_points", 0), it.get("reddit_score", 0),
@@ -1056,6 +1083,18 @@ def _dims_refresh_once():
                     if news_store:
                         try:
                             _persist_to_history(data)
+                        except Exception:
+                            pass
+                    # 词粒度聚合（词维度重构）：历史库落库后重算词池 + 三榜打分
+                    # + 周期快照，产出 cache/words.json。只在拿到锁的 worker 执行，
+                    # 失败静默——terms 内部已全量降级。
+                    if terms_mod:
+                        try:
+                            import tracker  # 延迟 import，避免模块加载顺序耦合
+                            model_cards, _ = tracker.get_model_cards("zh")
+                            terms_mod.refresh_words(
+                                data.get("all_cards") or [], model_cards,
+                                fetched_at=data["fetched_at"])
                         except Exception:
                             pass
                     return True
