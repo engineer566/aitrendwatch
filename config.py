@@ -48,30 +48,35 @@ GEOIP_DB_PATH = os.environ.get(
 _cache_default = "/app/cache" if os.path.isdir("/app") else os.path.join(os.getcwd(), "cache")
 CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
 
-# ---------- LLM 提供方（维度热词打标，DeepSeek / GLM 可切换）----------
+# ---------- LLM 提供方（维度热词打标，模型故障转移链）----------
 # 未配置 key → dims.py 的 LLM 打标降级到 RSS 源默认维度，热词仍可展示。
-# 提供方二选一，只改 LLM_PROVIDER 一个环境变量即可一键切换，代码无需改动：
-#   LLM_PROVIDER=deepseek（默认）→ DEEPSEEK_API_KEY / DEEPSEEK_MODEL / DEEPSEEK_URL
-#   LLM_PROVIDER=glm           → GLM_API_KEY / GLM_MODEL / GLM_URL（智谱 BigModel）
-# 生效的 url/model/key 统一暴露为 LLM_URL / LLM_MODEL / LLM_API_KEY，dims.py 只认这三个。
-LLM_PROVIDER = (os.environ.get("LLM_PROVIDER") or "deepseek").strip().lower()
-if LLM_PROVIDER not in ("deepseek", "glm"):
-    LLM_PROVIDER = "deepseek"  # 非法值回落默认
+#
+# LLM_CHAIN：模型故障转移链，按序尝试；每档连续 LLM_FAILOVER_THRESHOLD 次失败后
+# 切下一档（单向熔断式转移，成功只清零计数、不回退首档）。首档即默认模型。
+# 默认链（前四档走智谱 BigModel 需 GLM_API_KEY，末档 deepseek 需 DEEPSEEK_API_KEY）：
+#   glm-4.7-flash → glm-4.6v-flash → glm-4.6v-flashx → glm-4.7-flashx → deepseek-v4-flash
+# 覆盖整条链：设 LLM_CHAIN="模型A,模型B,..."（逗号分隔；glm-* 走 GLM、deepseek-* 走 DeepSeek）。
+LLM_CHAIN = [m.strip().lower() for m in
+             os.environ.get("LLM_CHAIN",
+               "glm-4.7-flash,glm-4.6v-flash,glm-4.6v-flashx,glm-4.7-flashx,deepseek-v4-flash")
+             .split(",") if m.strip()]
+LLM_FAILOVER_THRESHOLD = max(1, int(os.environ.get("LLM_FAILOVER_THRESHOLD", "10") or 10))
 
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
-# GLM-4.7-Flash：智谱 BigModel 免费档，OpenAI 兼容 chat/completions 接口。
-# ⚠️ 免费档并发上限 1，高峰常返 429/1305（访问量过大），dims 已做瞬态重试+降级兜底。
+# GLM-4.7-Flash 等：智谱 BigModel，OpenAI 兼容 chat/completions 接口。
+# ⚠️ 免费档并发上限 1，高峰常返 429/1305（访问量过大）——正是故障转移链要扛的场景。
 GLM_API_KEY = os.environ.get("GLM_API_KEY", "").strip()
-GLM_MODEL = os.environ.get("GLM_MODEL", "glm-4.7-flash")
 GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
-if LLM_PROVIDER == "glm":
-    LLM_URL, LLM_MODEL, LLM_API_KEY = GLM_URL, GLM_MODEL, GLM_API_KEY
-else:
-    LLM_URL, LLM_MODEL, LLM_API_KEY = DEEPSEEK_URL, DEEPSEEK_MODEL, DEEPSEEK_API_KEY
+
+def llm_endpoint(model):
+    """模型 ID → (url, api_key)：deepseek 前缀走 DeepSeek，其余（glm-* 等）走智谱 BigModel。
+    供 dims.py 故障转移链取当前档的请求端点。"""
+    if model.startswith("deepseek"):
+        return DEEPSEEK_URL, DEEPSEEK_API_KEY
+    return GLM_URL, GLM_API_KEY
 
 # ---------- dims 生产定点预热（Asia/Shanghai 24h 制）----------
 # 一天 4 次：13/19/01/07，6 小时一档。

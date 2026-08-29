@@ -6,9 +6,9 @@
 - dims.py 覆盖 AI 科技圈全维度：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 /
   政策与行业 / 其他。数据源是各家官方 RSS + arXiv + Algolia HN + Reddit，
   天然带官方原文链接（如 OpenAI 发布 GPT-5 → openai.com/index/...）。
-- 维度打标用 LLM（DeepSeek 或 GLM，由 config.LLM_PROVIDER 切换；轻量、批量、
-  temperature=0.3），LLM 只负责分类，不碰链接——链接来自 RSS 原文，
-  保证「链接到官方原文」这一硬要求。
+- 维度打标用 LLM（模型故障转移链 config.LLM_CHAIN，首档 GLM-4.7-Flash、末档
+  DeepSeek 兜底；轻量、批量、temperature=0.3），LLM 只负责分类，不碰链接——
+  链接来自 RSS 原文，保证「链接到官方原文」这一硬要求。
 
 设计原则（与 tracker.py 一致）：
 - 请求路径只读文件缓存（秒回）；抓取 + LLM 打标由后台预热线程定时做。
@@ -34,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-from config import (CACHE_DIR, LLM_API_KEY, LLM_MODEL, LLM_URL,
+from config import (CACHE_DIR, LLM_CHAIN, LLM_FAILOVER_THRESHOLD, llm_endpoint,
                     DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
 
 try:
@@ -52,11 +52,11 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 HEADERS = {"User-Agent": UA, "Accept": "application/json, text/plain, */*"}
 TIMEOUT = 10
 
-# ---------- LLM 配置（DeepSeek / GLM 可切换）----------
-# url/model/key 由 config.LLM_PROVIDER 解析成统一的 LLM_URL / LLM_MODEL / LLM_API_KEY
-# （LLM_PROVIDER=glm 时指向智谱 BigModel 的 GLM-4.7-Flash，默认 deepseek-v4-flash）。
-# 切换只改环境变量 LLM_PROVIDER，代码不动。worktree 不设 key 走 Mock 降级，
-# dev 回归 / 生产才设 key 真调 LLM。
+# ---------- LLM 配置（模型故障转移链）----------
+# 链与阈值来自 config（LLM_CHAIN / LLM_FAILOVER_THRESHOLD）；当前档端点由
+# config.llm_endpoint(model) 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
+# 默认链首档 GLM-4.7-Flash，每档连续 LLM_FAILOVER_THRESHOLD 次失败顺链切换，
+# 末档 DeepSeek-V4-Flash 兜底。worktree 不设 key 走 Mock 降级，dev / 生产才设 key。
 
 # 固定维度枚举（LLM 只能从中选；LLM 失败时也用它做默认降级）
 # 维度 key 始终是中文（canonical），前端按语言取 label / label_en。
@@ -664,8 +664,53 @@ def _strip_llm_title_suffix(s):
     return re.sub(r"\s*\|\s*[^|]*$", "", s)
 
 
+# ---------- 模型故障转移链状态 ----------
+# 进程级状态（gunicorn 每 worker 独立）：默认从链首 GLM-4.7-Flash 起，
+# 每档连续 LLM_FAILOVER_THRESHOLD 次失败顺链切换；成功清零计数但不回退首档。
+# 实际刷新由 fcntl 跨进程锁串行化（同一时刻仅一个 worker 在调 LLM），
+# 因此进程内计数在大部分场景下等价于全局计数。
+_llm_lock = threading.Lock()
+_LLM_ACTIVE_IDX = 0   # 当前档在 LLM_CHAIN 的下标
+_LLM_FAILS = 0        # 当前档连续失败次数
+
+
+def _active_llm():
+    """当前档 (model, url, api_key, idx)。idx 钉在末档，全链失败也不越界。"""
+    idx = min(_LLM_ACTIVE_IDX, len(LLM_CHAIN) - 1)
+    model = LLM_CHAIN[idx]
+    url, key = llm_endpoint(model)
+    return model, url, key, idx
+
+
+def _llm_success():
+    """一次成功调用：清零连续失败计数（保持当前档，不回退首档）。"""
+    global _LLM_FAILS
+    with _llm_lock:
+        _LLM_FAILS = 0
+
+
+def _llm_failure(permanent=False):
+    """一次失败调用：连续计数满阈值顺链切下一档。permanent（无 key 等永久条件）
+    视为 1 次即切，不烧 10 次重试；末档不再切换，计数清零待下轮。"""
+    global _LLM_ACTIVE_IDX, _LLM_FAILS
+    with _llm_lock:
+        _LLM_FAILS += 1
+        need = 1 if permanent else LLM_FAILOVER_THRESHOLD
+        if _LLM_FAILS >= need:
+            if _LLM_ACTIVE_IDX < len(LLM_CHAIN) - 1:
+                _LLM_ACTIVE_IDX += 1
+                reason = ("无 key 顺链跳过" if permanent
+                          else f"连续 {LLM_FAILOVER_THRESHOLD} 次失败")
+                print(f"[dims][llm] {reason} → {LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
+            _LLM_FAILS = 0
+
+
 def _llm_classify_batch(batch):
-    """让 LLM（DeepSeek 或 GLM，见 config.LLM_PROVIDER）给一批事件打维度标签 + 生成中英双标题/双摘要。
+    """让 LLM 给一批事件打维度标签 + 生成中英双标题/双摘要。
+
+    走模型故障转移链（config.LLM_CHAIN）：首档默认 GLM-4.7-Flash，每档连续
+    LLM_FAILOVER_THRESHOLD 次失败顺链切换；无 key 的 provider 档不烧重试、直接顺链
+    跳过。全链不可用抛异常（调用方降级）。成功清零连续失败计数但不回退首档。
 
     输入：事件卡列表（每张含 title/source/default_dim/lang）。
     输出：每张补充 dimension + title_zh/title_en + summary_zh/summary_en。
@@ -676,8 +721,14 @@ def _llm_classify_batch(batch):
     外文 slot 由 LLM 翻译——中文版把英文源翻中文，英文版把中文源翻英文。
     dimension 仍是中文枚举 key（canonical），前端按语言取 label。
     """
-    if not LLM_API_KEY:
-        raise RuntimeError("LLM_API_KEY 未配置（DEEPSEEK_API_KEY 或 GLM_API_KEY）")
+    # ---- 定位当前可用档：无 key 的档顺链跳过（永久条件，不烧 10 次重试）----
+    while True:
+        model, url, key, idx = _active_llm()
+        if key:
+            break
+        if idx >= len(LLM_CHAIN) - 1:
+            raise RuntimeError("LLM key 未配置（GLM_API_KEY 或 DEEPSEEK_API_KEY 至少设一个）")
+        _llm_failure(permanent=True)
 
     # ---- prompt 重组：最大化 LLM 前缀缓存命中 ----
     # DeepSeek/GLM 缓存均按前缀匹配，命中价远低于未命中。把所有不变内容
@@ -707,7 +758,7 @@ def _llm_classify_batch(batch):
         lines.append(f"[{i}] ({it.get('lang','en')}) {it['title']} | {it['source']}")
     user_msg = _USER_PREFIX + "\n".join(lines)
 
-    def _post(max_tokens):
+    def _post(max_tokens, model, url, key):
         """单次 LLM 调用（DeepSeek/GLM 通用），带瞬态重试（最多重试 3 次）。
 
         瞬态错误包括：连接重置/超时（云主机到 api.deepseek.com 偶发
@@ -721,18 +772,18 @@ def _llm_classify_batch(batch):
         又避免 temperature=0 的复读机问题。温度只影响输出，不影响输入缓存命中。
         """
         payload = {
-            "model": LLM_MODEL,
+            "model": model,
             "messages": [{"role": "system", "content": sys_msg},
                          {"role": "user", "content": user_msg}],
             "max_tokens": max_tokens,
             "temperature": 0.3,
         }
-        hdrs = {"Authorization": f"Bearer {LLM_API_KEY}",
+        hdrs = {"Authorization": f"Bearer {key}",
                 "Content-Type": "application/json"}
         last_err = None
         for attempt in range(3):
             try:
-                resp = requests.post(LLM_URL, headers=hdrs, json=payload,
+                resp = requests.post(url, headers=hdrs, json=payload,
                                      timeout=(15, 90))  # 连接 15s，读 90s（推理慢）
                 resp.raise_for_status()
                 body = resp.json()
@@ -778,18 +829,25 @@ def _llm_classify_batch(batch):
         # 3 次都失败，抛最后错误（调用方降级）
         raise last_err if last_err else RuntimeError("LLM 调用失败")
 
+    # 调用 + 解析归入 try：成功 → 清零连续失败；异常 → 计一次失败（满阈值顺链切档）。
+    # 后续回填是纯本地逻辑，不在 try 内，避免把自身 bug 误算成模型故障转移。
     # DeepSeek-V4 / GLM-4.7 是推理模型：max_tokens 同时覆盖 reasoning_content + content。
     # 双语 12 条标题+摘要正文约需 ~2k，但推理可能吃掉 5-8k，额度偏紧会 length 截断致 content 空。
     # max_tokens 拉到 20000 给推理留足余量；content 空且 finish=length 时再加一次。
-    content, finish = _post(20000)
-    if (not content) and finish == "length":
-        content, finish = _post(40000)
+    try:
+        content, finish = _post(20000, model, url, key)
+        if (not content) and finish == "length":
+            content, finish = _post(40000, model, url, key)
 
-    # 提取 JSON 数组（容忍前后多余字符 / ```json 包裹）
-    m = re.search(r"\[.*\]", content, re.S)
-    if not m:
-        raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
-    parsed = json.loads(m.group(0))
+        # 提取 JSON 数组（容忍前后多余字符 / ```json 包裹）
+        m = re.search(r"\[.*\]", content, re.S)
+        if not m:
+            raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
+        parsed = json.loads(m.group(0))
+    except Exception:
+        _llm_failure()
+        raise
+    _llm_success()
 
     # LLM 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en,kw]），
     # 统一归一成 dict 再回填，两种格式都能吃。

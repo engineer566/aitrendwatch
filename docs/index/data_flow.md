@@ -43,11 +43,11 @@
 - 检索式：`_search_query_for(term)` 按模型名逐词 `all:` 全文检索。
 - 只在后台预热 + `get_term_detail` 同步调用（详情页慢根因）。
 
-### LLM（DeepSeek / GLM 可切换，`dims.py:667` `_llm_classify_batch`）
-- 提供方由 `config.LLM_PROVIDER` 决定（deepseek 默认 / glm=智谱 BigModel）；`_llm_classify_batch` 只认 config 解析出的 `LLM_URL`/`LLM_MODEL`/`LLM_API_KEY`，切换只改一个环境变量。
+### LLM（模型故障转移链，`dims.py:684` `_llm_classify_batch`）
+- **故障转移链** `config.LLM_CHAIN`（默认 `glm-4.7-flash → glm-4.6v-flash → glm-4.6v-flashx → glm-4.7-flashx → deepseek-v4-flash`）：首档默认 GLM-4.7-Flash，每档连续 `LLM_FAILOVER_THRESHOLD`（默认 10）次失败顺链切下一档（单向熔断式，成功只清零计数不回退首档）；无 key 的 provider 档不烧重试、直接顺链跳过。当前档端点由 `config.llm_endpoint(model)` 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
 - 用途：维度打标（模型与技术/产品与应用/研究与论文/商业与投融资/政策与行业/其他）+ 双语翻译（title_zh/title_en/summary_zh/summary_en）+ **抽取关键词 keywords**（1-3 个 AI 实体/技术词，词维度重构核心）。
-- **降级**（无 LLM key：`DEEPSEEK_API_KEY` 与 `GLM_API_KEY` 均未设）：用 RSS 源 `default_dim` 分类、双 slot 填原标题、summary_zh 取原标题前 30 字；**keywords 走 `terms.extract_keywords_dict` 词典匹配**。零 token 消耗。天然 Mock 机制，无需代码开关。
-- 瞬态容错：`_post` 对连接重置/超时 + HTTP 429/5xx + 错误体 1305（GLM 免费档过载）重试 3 次，永久错误直接抛由 `enrich_with_llm` 降级。
+- **降级**（无 LLM key：`GLM_API_KEY` 与 `DEEPSEEK_API_KEY` 均未设）：用 RSS 源 `default_dim` 分类、双 slot 填原标题、summary_zh 取原标题前 30 字；**keywords 走 `terms.extract_keywords_dict` 词典匹配**。零 token 消耗。天然 Mock 机制，无需代码开关。
+- 瞬态容错：`_post` 对连接重置/超时 + HTTP 429/5xx + 错误体 1305（GLM 免费档过载）重试 3 次；永久错误直接抛 → `_llm_failure()` 计一次并顺链。
 - 批量调用：`enrich_with_llm(items)` 分批打标（6 条子批）。
 - 生产定点刷新：`DIMS_REFRESH_HOURS=(13,19,1,7)`，避开高峰段 + 命中硬盘缓存 TTL。
 
@@ -145,11 +145,10 @@ WAL 模式。DB 不可用 → `_DB_OK=False` 全程静默降级返空。
 | `NEWS_DB_PATH` | $DATA_DIR/news.db | 事件库路径 |
 | `GEOIP_DB_PATH` | $DATA_DIR/GeoLite2-Country.mmdb | 离线地域库；缺失 → Unknown |
 | `CACHE_DIR` | /app/cache 或 ./cache | 文件缓存目录 |
-| `LLM_PROVIDER` | deepseek | LLM 提供方一键切换：`deepseek`（默认）/ `glm`（智谱 BigModel）；非法值回落 deepseek |
-| `DEEPSEEK_API_KEY` | "" | DeepSeek key；两 key 均未设 → 走降级（default_dim+原标题） |
-| `DEEPSEEK_MODEL` | deepseek-v4-flash | DeepSeek 模型名 |
-| `GLM_API_KEY` | "" | GLM（智谱 BigModel）key |
-| `GLM_MODEL` | glm-4.7-flash | GLM 模型名；⚠️ 免费档并发上限 1，高峰常返 429/1305，dims 已做重试+降级 |
+| `LLM_CHAIN` | glm-4.7-flash,glm-4.6v-flash,glm-4.6v-flashx,glm-4.7-flashx,deepseek-v4-flash | 模型故障转移链（逗号分隔，按序尝试；首档即默认） |
+| `LLM_FAILOVER_THRESHOLD` | 10 | 每档连续失败次数达此值 → 顺链切下一档 |
+| `DEEPSEEK_API_KEY` | "" | DeepSeek key（末档兜底用）；GLM/DEEPSEEK 两 key 均未设 → 走降级（default_dim+原标题） |
+| `GLM_API_KEY` | "" | GLM（智谱 BigModel）key；⚠️ 免费档并发上限 1，高峰常返 429/1305，dims 已做重试+顺链转移+降级 |
 | `DIMS_REFRESH_HOURS` | 13,19,1,7 | 定点刷新时刻（Asia/Shanghai） |
 | `ANALYTICS_ENABLED` | true | 分析开关 |
 | `SEO_ENABLED` | true | 关 → 不输出 canonical/OG/JSON-LD，robots 禁止索引 |
