@@ -140,8 +140,11 @@ def _word_detail(term_name, lang="zh"):
                 hf = json.loads(row["hf_json"])
             except (json.JSONDecodeError, ValueError):
                 hf = None
+        # Query by the canonical key that was used to find the row.  The
+        # terms layer still accepts aliases for direct callers, while this
+        # avoids letting a display/path spelling affect historical fallback.
         news = [_project(c) for c in
-                terms_mod.get_term_news(term_name, limit=50, lang=lang)]
+                terms_mod.get_term_news(canon, limit=50, lang=lang)]
         term_info = {
             "term": row.get("display") or canon,
             "display_zh": row.get("display_zh") or "",

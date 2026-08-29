@@ -331,6 +331,98 @@ def extract_keywords_dict(title):
     return hits[:3]
 
 
+def _term_surfaces(canon):
+    """Return the known title/keyword spellings for a canonical term.
+
+    ``news_cards.keywords`` is canonical for newly written rows, but rows
+    created before the keywords migration (and some older LLM output) can
+    contain a surface spelling such as ``GPT5`` or ``GPT 5``.  Keep the
+    surface expansion in one place so title fallback and keyword matching
+    use the same aliases.
+    """
+    surfaces = []
+    seen = set()
+
+    def _add(surface):
+        surface = str(surface or "").strip()
+        folded = surface.casefold()
+        if surface and folded not in seen:
+            seen.add(folded)
+            surfaces.append(surface)
+
+    for surface in [canon, *_LEXICON.get(canon, [])]:
+        _add(surface)
+    # Include hand-added aliases which are intentionally not all repeated in
+    # the human-maintained lexicon surface list (for example 通义 → qwen).
+    for alias, target in _ALIAS.items():
+        if target == canon:
+            _add(alias)
+    # normalize_term turns spaces/underscores into hyphens.  The reversible
+    # space spelling is useful for uncatalogued LLM terms as well.
+    if "-" in canon:
+        _add(canon.replace("-", " "))
+    return surfaces
+
+
+def _title_matches_term(text, surfaces):
+    """Match a title against term surfaces without matching a later version.
+
+    ASCII terms use the same word-boundary rule as dictionary extraction.
+    In particular, ``gpt-5`` matches ``GPT-5``/``GPT5`` but not
+    ``GPT-5.5`` or ``GPT50``.  CJK aliases are intentionally substring
+    matches because they do not have word boundaries.
+    """
+    text = str(text or "")
+    if not text:
+        return False
+    text_fold = text.casefold()
+    for surface in surfaces:
+        if not surface:
+            continue
+        if any(ord(c) >= 128 for c in surface):
+            if surface.casefold() in text_fold:
+                return True
+            continue
+        pat = re.compile(
+            r"(?<![a-z0-9])" + re.escape(surface)
+            + r"(?!\.\d)(?![a-z0-9])", re.I)
+        if pat.search(text):
+            return True
+    return False
+
+
+def _keyword_canons(value):
+    """Decode old/new ``news_cards.keywords`` values to canonical keys."""
+    raw = value
+    if isinstance(value, str):
+        try:
+            raw = json.loads(value or "[]")
+        except (json.JSONDecodeError, ValueError):
+            # A few hand-migrated databases used a comma-separated value
+            # instead of the documented JSON array.  Reading it is cheap and
+            # keeps the detail page useful; new writes still emit JSON.
+            raw = re.split(r"[,|]", value)
+    if not isinstance(raw, (list, tuple, set)):
+        return set()
+    return {canon for canon in (normalize_term(k) for k in raw) if canon}
+
+
+def _news_row_canons(row):
+    """Return canonical keywords, deriving them for legacy/empty rows.
+
+    The explicit keyword list remains authoritative for current rows.  Empty
+    or pre-migration rows get the same no-LLM dictionary extraction used by
+    the fallback path, so historical cards contribute to both word counts
+    and detail-page results consistently.
+    """
+    kws = _keyword_canons(row["keywords"])
+    if kws:
+        return kws
+    text = " ".join(str(row[f] or "") for f in
+                    ("title", "title_zh", "title_en"))
+    return set(extract_keywords_dict(text))
+
+
 def _display_of(term, surfaces):
     """从命中表面形式里挑展示名：优先含大写的最长形式，否则首字母大写化。"""
     best = ""
@@ -450,18 +542,18 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
     if news_store:
         try:
             conn = _conn()
-            for r in conn.execute(
-                    "SELECT url, title, title_zh, title_en, dimension, "
-                    "published, score, keywords FROM news_cards"):
-                kws = []
-                try:
-                    v = json.loads(r["keywords"] or "[]")
-                    kws = [normalize_term(k) for k in v] if isinstance(v, list) else []
-                except (json.JSONDecodeError, ValueError, TypeError):
-                    kws = []
-                # 关键词派生词集：聚合 + top news 共用（保持原两趟扫描行为一致，
-                # top news 只记关键词命中的词，HF 标题命中词不进 top）。
-                kw_canons = {k for k in kws if k}
+            news_columns = {r[1] for r in
+                            conn.execute("PRAGMA table_info(news_cards)")}
+            keyword_expr = ("keywords" if "keywords" in news_columns
+                            else "NULL AS keywords")
+            query = (
+                "SELECT url, title, title_zh, title_en, dimension, "
+                "published, score, " + keyword_expr + " FROM news_cards"
+            )
+            for r in conn.execute(query):
+                # 关键词派生词集：聚合 + top news 共用（保持原两趟扫描行为一致；
+                # HF 仅靠模型名命中的词不进 top）。
+                kw_canons = _news_row_canons(r)
                 # HF 词标题命中（即使抽词没抽到）：只进聚合，不进 top news
                 titles_lower = [str(r["title"] or "").lower(),
                                 str(r["title_zh"] or "").lower(),
@@ -759,8 +851,11 @@ def get_term_row(term):
 
 
 def get_term_news(term, limit=50, lang="zh"):
-    """词 → 关联报道（news_cards keywords LIKE + 标题命中兜底）。
+    """词 → 关联报道（canonical keywords + 标题命中兜底）。
 
+    新卡的 ``keywords`` 是 canonical JSON，历史卡可能没有该列、列值为
+    ``[]``，或仍保存旧的表面形式。因此 SQL 只负责收集候选行，最终的
+    关联判断统一在 Python 中做 canonical/别名归一和版本感知边界匹配。
     返回与 dims 卡同 schema 的投影卡列表，published 降序 + score 降序。
     """
     if not _DB_OK or not news_store:
@@ -769,38 +864,68 @@ def get_term_news(term, limit=50, lang="zh"):
     if not canon:
         return []
     try:
+        limit = max(0, int(limit))
+    except (TypeError, ValueError):
+        limit = 50
+    if not limit:
+        return []
+
+    surfaces = _term_surfaces(canon)
+
+    def _like_literal(value):
+        # SQL parameters prevent injection, but LIKE still treats %/_ as
+        # wildcards.  Escape them so a custom term cannot broaden the scan.
+        return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    try:
         conn = _conn()
-        like_kw = f'%"{canon}%"'
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(news_cards)")}
+        has_keywords = "keywords" in columns
+        title_fields = [f for f in ("title", "title_zh", "title_en")
+                        if f in columns]
+
+        # Keep the query LIKE-based for the normal SQLite path, but do not
+        # apply LIMIT before Python verification: a newer-version false
+        # positive must not crowd a valid historical card out of the result.
+        clauses = []
+        params = []
+        if has_keywords:
+            for surface in surfaces:
+                clauses.append("keywords LIKE ? ESCAPE '\\'")
+                # Do not require JSON quotes here: a few old/manual rows used
+                # a plain or comma-separated keyword value.  Python verifies
+                # the decoded value below, so broad candidates are safe.
+                params.append("%" + _like_literal(surface) + "%")
+        for field in title_fields:
+            for surface in surfaces:
+                clauses.append(f"{field} LIKE ? ESCAPE '\\'")
+                params.append("%" + _like_literal(surface) + "%")
+        if not clauses:
+            conn.close()
+            return []
+
+        # ``NULL AS keywords`` lets the same row handling work even if a
+        # production database predates the idempotent ALTER TABLE migration.
+        select = ("SELECT * FROM news_cards" if has_keywords else
+                  "SELECT *, NULL AS keywords FROM news_cards")
         rows = conn.execute(
-            """SELECT * FROM news_cards
-               WHERE keywords LIKE ?
-               ORDER BY published DESC, score DESC LIMIT ?""",
-            (like_kw, limit)).fetchall()
-        kw_urls = {r["url"] for r in rows}
-        # 标题兜底：仅拉 keywords 未命中的卡，再用版本感知词边界过滤
-        # （"GPT-5.5" 不会命中 gpt-5），避免子串误配。
-        like_t = f"%{term}%"
-        placeholder = ",".join("?" * len(kw_urls)) if kw_urls else "''"
-        rows += conn.execute(
-            """SELECT * FROM news_cards
-               WHERE (title LIKE ? OR title_zh LIKE ? OR title_en LIKE ?)
-                 AND url NOT IN (%s)
-               ORDER BY published DESC, score DESC LIMIT ?""" % placeholder,
-            [like_t, like_t, like_t] + (list(kw_urls) if kw_urls else []) + [limit],
-        ).fetchall()
+            f"{select} WHERE ({' OR '.join(clauses)}) "
+            "ORDER BY published DESC, score DESC",
+            params).fetchall()
         conn.close()
-        pat = re.compile(r"(?<![a-z0-9])" + re.escape(canon)
-                         + r"(?!\.\d)(?![a-z0-9])", re.I)
+
         out = []
         for r in rows:
-            if r["url"] in kw_urls:
+            # Known aliases (GPT5, GPT 5, 智能体, …) are handled by
+            # _term_surfaces, including the canonical spelling itself.
+            keywords_match = canon in _keyword_canons(r["keywords"])
+            titles = [str(r[f] or "") for f in title_fields]
+            title_match = any(_title_matches_term(t, surfaces) for t in titles)
+            if keywords_match or title_match:
                 out.append(r)
-                continue
-            titles = [str(r["title"] or ""), str(r["title_zh"] or ""),
-                      str(r["title_en"] or "")]
-            if any(pat.search(t) for t in titles):
-                out.append(r)
-        return [news_store._row_to_card(r) for r in out]
+                if len(out) >= limit:
+                    break
+        return [news_store._row_to_card(r) for r in out[:limit]]
     except Exception:
         return []
 

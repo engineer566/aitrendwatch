@@ -56,6 +56,7 @@ def init_db():
                 score            INTEGER DEFAULT 0, -- 累计热度，每次刷新重算
                 trend            INTEGER DEFAULT 0, -- 上升势头，每次刷新重算
                 hot              INTEGER DEFAULT 0,
+                keywords         TEXT DEFAULT '[]', -- canonical 词键 JSON 数组
                 first_seen_at    TEXT,              -- 首次入库时间（ISO），不变
                 last_refresh_at  TEXT,              -- 最近一次刷新时间（ISO）
                 active           INTEGER DEFAULT 1  -- 0=近期未被刷新命中（历史归档）
@@ -89,6 +90,11 @@ def _migrate(conn):
         cols = {r[1] for r in conn.execute("PRAGMA table_info(news_cards)")}
         if "keywords" not in cols:
             conn.execute("ALTER TABLE news_cards ADD COLUMN keywords TEXT DEFAULT '[]'")
+        # ALTER TABLE only supplies the default for future inserts.  Repair
+        # explicit NULLs from hand/partial migrations so readers can treat
+        # every legacy row uniformly; title fallback still recovers rows with
+        # an empty keyword list in terms.get_term_news.
+        conn.execute("UPDATE news_cards SET keywords='[]' WHERE keywords IS NULL")
     except Exception:
         pass
     try:
