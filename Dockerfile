@@ -20,7 +20,9 @@ COPY templates ./templates
 # 暴露端口
 EXPOSE 5000
 
-# gunicorn 生产级 WSGI 启动：4 worker，绑定 0.0.0.0:5000
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", \
-     "--timeout", "60", "--access-logfile", "-", "--error-logfile", "-", \
+# gunicorn 生产级 WSGI 启动：2 worker（1.6G 小内存主机，减 worker 数压稳态内存），
+# max-requests + jitter 定期回收 worker，释放长驻后台线程的内存爬升。
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", \
+     "--timeout", "60", "--max-requests", "1000", "--max-requests-jitter", "300", \
+     "--access-logfile", "-", "--error-logfile", "-", \
      "app:app"]

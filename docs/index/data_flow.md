@@ -4,9 +4,9 @@
 
 ## 外部数据源
 
-### RSS 源（17 个，`dims.py:145` `RSS_SOURCES`）
+### RSS 源（17 个，`dims.py:152` `RSS_SOURCES`）
 
-并发抓取（`fetch_all_rss` `dims.py:302`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条。
+并发抓取（`fetch_all_rss` `dims.py:322`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条。
 
 | 名称 | feed | region | default_dim | lang | 备注 |
 |------|------|--------|-------------|------|------|
@@ -29,7 +29,7 @@
 | 极客公园 | geekpark.net/rss | 国内 | 产品发布 | zh | CDATA 标题 |
 | 少数派 | sspai.com/feed | 国内 | 产品发布 | zh | |
 
-**Google News 源**（`is_gnews=True`）：`<link>` 是中转页，`official_url` 取媒体域名；标题末尾 " - 媒体名" 被剥离（`dims.py:255`）。
+**Google News 源**（`is_gnews=True`）：`<link>` 是中转页，`official_url` 取媒体域名；标题末尾 " - 媒体名" 被剥离（`dims.py:272`）。
 
 ### HuggingFace 模型榜（`tracker.py:111`）
 - 端点：`HF_BASE="https://hf-mirror.com"`（官方 HF 本网络不可达，走镜像）。
@@ -43,7 +43,7 @@
 - 检索式：`_search_query_for(term)` 按模型名逐词 `all:` 全文检索。
 - 只在后台预热 + `get_term_detail` 同步调用（详情页慢根因）。
 
-### LLM（模型故障转移链，`dims.py:684` `_llm_classify_batch`）
+### LLM（模型故障转移链，`dims.py:708` `_llm_classify_batch`）
 - **故障转移链** `config.LLM_CHAIN`（默认 `glm-4.7-flash → glm-4.6v-flash → glm-4.6v-flashx → glm-4.7-flashx → deepseek-v4-flash`）：首档默认 GLM-4.7-Flash，每档连续 `LLM_FAILOVER_THRESHOLD`（默认 10）次失败顺链切下一档（单向熔断式，成功只清零计数不回退首档）；无 key 的 provider 档不烧重试、直接顺链跳过。当前档端点由 `config.llm_endpoint(model)` 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
 - 用途：维度打标（模型与技术/产品与应用/研究与论文/商业与投融资/政策与行业/其他）+ 双语翻译（title_zh/title_en/summary_zh/summary_en）+ **抽取关键词 keywords**（1-3 个 AI 实体/技术词，词维度重构核心）。
 - **降级**（无 LLM key：`GLM_API_KEY` 与 `DEEPSEEK_API_KEY` 均未设）：用 RSS 源 `default_dim` 分类、双 slot 填原标题、summary_zh 取原标题前 30 字；**keywords 走 `terms.extract_keywords_dict` 词典匹配**。零 token 消耗。天然 Mock 机制，无需代码开关。
