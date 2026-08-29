@@ -6,7 +6,7 @@
 
 ### RSS 源（17 个，`dims.py:145` `RSS_SOURCES`）
 
-并发抓取（`fetch_all_rss` `dims.py:302`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条。
+并发抓取（`fetch_all_rss` `dims.py:320`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条。
 
 | 名称 | feed | region | default_dim | lang | 备注 |
 |------|------|--------|-------------|------|------|

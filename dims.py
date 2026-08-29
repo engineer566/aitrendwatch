@@ -893,6 +893,7 @@ def _fetch_dims_raw():
     enrich_with_llm(items)
 
     cards = [_to_card(it) for it in items]
+    del items  # 原始 RSS 条目（含 enrich 中间字段）已转成卡，及时释放降刷新峰值
     # 排序：维度内按复合热度分降序，分数相同按日期降序
     cards.sort(key=lambda x: (x["score"], x["published"]), reverse=True)
 
@@ -1076,7 +1077,14 @@ def _dims_refresh_once():
             with _cross_proc_lock(DIMS_REFRESH_LOCKFILE):
                 data = _fetch_dims_raw()
                 if data.get("ok"):
-                    _file_cache_set(data, data["fetched_at"])
+                    # 全量卡（all_cards）只在本刷新管道内用（持久化 + 词聚合），
+                    # 摘出缓存数据，避免每个 worker 常驻全量卡片——dims.json 只存
+                    # 每维度前 10（dimensions），服务路径（get_dims/get_news_cards）
+                    # 不读 all_cards（前端也不依赖），这是稳态内存的主要削减项之一。
+                    all_cards = data.get("all_cards") or []
+                    cache_data = dict(data)
+                    cache_data.pop("all_cards", None)
+                    _file_cache_set(cache_data, data["fetched_at"])
                     # 持久化本轮 cards 到历史库（issue 6）。
                     # 只在拿到锁的 worker 写，其他 worker 走 BlockingIOError 跳过，
                     # 不会重复写。失败静默——news_store 内部已降级。
@@ -1093,7 +1101,7 @@ def _dims_refresh_once():
                             import tracker  # 延迟 import，避免模块加载顺序耦合
                             model_cards, _ = tracker.get_model_cards("zh")
                             terms_mod.refresh_words(
-                                data.get("all_cards") or [], model_cards,
+                                all_cards, model_cards,
                                 fetched_at=data["fetched_at"])
                         except Exception:
                             pass

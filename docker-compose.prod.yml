@@ -22,7 +22,10 @@ services:
       - PYTHONPATH=/app/vendor
       - DATA_DIR=/app/data
       - CACHE_DIR=/app/cache
-    command: ["python", "-m", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "60", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+    # 内存优化：workers 4→2（1.6G 小内存主机，多 worker 各持一份文件缓存 + 代码，
+    # 减 worker 数直接压稳态内存）；max-requests 定期回收 worker，释放长驻后台线程
+    # 的堆碎片/内存爬升（回收后从 fcntl 锁 + 文件缓存快速恢复，服务不中断）。
+    command: ["python", "-m", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "--max-requests", "1000", "--max-requests-jitter", "300", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
     # 只绑 127.0.0.1，由宿主 Nginx 反代；不直接暴露公网
     ports:
       - "127.0.0.1:5050:5000"
