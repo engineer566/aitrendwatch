@@ -45,7 +45,7 @@
 
 ---
 
-## config.py  （101 行）— 配置集中地
+## config.py  （126 行）— 配置集中地
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -54,10 +54,13 @@
 | 17–19 | 管理后台令牌 `ADMIN_TOKEN` |
 | 21–26 | 站点信息 `SITE_NAME`/`BASE_URL`/`CONTACT_EMAIL` |
 | 28–49 | 数据存储路径 + GeoIP + 缓存目录 |
-| 51–64 | DeepSeek LLM + dims 定点预热 `DIMS_REFRESH_HOURS` |
-| 65–78 | 分析开关 + SEO 开关 |
-| 81–93 | 第三方广告（AdSense/百度联盟）+ 赞助位展示 |
-| 95–101 | `ensure_data_dir()` |
+| 51–80 | LLM 提供方（模型故障转移链 `LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD` + `llm_endpoint()`） |
+| 81–89 | dims 定点预热 `DIMS_REFRESH_HOURS` |
+| 90–97 | 分析开关 |
+| 98–105 | SEO 开关 |
+| 106–115 | 第三方广告（AdSense/百度联盟） |
+| 116–119 | 赞助位展示 |
+| 120–126 | `ensure_data_dir()` |
 
 ### 公开函数
 | 函数 | 行号 | 职责 |
@@ -66,42 +69,42 @@
 | `ensure_data_dir()` | 96 | 建 `DATA_DIR`（容器 /app/data，本地 ./data） |
 
 ### 关键常量
-`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`DEEPSEEK_API_KEY`/`DEEPSEEK_MODEL`、`DIMS_REFRESH_HOURS=(13,19,1,7)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
+`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`LLM_CHAIN`（默认 `glm-4.7-flash,glm-4.6v-flash,glm-4.6v-flashx,glm-4.7-flashx,deepseek-v4-flash`）、`LLM_FAILOVER_THRESHOLD=10`、`DEEPSEEK_API_KEY`/`DEEPSEEK_URL`、`GLM_API_KEY`/`GLM_URL`（智谱 BigModel 免费档，高峰 429/1305 过载）、`llm_endpoint(model)`（deepseek-* → DeepSeek，其余 glm-* → GLM）、`DIMS_REFRESH_HOURS=(13,19,1,7)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
 
 ---
 
-## dims.py  （1110 行）— 维度事件层（RSS + 热度 + DeepSeek）
+## dims.py  （1266 行）— 维度事件层（RSS + 热度 + LLM）
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
-| 49–64 | DeepSeek LLM 配置 |
-| 66–135 | 文件缓存（`cache/dims.json`） |
-| 137–172 | RSS 源定义 `RSS_SOURCES`（17 源） |
-| 174–316 | RSS 解析 + 抓取 |
-| 317–624 | 社区热度增强（HN/Reddit/复合分/趋势分） |
-| 625–809 | DeepSeek LLM 批量打标 |
-| 810–979 | 顶层聚合（`get_dims`/`get_news_cards`） |
-| 980–1110 | 后台预热线程 + 跨进程锁 + 定点刷新 |
+| 55–72 | LLM 配置（模型故障转移链，读 config 的 `LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`llm_endpoint`） |
+| 73–143 | 文件缓存（`cache/dims.json`） |
+| 144–336 | RSS 源定义 `RSS_SOURCES`（17 源）+ RSS 解析 + 抓取 |
+| 337–646 | 社区热度增强（HN/Reddit/复合分/趋势分） |
+| 647–666 | LLM 批量打标（`_llm_classify_batch`/`enrich_with_llm`） |
+| 667–942 | 模型故障转移链状态（`_active_llm`/`_llm_success`/`_llm_failure`） |
+| 943–1115 | 顶层聚合（`get_dims`/`get_news_cards`） |
+| 1116–1266 | 后台预热线程 + 跨进程锁 + 定点刷新 |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `get_dims(dimension=None, lang="zh")` | 896 | 维度热词分组（只读缓存）；`/api/dims` |
-| `get_news_cards(lang="zh")` | 930 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
-| `enrich_with_signals(items)` | 594 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
-| `start_background_dims_refresher()` | 1102 | 启动后台预热线程（app.py 启动时调） |
+| `get_dims(dimension=None, lang="zh")` | 1032 | 维度热词分组（只读缓存）；`/api/dims` |
+| `get_news_cards(lang="zh")` | 1066 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
+| `enrich_with_signals(items)` | 616 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
+| `start_background_dims_refresher()` | 1258 | 启动后台预热线程（app.py 启动时调） |
 
 ### 内部函数（按分区归组）
 - 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
 - RSS：`_norm_date`/`_strip_cdata`/`_parse_rss`/`fetch_one_rss`/`fetch_all_rss`
 - 热度：`_has_cjk`/`_clean_title`/`_hn_points`/`_reddit_points`/`_buzz`/`_age_hours`/`_time_decay`/`_composite_score`/`_trend_score`
-- LLM：`_llm_classify_batch`/`enrich_with_llm`
+- LLM：`_active_llm`/`_llm_success`/`_llm_failure`（故障转移状态机）/`_llm_classify_batch`/`enrich_with_llm`/`_LLMTransientError`（瞬态错误类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）
 - 聚合：`_to_card`/`_fetch_dims_raw`/`_project_card`
 - 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
 
 ### 模块级常量
-`RSS_SOURCES`（17 源，`dims.py:145`）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
+`RSS_SOURCES`（17 源，`dims.py:152`）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`（自 config 导入）、`_LLM_ACTIVE_IDX`/`_LLM_FAILS`（故障转移进程级状态）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
 
 ---
 
@@ -195,7 +198,7 @@
 
 ---
 
-## terms.py  （906 行）— 词粒度聚合层（词维度重构，新增）
+## terms.py  （911 行）— 词粒度聚合层（词维度重构，新增）
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -206,8 +209,8 @@
 | 285–358 | `normalize_term` / `extract_keywords_dict` / display 构造 |
 | 360–406 | HF 模型词归一化 `_hf_canon` / 标题边界匹配 |
 | 388–709 | 词聚合 + 三榜打分 + 快照（`refresh_words`，dims 刷新锁内调） |
-| 711–817 | 读：`get_word_cards` / `get_term_row` / `get_term_news` / `list_terms_for_sitemap` |
-| 819–906 | 历史回填 `backfill_history` + CLI |
+| 709–822 | 读：`get_word_cards` / `get_term_row` / `get_term_news` / `list_terms_for_sitemap` |
+| 823–911 | 历史回填 `backfill_history` + CLI |
 
 ### 公开函数（被 app.py / dims.py 调用）
 | 函数 | 行号 | 职责 |
@@ -216,11 +219,11 @@
 | `normalize_term(s)` | 285 | 任意词形 → canonical 键（小写/别名/去复数） |
 | `extract_keywords_dict(title)` | 309 | 词典匹配抽词（无 LLM key 降级 + 回填） |
 | `refresh_words(all_cards, model_cards)` | 388 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json |
-| `get_word_cards(sort, lang, limit)` | 711 | `/api/stream?view=words` 数据源（读 words.json，秒回） |
-| `get_term_row(term)` | 740 | 查 terms 主表（canonical 键） |
-| `get_term_news(term, limit, lang)` | 756 | 词 → 关联报道（keywords 精确 + 标题边界兜底） |
-| `list_terms_for_sitemap(limit)` | 803 | sitemap 词表（热度降序） |
-| `backfill_history(days, force)` | 819 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
+| `get_word_cards(sort, lang, limit)` | 713 | `/api/stream?view=words` 数据源（读 words.json，秒回；先排序再截取再投影，削减每请求拷贝） |
+| `get_term_row(term)` | 745 | 查 terms 主表（canonical 键） |
+| `get_term_news(term, limit, lang)` | 761 | 词 → 关联报道（keywords 精确 + 标题边界兜底） |
+| `list_terms_for_sitemap(limit)` | 808 | sitemap 词表（热度降序） |
+| `backfill_history(days, force)` | 824 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
 
 ### SQLite 表
 `terms`（词主表：term/display/display_zh/origin/first_seen_at/total_mentions/hf_json/cur_hot/cur_rise/cur_novelty）、`term_snapshots`（(term,cycle) 周期快照支撑环比）。

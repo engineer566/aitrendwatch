@@ -98,11 +98,11 @@ GET /term/<name>
 - `_cross_proc_lock` (`tracker.py:476`) 用 `fcntl.flock` 跨进程锁，整个容器只有一个 worker 在抓。
 - 失败兜底：读旧缓存文件；旧缓存也无 → 内存兜底。
 
-### dims 层  （`dims.py:1135` `start_background_dims_refresher`）
+### dims 层  （`dims.py:1258` `start_background_dims_refresher`）
 - 独立 daemon 线程，独立跨进程锁 `cache/.dims.refresh.lock`。
-- `_dims_refresh_once` (`dims.py:1064`)：拉 17 个 RSS 源 → HN/Reddit 复合热度 → DeepSeek 批量打标 + 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库 → **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
-- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (13,19,1,7)`（`config.py:61`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1090`) 算下次刷新倒计时。
-- `_persist_to_history` (`dims.py:1045`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
+- `_dims_refresh_once` (`dims.py:1165`)：拉 17 个 RSS 源 → HN/Reddit 复合热度 → LLM 批量打标（故障转移链）+ 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库 → **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
+- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (13,19,1,7)`（`config.py:86`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1211`) 算下次刷新倒计时。
+- `_persist_to_history` (`dims.py:1146`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
 
 ### 启动时机
 `app.py:35-37` 模块加载时即 `start_background_refresher()` + `start_background_dims_refresher()`。每个 worker 进程各起线程，靠 fcntl 锁去重。
@@ -112,7 +112,7 @@ GET /term/<name>
 | 层级 | 介质 | 作用域 | TTL | 典型键 | 代码位置 |
 |------|------|--------|-----|--------|----------|
 | L1 内存 | 进程内 `dict` | 单 worker 进程 | 300s（单源）/ 1800s（详情） | `{source: (ts,data)}` | `app.py:49` `_cache` |
-| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:66` / `terms.py:38` |
+| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:74` / `terms.py:38` |
 | L3 SQLite | `data/*.db` | 跨 worker 共享，持久 | 永久（历史库）/ 按周期聚合 | sponsors.db, news.db | `store.py` / `news_store.py` / `terms.py` |
 
 跨进程锁文件：`cache/.tracker.refresh.lock`、`cache/.dims.refresh.lock`（`fcntl.flock`）。

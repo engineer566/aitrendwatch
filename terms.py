@@ -443,88 +443,83 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
         cur_signal_by_url[u] = (c.get("hn_points", 0) or 0) * 10 + \
             (c.get("reddit_score", 0) or 0) + (c.get("reddit_comments", 0) or 0) * 0.5
 
-    rows = []
+    # 全量历史库扫描用流式游标（for r in cur 逐行取，不用 fetchall 物化整表）。
+    # news_cards 随每轮刷新逐轮累积（只增不减），fetchall 会把整表压进内存，
+    # 是词聚合阶段刷新峰值内存的最大单项——改成单趟流式扫描，且 top news 与
+    # 聚合在同一趟完成（原实现要 fetchall 后扫两遍）。
     if news_store:
         try:
             conn = _conn()
-            rows = conn.execute(
-                "SELECT url, title, title_zh, title_en, dimension, published, "
-                "score, keywords FROM news_cards"
-            ).fetchall()
+            for r in conn.execute(
+                    "SELECT url, title, title_zh, title_en, dimension, "
+                    "published, score, keywords FROM news_cards"):
+                kws = []
+                try:
+                    v = json.loads(r["keywords"] or "[]")
+                    kws = [normalize_term(k) for k in v] if isinstance(v, list) else []
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    kws = []
+                # 关键词派生词集：聚合 + top news 共用（保持原两趟扫描行为一致，
+                # top news 只记关键词命中的词，HF 标题命中词不进 top）。
+                kw_canons = {k for k in kws if k}
+                # HF 词标题命中（即使抽词没抽到）：只进聚合，不进 top news
+                titles_lower = [str(r["title"] or "").lower(),
+                                str(r["title_zh"] or "").lower(),
+                                str(r["title_en"] or "").lower()]
+                agg_canons = list(kw_canons)
+                for canon, meta in hf_terms.items():
+                    if canon in kw_canons:
+                        continue
+                    last_seg = (meta["hf"].get("full_id") or "").split("/")[-1]
+                    if (_match_hf_term(canon, meta["display"], titles_lower)
+                            or _match_hf_term(canon, last_seg, titles_lower)
+                            or _match_hf_term(canon, canon, titles_lower)):
+                        agg_canons.append(canon)
+                # 聚合先跑（先建 agg 条目），top news 后追——保证首行命中时条目已存在
+                for canon in agg_canons:
+                    a = agg.setdefault(canon, {
+                        "mentions": 0, "hot_score": 0, "urls": set(),
+                        "dims": {}, "top": [], "latest_pub": "", "earliest_pub": "9999",
+                        "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
+                    })
+                    url = r["url"] or ""
+                    if url not in a["urls"]:
+                        a["urls"].add(url)
+                        a["mentions"] += 1
+                    pub = r["published"] or ""
+                    if pub:
+                        a["pubs"].add(pub)
+                    if pub >= hot_cutoff:
+                        a["hot_score"] += int(r["score"] or 0)
+                    d = r["dimension"] or "其他"
+                    a["dims"][d] = a["dims"].get(d, 0) + 1
+                    if pub > a["latest_pub"]:
+                        a["latest_pub"] = pub
+                    if pub and pub < a["earliest_pub"]:
+                        a["earliest_pub"] = pub
+                    if url in cur_urls:
+                        a["cur_cnt"] += 1
+                        a["cur_score"] += int(r["score"] or 0)
+                        a["cur_signal"] += cur_signal_by_url.get(url, 0.0)
+                # top news（每词按 score 取前 3，裁剪 6 字段；结束时统一排序截断）
+                for canon in kw_canons:
+                    a = agg.get(canon)
+                    if a is None:
+                        continue
+                    a["top"].append({
+                        "score": int(r["score"] or 0),
+                        "card": {
+                            "title_zh": r["title_zh"] or r["title"] or "",
+                            "title_en": r["title_en"] or r["title"] or "",
+                            "official_url": r["url"] or "",
+                            "source": "",
+                            "published": r["published"] or "",
+                            "hot": int(r["score"] or 0),
+                        },
+                    })
             conn.close()
         except Exception:
-            rows = []
-
-    # 预编译 HF 词匹配用的标题小写缓存
-    for r in rows:
-        kws = []
-        try:
-            v = json.loads(r["keywords"] or "[]")
-            kws = [normalize_term(k) for k in v] if isinstance(v, list) else []
-        except (json.JSONDecodeError, ValueError, TypeError):
-            kws = []
-        kws = [k for k in kws if k]
-        # HF 词标题命中（即使抽词没抽到）
-        titles_lower = [str(r["title"] or "").lower(),
-                        str(r["title_zh"] or "").lower(),
-                        str(r["title_en"] or "").lower()]
-        for canon, meta in hf_terms.items():
-            if canon in kws:
-                continue
-            last_seg = (meta["hf"].get("full_id") or "").split("/")[-1]
-            if (_match_hf_term(canon, meta["display"], titles_lower)
-                    or _match_hf_term(canon, last_seg, titles_lower)
-                    or _match_hf_term(canon, canon, titles_lower)):
-                kws.append(canon)
-        for canon in set(kws):
-            a = agg.setdefault(canon, {
-                "mentions": 0, "hot_score": 0, "urls": set(),
-                "dims": {}, "top": [], "latest_pub": "", "earliest_pub": "9999",
-                "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
-            })
-            url = r["url"] or ""
-            if url not in a["urls"]:
-                a["urls"].add(url)
-                a["mentions"] += 1
-            pub = r["published"] or ""
-            if pub:
-                a["pubs"].add(pub)
-            if pub >= hot_cutoff:
-                a["hot_score"] += int(r["score"] or 0)
-            d = r["dimension"] or "其他"
-            a["dims"][d] = a["dims"].get(d, 0) + 1
-            if pub > a["latest_pub"]:
-                a["latest_pub"] = pub
-            if pub and pub < a["earliest_pub"]:
-                a["earliest_pub"] = pub
-            if url in cur_urls:
-                a["cur_cnt"] += 1
-                a["cur_score"] += int(r["score"] or 0)
-                a["cur_signal"] += cur_signal_by_url.get(url, 0.0)
-
-    # top news（每词按 score 取前 3，裁剪 6 字段）
-    for r in rows:
-        kws = []
-        try:
-            v = json.loads(r["keywords"] or "[]")
-            kws = [normalize_term(k) for k in v] if isinstance(v, list) else []
-        except (json.JSONDecodeError, ValueError, TypeError):
             pass
-        for canon in set(k for k in kws if k):
-            a = agg.get(canon)
-            if a is None:
-                continue
-            a["top"].append({
-                "score": int(r["score"] or 0),
-                "card": {
-                    "title_zh": r["title_zh"] or r["title"] or "",
-                    "title_en": r["title_en"] or r["title"] or "",
-                    "official_url": r["url"] or "",
-                    "source": "",
-                    "published": r["published"] or "",
-                    "hot": int(r["score"] or 0),
-                },
-            })
     for a in agg.values():
         a["top"].sort(key=lambda x: -x["score"])
         a["top"] = [t["card"] for t in a["top"][:3]]
@@ -538,10 +533,11 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
         })
 
     # ---- 4. 读旧 terms 表（保留 first_seen_at / display 演进）----
+    # 流式读取，不 fetchall 物化；用完后及时释放，避免与第 7 步 final_rows 双份驻留。
     old = {}
     try:
         conn = _conn()
-        for r in conn.execute("SELECT * FROM terms").fetchall():
+        for r in conn.execute("SELECT * FROM terms"):
             old[r["term"]] = dict(r)
         conn.close()
     except Exception:
@@ -660,12 +656,18 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
                 f"WHERE term NOT IN ({placeholders})", list(kept.keys()))
         conn.commit()
         conn.close()
+        old = None  # 第 6 步结束即释放旧表，避免与 final_rows 双份驻留内存
 
-    # ---- 7. 组装词卡写 words.json（一次性读回主表，避免逐词开连接）----
+    # ---- 7. 组装词卡写 words.json（只读回 kept 词，避免整表物化）----
     try:
         conn = _conn()
-        final_rows = {r["term"]: dict(r) for r in conn.execute(
-            "SELECT * FROM terms").fetchall()}
+        final_rows = {}
+        for r in conn.execute(
+                "SELECT term, display, display_zh, origin, first_seen_at, "
+                "last_seen_at, total_mentions, hf_json, cur_hot, cur_rise, "
+                "cur_novelty FROM terms"):
+            if r["term"] in kept:
+                final_rows[r["term"]] = dict(r)
         conn.close()
     except Exception:
         final_rows = {}
@@ -717,8 +719,13 @@ def get_word_cards(sort="rise", lang="zh", limit=60):
     lang = lang if lang in ("zh", "en") else "zh"
     key = _SORT_KEYS.get(sort, "rise")
     data, fetched_at = _file_cache_get()
+    # 先在缓存的原始卡上排序（只重排引用，不拷贝），再只对展示上限内的卡做投影——
+    # 避免每次请求都深拷贝全部词卡（默认 200 张）后再截断，削减每请求瞬态内存。
+    raw = list((data or {}).get("terms", []))
+    raw.sort(key=lambda c: (c.get(key, 0) or 0, c.get("hot", 0) or 0),
+             reverse=True)
     cards = []
-    for c in (data or {}).get("terms", []):
+    for c in raw[:limit]:
         wc = dict(c)
         if lang == "zh" and wc.get("display_zh"):
             wc["term_display"] = wc["display_zh"]
@@ -732,9 +739,7 @@ def get_word_cards(sort="rise", lang="zh", limit=60):
             topn.append(n2)
         wc["top_news"] = topn
         cards.append(wc)
-    cards.sort(key=lambda c: (c.get(key, 0) or 0, c.get("hot", 0) or 0),
-               reverse=True)
-    return cards[:limit], fetched_at
+    return cards, fetched_at
 
 
 def get_term_row(term):
