@@ -44,6 +44,49 @@ MAX_NEW_TERMS_PER_CYCLE = 150   # 单轮最多新增的非词典词数（防 LLM
 WORD_CARDS_LIMIT = 200          # words.json 最多保留的词卡数（展示层再截 60）
 HOT_WINDOW_DAYS = 7             # 热度聚合窗口（天）
 
+
+def _word_card_identity(card):
+    """返回词卡的稳定身份；同一 canonical 词只能出现在榜单一次。"""
+    if not isinstance(card, dict):
+        return ""
+    return str(card.get("id") or card.get("term") or card.get("display") or "")
+
+
+def _word_card_number(card, field):
+    """读取排序数值，屏蔽缓存中偶发的空值/字符串/NaN。"""
+    try:
+        value = float(card.get(field, 0) or 0)
+        return value if math.isfinite(value) else 0.0
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+
+
+def _dedupe_word_cards(cards):
+    """按词卡身份去重，保留缓存中首次出现的完整词卡。"""
+    out = []
+    seen = set()
+    for card in cards or []:
+        if not isinstance(card, dict):
+            continue
+        identity = _word_card_identity(card)
+        if identity and identity in seen:
+            continue
+        if identity:
+            seen.add(identity)
+        out.append(card)
+    return out
+
+
+def _sort_word_cards(cards, key):
+    """按榜单排序，先确定性 tie-break，再按榜单值倒序。"""
+    # Python 的稳定排序让多级排序保持可预测：同榜单值时按 id 升序，
+    # rise/new 再按 hot 作为次级排序。这样截断前后的顺序完全一致，
+    # 前端只需保留服务端顺序，不会在 60 条展示上限后重新洗牌。
+    cards.sort(key=lambda c: _word_card_identity(c))
+    cards.sort(key=lambda c: _word_card_number(c, "hot"), reverse=True)
+    cards.sort(key=lambda c: _word_card_number(c, key), reverse=True)
+    return cards
+
 # ---------- 文件缓存（words.json，模式复刻 dims.py）----------
 WORDS_CACHE_FILE = os.path.join(config.CACHE_DIR, "words.json")
 _file_cache = {}
@@ -772,7 +815,9 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
         if not row:
             continue
         dims_counter = a["dims"]
-        main_dim = max(dims_counter, key=dims_counter.get) if dims_counter else "其他"
+        dim_order = sorted(dims_counter,
+                           key=lambda d: (-dims_counter[d], d))
+        main_dim = dim_order[0] if dim_order else "其他"
         try:
             hf_meta = json.loads(row["hf_json"]) if row["hf_json"] else None
         except (json.JSONDecodeError, ValueError):
@@ -792,11 +837,12 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
             "first_seen_at": row["first_seen_at"],
             "published": a["latest_pub"],  # 兼容 new 排序键/前端展示
             "dimension": main_dim,
-            "dims": sorted(dims_counter, key=lambda d: -dims_counter[d]),
+            "dims": dim_order,
             "top_news": a["top"],
             "hf": hf_meta,
         })
-    cards.sort(key=lambda c: -c["hot"])
+    cards = _dedupe_word_cards(cards)
+    _sort_word_cards(cards, "hot")
     _file_cache_set({"ok": True, "terms": cards[:WORD_CARDS_LIMIT],
                      "count": len(cards)}, fetched_at)
 
@@ -814,11 +860,14 @@ def get_word_cards(sort="rise", lang="zh", limit=60):
     lang = lang if lang in ("zh", "en") else "zh"
     key = _SORT_KEYS.get(sort, "rise")
     data, fetched_at = _file_cache_get()
-    # 先在缓存的原始卡上排序（只重排引用，不拷贝），再只对展示上限内的卡做投影——
-    # 避免每次请求都深拷贝全部词卡（默认 200 张）后再截断，削减每请求瞬态内存。
-    raw = list((data or {}).get("terms", []))
-    raw.sort(key=lambda c: (c.get(key, 0) or 0, c.get("hot", 0) or 0),
-             reverse=True)
+    # 同一份缓存先去重、按请求榜单完整排序，最后才截展示上限；
+    # 排序和截断不能交给前端再次处理，否则边界处会出现顺序漂移。
+    raw = _dedupe_word_cards(list((data or {}).get("terms", [])))
+    _sort_word_cards(raw, key)
+    try:
+        limit = max(0, int(limit))
+    except (TypeError, ValueError):
+        limit = 60
     cards = []
     for c in raw[:limit]:
         wc = dict(c)

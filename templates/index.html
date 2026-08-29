@@ -498,13 +498,38 @@ const searchInput = document.getElementById("search-input");
 const catBar = document.getElementById("cat-bar");
 const sortSeg = document.getElementById("sort-seg");
 
-let allData = [];            // 当前 view 的全量数据（词卡 或 model+news）
+let allData = [];            // 当前 view 的服务端排序展示数据（词卡 或 model+news）
 let currentCat = "all";      // 当前维度筛选：all 或维度中文 key
 let currentSort = "rise";    // rise / hot / new
 let currentView = "words";   // words（热词，默认）/ news（逐条新闻）
 // v2: 搜索已独立为 /search 页面，首页不再持有本地 query 状态
 let LANG = {{ page_lang | tojson }};   // zh | en（SSR 注入默认，可被 localStorage / ?lang= 覆盖）
 let dimensionList = [];      // 后端下发的维度顺序
+
+// 卡片身份与后端保持同一口径：同一词/同一官方链接只渲染一次。
+// 所有进入 allData 的数据都先走这里，分类计数、过滤和渲染共享同一数组。
+function cardIdentity(card) {
+  if (!card || typeof card !== "object") return null;
+  const value = card.id || card.full_id || card.official_url || card.term || card.title;
+  if (value === undefined || value === null || String(value) === "") return null;
+  return `${card.kind || ""}\u0000${String(value)}`;
+}
+function uniqueCards(cards) {
+  const out = [], seen = new Set();
+  (Array.isArray(cards) ? cards : []).forEach(card => {
+    if (!card || typeof card !== "object") return;
+    const id = cardIdentity(card);
+    if (id !== null) {
+      if (seen.has(id)) return;
+      seen.add(id);
+    }
+    out.push(card);
+  });
+  return out;
+}
+function setAllData(cards) {
+  allData = uniqueCards(cards);
+}
 
 // URL 参数恢复状态（?view=&cat=&sort=&lang= 可分享）
 let langFromURL = false;
@@ -555,17 +580,19 @@ function localizeStatic() {
   const yEl = document.getElementById("footer-year");
   if (yEl) yEl.textContent = new Date().getFullYear();
 }
-function applyLang() {
+function applyLang(renderData = true) {
   document.documentElement.lang = LANG === "en" ? "en" : "zh-CN";
   langBtn.textContent = LANG === "en" ? "中" : "EN";
   localizeStatic();
-  render();
+  if (renderData) render();
 }
 langBtn.addEventListener("click", () => {
   LANG = LANG === "zh" ? "en" : "zh";
   try { localStorage.setItem("aitw_lang", LANG); } catch (e) {}
   syncURL();
-  applyLang();
+  applyLang(false);
+  setAllData([]);
+  render();
   fetchAll();   // 切语言后重拉（后端按 lang 投影）
 });
 
@@ -609,11 +636,19 @@ document.addEventListener("keydown", e => {
 
 // ==================== 排名变化追踪（localStorage 存上次榜单） ====================
 const RANK_KEY = s => `aitw_prev_rank_${s}`;
+function rankIdentity(card) {
+  return card && (card.id || card.full_id || card.term || card.official_url || card.title);
+}
+function currentRankIndex(card) {
+  const id = rankIdentity(card);
+  const index = allData.findIndex(item => rankIdentity(item) === id);
+  return index >= 0 ? index : 0;
+}
 function rankDelta(t, rankIdx) {
   if (currentSort === "new") return null;   // 最新排序无排名概念
   try {
     const prev = JSON.parse(localStorage.getItem(RANK_KEY(currentSort)) || "{}");
-    const id = t.id || t.full_id || t.term || t.official_url;
+    const id = rankIdentity(t);
     if (!(id in prev)) return "new";
     const d = prev[id] - rankIdx;   // 正 = 上升
     return d === 0 ? null : d;
@@ -622,7 +657,7 @@ function rankDelta(t, rankIdx) {
 function saveRanks(items) {
   if (currentSort === "new") return;
   const m = {};
-  items.forEach((t, i) => { m[t.id || t.full_id || t.term || t.official_url] = i; });
+  items.forEach((t, i) => { m[rankIdentity(t)] = i; });
   try { localStorage.setItem(RANK_KEY(currentSort), JSON.stringify(m)); } catch (e) {}
 }
 
@@ -719,26 +754,29 @@ function dimLabel(dim) {
   return { icon: c.icon, lbl: LANG === "en" ? (c.label_en || c.label) : c.label, color: c.color };
 }
 
-// 统一卡片流分类条：按 dimension 计数，用后端 dimensionList 顺序展示。
+// 统一卡片流分类条：按实际可渲染的去重卡片计数，用后端 dimensionList 顺序展示。
 // words 视图：词卡可能跨领域（dims 数组），成员资格过滤——词涉及任一领域即计入该 pill；
-// news 视图：按单标签 dimension 计数（旧逻辑）。
+// news 视图：按单标签 dimension 计数；同一张卡在同一维度只计一次。
 function renderCatBar() {
   const order = dimensionList.length ? dimensionList : Object.keys(DIMS_CATEGORY);
   const counts = {};
   allData.forEach(t => {
-    if (currentView === "words" && Array.isArray(t.dims)) {
-      (t.dims.length ? t.dims : [t.dimension || "其他"]).forEach(d => { counts[d] = (counts[d] || 0) + 1; });
-    } else {
-      const d = t.dimension || "其他"; counts[d] = (counts[d] || 0) + 1;
-    }
+    const values = currentView === "words" && Array.isArray(t.dims) && t.dims.length
+      ? t.dims : [t.dimension || (t.kind === "model" ? "模型与技术" : "其他")];
+    [...new Set(values.map(d => String(d || "其他")))].forEach(d => {
+      counts[d] = (counts[d] || 0) + 1;
+    });
   });
-  const keys = order.filter(k => counts[k]);
-  if (!keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
-  let html = `<button class="cat-pill ${currentCat==="all"?"active":""}" data-cat="all"
+  // 后端枚举优先，同时补上数据中出现的未知维度，避免卡片可渲染但无对应标签。
+  const keys = [...order, ...Object.keys(counts).filter(k => !order.includes(k))]
+    .filter(k => counts[k]);
+  if (allData.length && !keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
+  const selectedCat = allData.length ? currentCat : "all";
+  let html = `<button class="cat-pill ${selectedCat==="all"?"active":""}" data-cat="all"
     style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${allData.length}</span></button>`;
   keys.forEach(k => {
     const m = dimLabel(k);
-    html += `<button class="cat-pill ${currentCat===k?"active":""}" data-cat="${k}"
+    html += `<button class="cat-pill ${selectedCat===k?"active":""}" data-cat="${k}"
       style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${counts[k]}</span></button>`;
   });
   catBar.innerHTML = html;
@@ -749,8 +787,8 @@ catBar.addEventListener("click", e => {
   syncURL(); render();
 });
 
-// 视图切换：热词 / 逐条新闻。仅本地过滤排序，不重启拉取（数据同源 /api/stream，
-// 已带 view 参数；切视图只换渲染分支 + 清展开缓存）。记忆到 localStorage + URL。
+// 视图切换：热词 / 逐条新闻。切换后重新拉取对应 view，避免拿旧视图数据渲染。
+// 排序由 /api/stream 完成；本地只做分类过滤。记忆到 localStorage + URL。
 const viewSeg = document.getElementById("view-seg");
 viewSeg.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -759,8 +797,9 @@ viewSeg.addEventListener("click", e => {
   b.classList.add("active");
   currentView = b.dataset.view;
   try { localStorage.setItem("aitw_view", currentView); } catch (err) {}
+  currentCat = "all";        // 两个视图的分类成员口径不同
   _wordDetailCache = {};   // 换视图清词展开缓存
-  syncURL(); render(); fetchAll();
+  syncURL(); setAllData([]); render(); fetchAll();
 });
 document.querySelectorAll("#view-seg button").forEach(x =>
   x.classList.toggle("active", x.dataset.view === currentView));
@@ -771,9 +810,8 @@ sortSeg.addEventListener("click", e => {
   document.querySelectorAll("#sort-seg button").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
   currentSort = b.dataset.sort;
-  syncURL(); render();
-  // 切排序后端拉对应 sort 的全量数据（前端 visibleData 仅在已有 allData 上重排，
-  // 但不同 sort 后端已预排序+历史库合并，全量拉取保证内容池一致）。abort 旧请求。
+  syncURL(); setAllData([]); render();
+  // 不在旧数据上临时套用新排序；等待服务端按新榜单排序并截断后再替换。
   fetchAll();
 });
 // 初始排序按钮状态（可能被 URL 参数改过）
@@ -849,7 +887,7 @@ function termHref(term) {
 function renderWordCard(w, i) {
   const dim = w.dimension || "其他";
   const dInfo = dimLabel(dim);
-  const d = rankDelta(w, i);
+  const d = rankDelta(w, currentRankIndex(w));
   const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
     : d ? `<span class="delta ${d>0?"up":"down"}">${d>0?"↑":"↓"}${Math.abs(d)}</span>` : "";
   const published = w.published || "";
@@ -944,7 +982,7 @@ listEl.addEventListener("click", e => {
 function renderCard(card, i) {
   const dim = card.dimension || (card.kind === "model" ? "模型与技术" : "其他");
   const dInfo = dimLabel(dim);
-  const d = rankDelta(card, i);
+  const d = rankDelta(card, currentRankIndex(card));
   const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
     : d ? `<span class="delta ${d>0?"up":"down"}">${d>0?"↑":"↓"}${Math.abs(d)}</span>` : "";
   const published = card.published || card.created_at || "";
@@ -1018,21 +1056,15 @@ function visibleData() {
     let items = allData;
     // words 视图分类过滤：成员资格（词跨领域，涉及任一选中的领域即入选）
     if (currentCat !== "all") items = items.filter(t =>
-      (Array.isArray(t.dims) && t.dims.length ? t.dims : [t.dimension || "其他"]).includes(currentCat));
-    // 词视图排序键：rise→rise, hot→score(兼容), new→novelty（新奇度）
-    const key = { rise: "rise", hot: "score", new: "novelty" }[currentSort] || "score";
-    return [...items].sort((a, b) => (Number(b[key])||0) - (Number(a[key])||0));
+      [...new Set((Array.isArray(t.dims) && t.dims.length ? t.dims : [t.dimension || "其他"])
+        .map(d => String(d || "其他")))].includes(currentCat));
+    // 排序已由 /api/stream 在截断前完成；这里仅过滤，保持服务端顺序。
+    return items;
   }
   let items = allData;
   if (currentCat !== "all") items = items.filter(t => (t.dimension || "其他") === currentCat);
-  // v2: 首页不再做 query 过滤——搜索已独立为 /search 页面，避免「混合过滤器」体验。
-  // 统一排序键：rise→trend, hot→score, new→published
-  const key = { rise: "trend", hot: "score", new: "published" }[currentSort];
-  return [...items].sort((a, b) => {
-    const va = a[key], vb = b[key];
-    if (key === "published") return String(vb||"").localeCompare(String(va||""));
-    return (Number(vb)||0) - (Number(va)||0);
-  });
+  // news 视图同样直接保留 /api/stream 的稳定排序。
+  return items;
 }
 
 function render() {
@@ -1072,7 +1104,8 @@ function render() {
   if (useAdsInline) {
     for (let k = 0; k < adsInlineCount; k++) fillAdsSlot(`ads-inline-${k}`, "inline");
   }
-  saveRanks(items);
+  // 保存整份服务端排序结果；分类页的局部序号不能污染全榜排名基线。
+  saveRanks(allData);
 }
 
 // ==================== 数据拉取：统一卡片流（/api/stream） ====================
@@ -1094,73 +1127,73 @@ async function fetchJSON(url, signal) {
 
 let fetching = false;
 let _fetchCtrl = null;        // 当前 /api/stream 请求的 AbortController，切语言/排序时 abort 旧请求
+let _fetchSeq = 0;             // 只允许最新请求写回 allData，避免旧语言/视图响应回写
 // 后台为定时更新（非实时），不再显示「更新于」时间，避免「实时更新」误导（issue 4）。
 // _lastFetchedAt 仅内部缓存，不渲染到 DOM。
 let _lastFetchedAt = 0;
-async function fetchAll() {
-  // 切语言/排序时若上一次请求仍在飞，abort 它并立即发起新请求——
-  // 否则首次加载 /api/stream 慢（公网 1-3s）期间用户切语言会被旧 fetch 占住
-  // fetching 锁，allData 停留在 SSR 18 条，要切两次语言才显示全量（issue 1）。
+function readInitialTerms() {
+  try {
+    const el = document.getElementById("initial-terms-data");
+    const raw = el && el.textContent.trim();
+    const data = raw ? JSON.parse(raw) : [];
+    return uniqueCards(data);
+  } catch (e) { return []; }
+}
+async function fetchAll({ initial = false } = {}) {
+  // 切语言/排序/视图时 abort 旧请求；序号检查还可防止旧响应在 abort 竞态中回写。
+  const seq = ++_fetchSeq;
   if (_fetchCtrl) { try { _fetchCtrl.abort(); } catch (e) {} }
   fetching = true;
-  _fetchCtrl = new AbortController();
-
-  // 首屏：优先用 SSR 注入的数据立即渲染，避免空骨架闪烁。
-  // 但 SSR 只注入少量首屏卡（SSR_INITIAL_LIMIT），内容池远小于 /api/stream，
-  // 若就此 return，rise/hot/new 三个 tab 只会在小池里排序，内容几乎一样、数量少。
-  // 故：SSR 仅做即时渲染，随后立即异步拉取 /api/stream 全量数据替换。
-  const hadSSR = !allData.length;
-  if (hadSSR) {
-    try {
-      const raw = document.getElementById("initial-terms-data").textContent.trim();
-      if (raw) {
-        const ssr = JSON.parse(raw);
-        if (Array.isArray(ssr) && ssr.length) {
-          allData = ssr;
-          if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
-          render();
-        }
+  const ctrl = new AbortController();
+  _fetchCtrl = ctrl;
+  const hadSSR = initial && currentView === "words" && currentCat === "all";
+  try {
+    // SSR 只作为同一排序结果的临时前缀；它不参与其他排序，也不会在切换后重复注入。
+    if (hadSSR) {
+      const ssr = readInitialTerms();
+      if (ssr.length) {
+        setAllData(ssr);
+        if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
       }
-    } catch (e) {}
-    if (!allData.length) listEl.innerHTML = skeletonHTML();
-  }
-  // SSR 注入的是词卡，但用户已切到 news 视图 → 立即拉 news 全量，避免用词卡渲染新闻视图
-  if (hadSSR && currentView === "news") {
-    allData = [];
-    listEl.innerHTML = skeletonHTML();
-  }
+      render();
+    } else if (!allData.length) {
+      render();
+    }
 
-  // 无论是否命中 SSR，都拉取全量 /api/stream 替换首屏小池，
-  // 保证 rise/hot/new 有足够大的内容池产生区分度，且数量稳定。
-  // view 参数：words=热词卡（默认）/ news=逐条新闻。后端按 view 返回不同 terms。
-  const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}&view=${currentView}`, _fetchCtrl.signal);
+    const d = await fetchJSON(
+      `/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}&view=${currentView}`,
+      ctrl.signal);
+    if (seq !== _fetchSeq) return;
 
-  let terms = null;
-  if (d && d.ok !== false && Array.isArray(d.terms)) {
-    terms = d.terms;
-    if (d.dimension_list) dimensionList = d.dimension_list;
-    if (demoPill) demoPill.style.display = "none";
-  } else if (!hadSSR) {
-    // 非 SSR 首屏且后端未就绪 → Mock 回退
-    terms = MOCK_DATA().terms;
-    if (demoPill) demoPill.style.display = "inline-flex";
+    let terms = null;
+    if (d && d.ok !== false && Array.isArray(d.terms)) {
+      terms = d.terms;
+      if (Array.isArray(d.dimension_list)) dimensionList = d.dimension_list;
+      if (demoPill) demoPill.style.display = "none";
+    } else if (!hadSSR) {
+      // 非 SSR 首屏且后端未就绪 → Mock 回退
+      terms = MOCK_DATA().terms;
+      if (demoPill) demoPill.style.display = "inline-flex";
+    }
+    // SSR 命中但 /api/stream 失败：保留 SSR 数据，不回退 Mock。
+    if (terms) {
+      setAllData(terms);
+      render();
+    }
+    // 后台定时更新，不向前端展示更新时间（issue 4）。
+    if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
+  } finally {
+    if (seq === _fetchSeq) {
+      fetching = false;
+      _fetchCtrl = null;
+    }
   }
-  // SSR 命中但 /api/stream 失败：保留 SSR 数据，不回退 Mock
-
-  if (terms) {
-    allData = terms;
-    render();
-  }
-  // 后台定时更新，不向前端展示更新时间（issue 4）。
-  if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
-  fetching = false;
-  _fetchCtrl = null;
 }
 
 renderTopBanner();
 renderFooterSponsor();
 applyLang();          // 首屏按 LANG 本地化静态文案 + 设 <html lang> + 语言按钮 label
-fetchAll();
+fetchAll({ initial: true });
 // 后端底层 6 小时预热一次榜单数据，前端对齐该节奏，避免无意义轮询拿到相同数据
 setInterval(fetchAll, 6 * 60 * 60 * 1000);
 
@@ -1217,6 +1250,20 @@ function MOCK_DATA() {
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=FLUX.1"},{site:"B站",url:"https://search.bilibili.com/all?keyword=FLUX.1"},{site:"GitHub",url:"https://github.com/search?q=FLUX.1"}],
      papers:[]},
   ];
+  // Mock 也遵守真实 stream 的“服务端排序后再交付”约定，避免后端暂未就绪
+  // 时切换排序又在前端临时重排一遍。
+  const key = currentView === "words"
+    ? ({ rise: "rise", hot: "score", new: "novelty" }[currentSort] || "score")
+    : ({ rise: "trend", hot: "score", new: "published" }[currentSort] || "trend");
+  base.sort((a, b) => {
+    const ia = cardIdentity(a) || "", ib = cardIdentity(b) || "";
+    if (key === "published") {
+      const d = String(b.published || "").localeCompare(String(a.published || ""));
+      return d || ia.localeCompare(ib);
+    }
+    const d = (Number(b[key]) || 0) - (Number(a[key]) || 0);
+    return d || ia.localeCompare(ib);
+  });
   return { ok: true, count: base.length, terms: base };
 }
 </script>
