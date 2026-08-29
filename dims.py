@@ -6,15 +6,16 @@
 - dims.py 覆盖 AI 科技圈全维度：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 /
   政策与行业 / 其他。数据源是各家官方 RSS + arXiv + Algolia HN + Reddit，
   天然带官方原文链接（如 OpenAI 发布 GPT-5 → openai.com/index/...）。
-- 维度打标用 DeepSeek LLM（轻量、批量、temperature=0.3），LLM 只负责分类，
-  不碰链接——链接来自 RSS 原文，保证「链接到官方原文」这一硬要求。
+- 维度打标用 LLM（DeepSeek 或 GLM，由 config.LLM_PROVIDER 切换；轻量、批量、
+  temperature=0.3），LLM 只负责分类，不碰链接——链接来自 RSS 原文，
+  保证「链接到官方原文」这一硬要求。
 
 设计原则（与 tracker.py 一致）：
 - 请求路径只读文件缓存（秒回）；抓取 + LLM 打标由后台预热线程定时做。
 - 多源 RSS 并发拉取，单源失败不阻塞（本地网络不可达的源静默跳过，
   云主机上自然生效）。
 - LLM 失败降级：按 RSS 源类型给默认维度（OpenAI→产品与应用，arXiv→研究与论文，
-  TechCrunch→政策与行业），保证即便 DeepSeek 挂了也有热词可看。
+  TechCrunch→政策与行业），保证即便 LLM 挂了也有热词可看。
 """
 
 import os
@@ -33,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-from config import (CACHE_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL,
+from config import (CACHE_DIR, LLM_API_KEY, LLM_MODEL, LLM_URL,
                     DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
 
 try:
@@ -51,10 +52,11 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 HEADERS = {"User-Agent": UA, "Accept": "application/json, text/plain, */*"}
 TIMEOUT = 10
 
-# ---------- DeepSeek LLM 配置 ----------
-# 从 config 统一读取（消除重复定义，便于环境分层：worktree 不设 key 走 Mock 降级，
-# dev 回归 / 生产才设 key 真调 LLM）。
-DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+# ---------- LLM 配置（DeepSeek / GLM 可切换）----------
+# url/model/key 由 config.LLM_PROVIDER 解析成统一的 LLM_URL / LLM_MODEL / LLM_API_KEY
+# （LLM_PROVIDER=glm 时指向智谱 BigModel 的 GLM-4.7-Flash，默认 deepseek-v4-flash）。
+# 切换只改环境变量 LLM_PROVIDER，代码不动。worktree 不设 key 走 Mock 降级，
+# dev 回归 / 生产才设 key 真调 LLM。
 
 # 固定维度枚举（LLM 只能从中选；LLM 失败时也用它做默认降级）
 # 维度 key 始终是中文（canonical），前端按语言取 label / label_en。
@@ -642,13 +644,28 @@ def enrich_with_signals(items):
     return items
 
 
-# ---------- DeepSeek LLM 批量打标 ----------
+# ---------- LLM 批量打标 ----------
 # 批量大小：一次让 LLM 分类 N 条，平衡 token 与单次延迟。
 LLM_BATCH = 12
 
 
+class _LLMTransientError(RuntimeError):
+    """LLM API 瞬态错误（免费档过载等，如 GLM-4.7-Flash 的 1305）。进重试，区别于永久错误直接降级。"""
+
+
+def _strip_llm_title_suffix(s):
+    """剥掉 LLM 翻译标题尾部误带的 ` | 来源` 噪音。
+
+    prompt 条目是 "标题 | 来源"，GLM（偶发 DeepSeek 也）会把来源一并抄进翻译标题，
+    如 "GPT-5 | OpenAI博客"。新闻标题本身极少以 ` | xxx` 结尾，剥掉尾部 pipe 段安全。
+    """
+    if not s:
+        return s
+    return re.sub(r"\s*\|\s*[^|]*$", "", s)
+
+
 def _llm_classify_batch(batch):
-    """让 DeepSeek 给一批事件打维度标签 + 生成中英双标题/双摘要。
+    """让 LLM（DeepSeek 或 GLM，见 config.LLM_PROVIDER）给一批事件打维度标签 + 生成中英双标题/双摘要。
 
     输入：事件卡列表（每张含 title/source/default_dim/lang）。
     输出：每张补充 dimension + title_zh/title_en + summary_zh/summary_en。
@@ -659,13 +676,13 @@ def _llm_classify_batch(batch):
     外文 slot 由 LLM 翻译——中文版把英文源翻中文，英文版把中文源翻英文。
     dimension 仍是中文枚举 key（canonical），前端按语言取 label。
     """
-    if not DEEPSEEK_API_KEY:
-        raise RuntimeError("DEEPSEEK_API_KEY 未配置")
+    if not LLM_API_KEY:
+        raise RuntimeError("LLM_API_KEY 未配置（DEEPSEEK_API_KEY 或 GLM_API_KEY）")
 
-    # ---- prompt 重组：最大化 DeepSeek 硬盘缓存命中 ----
-    # DeepSeek 缓存按前缀完整匹配，命中价是未命中的 1/30。把所有不变内容
+    # ---- prompt 重组：最大化 LLM 前缀缓存命中 ----
+    # DeepSeek/GLM 缓存均按前缀匹配，命中价远低于未命中。把所有不变内容
     # （身份 + JSON schema + 维度枚举 + 翻译规则）放到稳定的 system + user 前缀，
-    # 变化的事件条目放 user 末尾。同一规则文本跨多次调用复用，第三次起可命中缓存。
+    # 变化的事件条目放 user 末尾。同一规则文本跨多次调用复用，后续调用可命中缓存。
     sys_msg = (
         "你是AI热点分类器+双语翻译器。对输入的AI事件做维度分类并产出中英双标题+双摘要。"
         "只输出JSON数组，不要任何解释或前后缀。"
@@ -691,32 +708,42 @@ def _llm_classify_batch(batch):
     user_msg = _USER_PREFIX + "\n".join(lines)
 
     def _post(max_tokens):
-        """单次 DeepSeek 调用，带瞬态重试（连接重置/超时最多重试 3 次）。
+        """单次 LLM 调用（DeepSeek/GLM 通用），带瞬态重试（最多重试 3 次）。
 
-        云主机到 api.deepseek.com 偶发 ConnectionReset / read timeout（推理模型
-        响应慢，长连接易被中间设备掐断）。重试可让整批翻译不至于因一次网络抖动
-        全部降级为未翻译。失败仍向上抛，由 enrich_with_llm 降级兜底。
+        瞬态错误包括：连接重置/超时（云主机到 api.deepseek.com 偶发
+        ConnectionReset / read timeout，推理模型响应慢长连接易被掐断），以及
+        HTTP 429 / 5xx（GLM-4.7-Flash 免费档并发上限 1，高峰常返 429/1305
+        「访问量过大」）。重试可让整批翻译不至于因一次抖动全部降级为未翻译。
+        永久错误（key 无效、模型不存在等）不重试，直接抛，由 enrich_with_llm 降级兜底。
 
         顺带解析 usage 的缓存命中字段，best-effort 打日志便于核算缓存效果。
         temperature=0.3：分类/翻译这种结构化任务用低温度控制输出长度与随机性，
         又避免 temperature=0 的复读机问题。温度只影响输出，不影响输入缓存命中。
         """
         payload = {
-            "model": DEEPSEEK_MODEL,
+            "model": LLM_MODEL,
             "messages": [{"role": "system", "content": sys_msg},
                          {"role": "user", "content": user_msg}],
             "max_tokens": max_tokens,
             "temperature": 0.3,
         }
-        hdrs = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        hdrs = {"Authorization": f"Bearer {LLM_API_KEY}",
                 "Content-Type": "application/json"}
         last_err = None
         for attempt in range(3):
             try:
-                resp = requests.post(DEEPSEEK_URL, headers=hdrs, json=payload,
+                resp = requests.post(LLM_URL, headers=hdrs, json=payload,
                                      timeout=(15, 90))  # 连接 15s，读 90s（推理慢）
                 resp.raise_for_status()
                 body = resp.json()
+                # GLM/DeepSeek 统一错误体 {"error":{"code","message"}}（偶发随 200 返回）。
+                # 1305 = 免费档访问量过大（瞬态）→ 进重试；其余错误直接抛（调用方降级）。
+                err = body.get("error")
+                if err:
+                    if str(err.get("code", "")) == "1305":
+                        raise _LLMTransientError(
+                            f"LLM API 过载: {err.get('message')}")
+                    raise RuntimeError(f"LLM API 错误: {err}")
                 # 缓存命中监控（best-effort，任何异常都忽略，不影响主流程）
                 try:
                     usage = body.get("usage") or {}
@@ -737,13 +764,21 @@ def _llm_classify_batch(batch):
             except (requests.exceptions.ChunkedEncodingError,
                     requests.exceptions.ConnectionError,
                     requests.exceptions.ReadTimeout,
-                    requests.exceptions.JSONDecodeError) as e:
+                    requests.exceptions.JSONDecodeError,
+                    _LLMTransientError) as e:
                 last_err = e
                 continue  # 瞬态错误，重试
+            except requests.exceptions.HTTPError as e:
+                # HTTP 429（GLM 免费档过载）/5xx 是瞬态 → 重试；其余 4xx（key 无效等）直接抛
+                status = e.response.status_code if e.response is not None else 0
+                if status == 429 or status >= 500:
+                    last_err = e
+                    continue
+                raise
         # 3 次都失败，抛最后错误（调用方降级）
         raise last_err if last_err else RuntimeError("LLM 调用失败")
 
-    # DeepSeek-V4 是推理模型：max_tokens 同时覆盖 reasoning_content + content。
+    # DeepSeek-V4 / GLM-4.7 是推理模型：max_tokens 同时覆盖 reasoning_content + content。
     # 双语 12 条标题+摘要正文约需 ~2k，但推理可能吃掉 5-8k，额度偏紧会 length 截断致 content 空。
     # max_tokens 拉到 20000 给推理留足余量；content 空且 finish=length 时再加一次。
     content, finish = _post(20000)
@@ -756,7 +791,7 @@ def _llm_classify_batch(batch):
         raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
     parsed = json.loads(m.group(0))
 
-    # DeepSeek 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en,kw]），
+    # LLM 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en,kw]），
     # 统一归一成 dict 再回填，两种格式都能吃。
     FIELDS = ("idx", "dimension", "title_zh", "title_en", "summary_zh", "summary_en",
               "keywords")
@@ -786,10 +821,10 @@ def _llm_classify_batch(batch):
         t_en = (p.get("title_en") or "").strip()
         if native == "zh":
             t_zh = orig
-            t_en = t_en or orig
+            t_en = _strip_llm_title_suffix(t_en) or orig
         else:
             t_en = orig
-            t_zh = t_zh or orig
+            t_zh = _strip_llm_title_suffix(t_zh) or orig
         it["title_zh"] = t_zh[:200]
         it["title_en"] = t_en[:200]
 
@@ -1135,8 +1170,9 @@ def _bg_dims_refresher():
     """后台循环：启动立即预热一次，之后在定点时刻（DIMS_REFRESH_HOURS）刷新。
 
     生产定点 13/19/01/07（一天 4 次，6 小时一档）：
-    - 避开 DeepSeek 高峰段（工作日 9-12 / 14-18），多落空闲档半价；
-    - 6 小时一档压在硬盘缓存 TTL 内，规则前缀跨次复用命中缓存（命中价 1/30）。
+    - 避开 LLM 高峰段（工作日 9-12 / 14-18），多落空闲档（DeepSeek 半价 /
+      GLM 免费档并发更宽裕）；
+    - 6 小时一档压在硬盘缓存 TTL 内，规则前缀跨次复用命中缓存（命中价远低于未命中）。
     定点时刻 4 个 worker 同时醒，fcntl 跨进程锁保证只有一个真抓取。
 
     失败重试：某次刷新失败 → 隔 DIMS_RETRY_INTERVAL（5 分钟）重试，而非干等到

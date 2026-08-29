@@ -48,10 +48,30 @@ GEOIP_DB_PATH = os.environ.get(
 _cache_default = "/app/cache" if os.path.isdir("/app") else os.path.join(os.getcwd(), "cache")
 CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
 
-# ---------- DeepSeek LLM（维度热词打标）----------
+# ---------- LLM 提供方（维度热词打标，DeepSeek / GLM 可切换）----------
 # 未配置 key → dims.py 的 LLM 打标降级到 RSS 源默认维度，热词仍可展示。
+# 提供方二选一，只改 LLM_PROVIDER 一个环境变量即可一键切换，代码无需改动：
+#   LLM_PROVIDER=deepseek（默认）→ DEEPSEEK_API_KEY / DEEPSEEK_MODEL / DEEPSEEK_URL
+#   LLM_PROVIDER=glm           → GLM_API_KEY / GLM_MODEL / GLM_URL（智谱 BigModel）
+# 生效的 url/model/key 统一暴露为 LLM_URL / LLM_MODEL / LLM_API_KEY，dims.py 只认这三个。
+LLM_PROVIDER = (os.environ.get("LLM_PROVIDER") or "deepseek").strip().lower()
+if LLM_PROVIDER not in ("deepseek", "glm"):
+    LLM_PROVIDER = "deepseek"  # 非法值回落默认
+
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+
+# GLM-4.7-Flash：智谱 BigModel 免费档，OpenAI 兼容 chat/completions 接口。
+# ⚠️ 免费档并发上限 1，高峰常返 429/1305（访问量过大），dims 已做瞬态重试+降级兜底。
+GLM_API_KEY = os.environ.get("GLM_API_KEY", "").strip()
+GLM_MODEL = os.environ.get("GLM_MODEL", "glm-4.7-flash")
+GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+
+if LLM_PROVIDER == "glm":
+    LLM_URL, LLM_MODEL, LLM_API_KEY = GLM_URL, GLM_MODEL, GLM_API_KEY
+else:
+    LLM_URL, LLM_MODEL, LLM_API_KEY = DEEPSEEK_URL, DEEPSEEK_MODEL, DEEPSEEK_API_KEY
 
 # ---------- dims 生产定点预热（Asia/Shanghai 24h 制）----------
 # 一天 4 次：13/19/01/07，6 小时一档。

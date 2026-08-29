@@ -45,7 +45,7 @@
 
 ---
 
-## config.py  （101 行）— 配置集中地
+## config.py  （121 行）— 配置集中地
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -54,10 +54,12 @@
 | 17–19 | 管理后台令牌 `ADMIN_TOKEN` |
 | 21–26 | 站点信息 `SITE_NAME`/`BASE_URL`/`CONTACT_EMAIL` |
 | 28–49 | 数据存储路径 + GeoIP + 缓存目录 |
-| 51–64 | DeepSeek LLM + dims 定点预热 `DIMS_REFRESH_HOURS` |
-| 65–78 | 分析开关 + SEO 开关 |
-| 81–93 | 第三方广告（AdSense/百度联盟）+ 赞助位展示 |
-| 95–101 | `ensure_data_dir()` |
+| 51–74 | LLM 提供方（DeepSeek / GLM 可切换，`LLM_PROVIDER` 一键切） |
+| 76–83 | dims 定点预热 `DIMS_REFRESH_HOURS` |
+| 85–91 | 分析开关 |
+| 93–99 | SEO 开关 |
+| 101–113 | 第三方广告（AdSense/百度联盟）+ 赞助位展示 |
+| 115–121 | `ensure_data_dir()` |
 
 ### 公开函数
 | 函数 | 行号 | 职责 |
@@ -66,23 +68,22 @@
 | `ensure_data_dir()` | 96 | 建 `DATA_DIR`（容器 /app/data，本地 ./data） |
 
 ### 关键常量
-`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`DEEPSEEK_API_KEY`/`DEEPSEEK_MODEL`、`DIMS_REFRESH_HOURS=(13,19,1,7)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
+`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`LLM_PROVIDER`（deepseek 默认 / glm，非法值回落 deepseek）、`DEEPSEEK_API_KEY`/`DEEPSEEK_MODEL`/`DEEPSEEK_URL`、`GLM_API_KEY`/`GLM_MODEL`/`GLM_URL`（默认 glm-4.7-flash，智谱 BigModel 免费档）、生效三元组 `LLM_URL`/`LLM_MODEL`/`LLM_API_KEY`（dims.py 只认这三个）、`DIMS_REFRESH_HOURS=(13,19,1,7)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
 
 ---
 
-## dims.py  （1110 行）— 维度事件层（RSS + 热度 + DeepSeek）
+## dims.py  （1200 行）— 维度事件层（RSS + 热度 + LLM）
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
-| 49–64 | DeepSeek LLM 配置 |
-| 66–135 | 文件缓存（`cache/dims.json`） |
-| 137–172 | RSS 源定义 `RSS_SOURCES`（17 源） |
-| 174–316 | RSS 解析 + 抓取 |
-| 317–624 | 社区热度增强（HN/Reddit/复合分/趋势分） |
-| 625–809 | DeepSeek LLM 批量打标 |
-| 810–979 | 顶层聚合（`get_dims`/`get_news_cards`） |
-| 980–1110 | 后台预热线程 + 跨进程锁 + 定点刷新 |
+| 55–72 | LLM 配置（DeepSeek/GLM 可切换；读 config 的 `LLM_URL`/`LLM_MODEL`/`LLM_API_KEY`） |
+| 73–143 | 文件缓存（`cache/dims.json`） |
+| 144–336 | RSS 源定义 `RSS_SOURCES`（17 源）+ RSS 解析 + 抓取 |
+| 337–646 | 社区热度增强（HN/Reddit/复合分/趋势分） |
+| 647–884 | LLM 批量打标（`_llm_classify_batch`/`enrich_with_llm`） |
+| 885–1056 | 顶层聚合（`get_dims`/`get_news_cards`） |
+| 1057–1200 | 后台预热线程 + 跨进程锁 + 定点刷新 |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
@@ -96,12 +97,12 @@
 - 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
 - RSS：`_norm_date`/`_strip_cdata`/`_parse_rss`/`fetch_one_rss`/`fetch_all_rss`
 - 热度：`_has_cjk`/`_clean_title`/`_hn_points`/`_reddit_points`/`_buzz`/`_age_hours`/`_time_decay`/`_composite_score`/`_trend_score`
-- LLM：`_llm_classify_batch`/`enrich_with_llm`
+- LLM：`_llm_classify_batch`/`enrich_with_llm`/`_LLMTransientError`（瞬态错误类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）
 - 聚合：`_to_card`/`_fetch_dims_raw`/`_project_card`
 - 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
 
 ### 模块级常量
-`RSS_SOURCES`（17 源，`dims.py:145`）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
+`RSS_SOURCES`（17 源，`dims.py:144`）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_URL`/`LLM_MODEL`/`LLM_API_KEY`（自 config 导入）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
 
 ---
 
