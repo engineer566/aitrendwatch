@@ -223,8 +223,11 @@
   .word-top-item a:hover { color: var(--accent); }
   .word-top-item .src { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   .word-top-item .hd { color: var(--orange); font-size: 11px; white-space: nowrap; }
-  .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; margin-top: 8px; }
+  .word-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
   .word-expand-btn:hover { background: var(--bg-hover); }
+  .word-detail-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+  .word-detail-link:hover { text-decoration: underline; }
   .word-expand { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 
   /* ---- 骨架屏 ---- */
@@ -867,9 +870,14 @@ function renderWordCard(w, i) {
           ${n.hot ? `<span class="hd">🔥 ${fmtNum(n.hot)}</span>` : ""}
           ${n.source ? `<span class="src">${escapeHtml(n.source)}</span>` : ""}
         </div>`).join("")}</div>` : "";
+  const term = w.term || w.id;
+  const detailHref = termHref(term);
   const expandBtn = (w.news_cnt || 0) > (w.top_news || []).length
-    ? `<button class="word-expand-btn" data-term="${escapeHtml(w.term || w.id)}">${t("more_btn")} (${w.news_cnt || 0}) · <a class="word-detail-link" href="${termHref(w.term || w.id)}" onclick="event.stopPropagation()">${t("detail_link")}</a></button>`
-    : `<a class="link-btn official" href="${termHref(w.term || w.id)}" style="margin-top:8px">${t("detail_link")}</a>`;
+    ? `<div class="word-actions">
+         <button class="word-expand-btn" data-term="${escapeHtml(term)}"><span class="word-expand-label">${t("more_btn")} (${w.news_cnt || 0})</span></button>
+         <a class="word-detail-link" href="${detailHref}">${t("detail_link")}</a>
+       </div>`
+    : `<a class="link-btn official" href="${detailHref}" style="margin-top:8px">${t("detail_link")}</a>`;
   return `<div class="term-card" style="--cat-color:${dInfo.color}" data-wid="${escapeHtml(w.id)}">
     <div class="word-head">
       <span class="rank ${i<3?"top":""} num">${i+1}</span>
@@ -899,14 +907,15 @@ async function toggleWordExpand(term, btn) {
   // 已缓存过：直接渲染
   if (_wordDetailCache[term]) { renderWordExpand(box, _wordDetailCache[term], term); box.style.display = "block"; return; }
   btn.disabled = true;
-  const oldText = btn.textContent;
-  btn.textContent = "…";
+  const label = btn.querySelector(".word-expand-label");
+  const oldText = label ? label.textContent : "";
+  if (label) label.textContent = "…";
   const ctrl = new AbortController();
   _wordFetchCtrls[term] = ctrl;
   const d = await fetchJSON(`/api/word/${encodeURIComponent(term)}?lang=${encodeURIComponent(LANG)}`, ctrl.signal);
   delete _wordFetchCtrls[term];
   btn.disabled = false;
-  btn.textContent = oldText;
+  if (label) label.textContent = oldText;
   if (d && d.ok) {
     _wordDetailCache[term] = d;
     renderWordExpand(box, d, term);
