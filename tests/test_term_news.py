@@ -1,6 +1,7 @@
 """Regression tests for word-detail news lookup against old/new news.db rows."""
 
 import os
+import importlib
 import sqlite3
 import sys
 import tempfile
@@ -31,8 +32,16 @@ class TermNewsLookupTests(unittest.TestCase):
         os.environ["DEEPSEEK_API_KEY"] = ""
         os.environ["GLM_API_KEY"] = ""
 
+        # Other suites import these modules with their own temporary database
+        # before this class is initialized.  Reload them after switching the
+        # environment so this class always exercises its isolated legacy DB.
+        import config
         import news_store
         import terms
+
+        importlib.reload(config)
+        importlib.reload(news_store)
+        importlib.reload(terms)
 
         cls.news_store = news_store
         cls.terms = terms
@@ -69,8 +78,9 @@ class TermNewsLookupTests(unittest.TestCase):
         import tracker
         with patch.object(tracker, "start_background_refresher"), \
                 patch.object(dims, "start_background_dims_refresher"):
-            import app
-        cls.app = app
+            import app as app_module
+            importlib.reload(app_module)
+        cls.app = app_module
 
     @classmethod
     def tearDownClass(cls):

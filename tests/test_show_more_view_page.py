@@ -45,7 +45,7 @@ class ShowMoreViewPageContractTest(unittest.TestCase):
         """The refactor must retain the existing encoded /term URL contract."""
         self.assertIn("function escapeTerm(term)", self.source)
         self.assertIn("return encodeURIComponent(String(term || \"\"));", self.source)
-        self.assertIn("const detailHref = `/term/${escapeTerm(term)}`;", self.source)
+        self.assertIn("const detailHref = termHref(term);", self.source)
 
 
 if __name__ == "__main__":
