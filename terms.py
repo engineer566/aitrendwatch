@@ -28,6 +28,7 @@ import threading
 import datetime
 
 import config
+from text_utils import decode_html_entities, decode_url_entities
 
 try:
     import news_store  # 历史库读取（回填/聚合扫描）；失败自动降级
@@ -555,9 +556,9 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
                 # HF 仅靠模型名命中的词不进 top）。
                 kw_canons = _news_row_canons(r)
                 # HF 词标题命中（即使抽词没抽到）：只进聚合，不进 top news
-                titles_lower = [str(r["title"] or "").lower(),
-                                str(r["title_zh"] or "").lower(),
-                                str(r["title_en"] or "").lower()]
+                titles_lower = [decode_html_entities(r["title"] or "").lower(),
+                                decode_html_entities(r["title_zh"] or "").lower(),
+                                decode_html_entities(r["title_en"] or "").lower()]
                 agg_canons = list(kw_canons)
                 for canon, meta in hf_terms.items():
                     if canon in kw_canons:
@@ -601,9 +602,11 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
                     a["top"].append({
                         "score": int(r["score"] or 0),
                         "card": {
-                            "title_zh": r["title_zh"] or r["title"] or "",
-                            "title_en": r["title_en"] or r["title"] or "",
-                            "official_url": r["url"] or "",
+                            "title_zh": decode_html_entities(
+                                r["title_zh"] or r["title"] or ""),
+                            "title_en": decode_html_entities(
+                                r["title_en"] or r["title"] or ""),
+                            "official_url": decode_url_entities(r["url"] or ""),
                             "source": "",
                             "published": r["published"] or "",
                             "hot": int(r["score"] or 0),
@@ -819,6 +822,9 @@ def get_word_cards(sort="rise", lang="zh", limit=60):
     cards = []
     for c in raw[:limit]:
         wc = dict(c)
+        for field in ("term", "display_zh"):
+            if field in wc:
+                wc[field] = decode_html_entities(wc[field])
         if lang == "zh" and wc.get("display_zh"):
             wc["term_display"] = wc["display_zh"]
         else:
@@ -826,8 +832,13 @@ def get_word_cards(sort="rise", lang="zh", limit=60):
         topn = []
         for n in wc.get("top_news", []):
             n2 = dict(n)
-            n2["title"] = (n.get("title_zh") if lang == "zh" else n.get("title_en")) \
-                or n.get("title_zh") or ""
+            for field in ("title", "title_zh", "title_en"):
+                if field in n2:
+                    n2[field] = decode_html_entities(n2[field])
+            if "official_url" in n2:
+                n2["official_url"] = decode_url_entities(n2["official_url"])
+            n2["title"] = (n2.get("title_zh") if lang == "zh" else n2.get("title_en")) \
+                or n2.get("title_zh") or n2.get("title") or ""
             topn.append(n2)
         wc["top_news"] = topn
         cards.append(wc)

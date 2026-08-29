@@ -25,6 +25,7 @@ import threading
 import datetime
 
 import config
+from text_utils import decode_html_entities, decode_url_entities
 
 _DB_OK = False                 # DB 是否可用（init 后置 True）
 _db_lock = threading.Lock()    # 串行化写（SQLite 写锁）
@@ -168,8 +169,7 @@ def upsert_cards(cards):
                 [_card_to_row(c, now) for c in cards],
             )
             # 收集本轮命中的 url，把既有的 active=1 但本轮未命中者置 0
-            seen_urls = {c.get("official_url") or c.get("url") or c.get("title", "")
-                         for c in cards}
+            seen_urls = {_card_url(c) for c in cards}
             if seen_urls:
                 # SQLite 参数上限 999，分批处理
                 seen_list = list(seen_urls)
@@ -189,17 +189,18 @@ def upsert_cards(cards):
 
 
 def _card_to_row(c, now):
-    url = c.get("official_url") or c.get("url") or c.get("title", "")
+    title = decode_html_entities(c.get("title") or "")
+    url = _card_url(c, title=title)
     return {
         "url": url,
-        "title": c.get("title", ""),
-        "title_zh": c.get("title_zh", c.get("title", "")),
-        "title_en": c.get("title_en", c.get("title", "")),
-        "summary_zh": c.get("summary_zh", ""),
-        "summary_en": c.get("summary_en", ""),
-        "dimension": c.get("dimension", "其他"),
-        "source": c.get("source", ""),
-        "region": c.get("region", ""),
+        "title": title,
+        "title_zh": decode_html_entities(c.get("title_zh") or title),
+        "title_en": decode_html_entities(c.get("title_en") or title),
+        "summary_zh": decode_html_entities(c.get("summary_zh") or ""),
+        "summary_en": decode_html_entities(c.get("summary_en") or ""),
+        "dimension": decode_html_entities(c.get("dimension") or "其他"),
+        "source": decode_html_entities(c.get("source") or ""),
+        "region": decode_html_entities(c.get("region") or ""),
         "published": c.get("published", ""),
         "hn_points": int(c.get("hn_points", 0) or 0),
         "reddit_score": int(c.get("reddit_score", 0) or 0),
@@ -213,6 +214,13 @@ def _card_to_row(c, now):
         "first_seen_at": now,
         "last_refresh_at": now,
     }
+
+
+def _card_url(c, title=None):
+    """Return the same normalized URL used for persistence and deactivation."""
+    if title is None:
+        title = decode_html_entities(c.get("title") or "")
+    return decode_url_entities(c.get("official_url") or c.get("url") or title)
 
 
 def _keywords_to_json(kw):
@@ -308,16 +316,17 @@ def search_history(query, lang="zh", limit=50):
 def _row_to_card(r):
     """DB 行 → 与 dims 卡同 schema 的 dict。"""
     d = dict(r)
+    title = decode_html_entities(d.get("title") or "")
     return {
-        "title": d.get("title") or "",
-        "title_zh": d.get("title_zh") or d.get("title", ""),
-        "title_en": d.get("title_en") or d.get("title", ""),
-        "summary_zh": d.get("summary_zh") or "",
-        "summary_en": d.get("summary_en") or "",
-        "dimension": d.get("dimension") or "其他",
-        "official_url": d.get("url"),
-        "source": d.get("source") or "",
-        "region": d.get("region") or "",
+        "title": title,
+        "title_zh": decode_html_entities(d.get("title_zh") or title),
+        "title_en": decode_html_entities(d.get("title_en") or title),
+        "summary_zh": decode_html_entities(d.get("summary_zh") or ""),
+        "summary_en": decode_html_entities(d.get("summary_en") or ""),
+        "dimension": decode_html_entities(d.get("dimension") or "其他"),
+        "official_url": decode_url_entities(d.get("url") or ""),
+        "source": decode_html_entities(d.get("source") or ""),
+        "region": decode_html_entities(d.get("region") or ""),
         "published": d.get("published") or "",
         "hn_points": d.get("hn_points", 0),
         "reddit_score": d.get("reddit_score", 0),
