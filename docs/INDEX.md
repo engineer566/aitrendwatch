@@ -1,7 +1,7 @@
 # aitrendwatch 代码索引（Agent 入口）
 
 > **Agent 进场第一份文件。** 读这里定位目标，按需精读单文件，避免全量扫描。
-> 本索引基于 dev 分支（release 0.2.1, 2026-08）代码实读生成，行号真实可跳。
+> 本索引基于 dev 分支（release 1.1.0, 2026-08）代码实读生成，行号真实可跳。
 
 ## 项目一句话定位
 
@@ -19,7 +19,7 @@ aitrendwatch/
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（474 行）
 ├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列）（335 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
-├── VERSION         # 版本号单一真相源（0.2.1）
+├── VERSION         # 版本号单一真相源（1.1.0）
 ├── templates/      # 6 个 Jinja2 模板
 │   ├── index.html         # 首页主单页（1192 行：词卡/逐条新闻双视图，JS fetch + i18n）
 │   ├── terms.html         # 服务条款页（363 行）
