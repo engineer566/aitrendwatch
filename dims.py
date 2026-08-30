@@ -721,7 +721,13 @@ def _llm_failure(permanent=False):
     if (_LLM_CYCLE_FAILS >= LLM_CYCLE_ESCAPE
             and LLM_CHAIN[min(_LLM_ACTIVE_IDX, len(LLM_CHAIN) - 1)]
                 .startswith("glm")):
-        _llm_skip_provider(reason=f"周期内累计 {LLM_CYCLE_ESCAPE} 次失败")
+        # 仅当链中存在有 key 的 provider 才整族逃逸；否则（如测试机只有 GLM）
+        # 逃到无 key 档只会引发「回绕-再逃逸」空转，留在 GLM 档内按连续阈值切换。
+        for _m in LLM_CHAIN[_LLM_ACTIVE_IDX + 1:]:
+            _u, _k = llm_endpoint(_m)
+            if _k:
+                _llm_skip_provider(reason=f"周期内累计 {LLM_CYCLE_ESCAPE} 次失败")
+                break
 
 
 def _llm_skip_provider(reason="账户级限流"):
