@@ -1278,6 +1278,9 @@ def get_news_cards(lang="zh"):
                 pc["official_label"] = pc.get("source", "")
                 pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
                               else pc.get("summary_en", ""))
+                # 历史卡标记：API 排序时按 published 固定顺序，
+                # 避免每次刷新重算时效分导致 60 条之后的历史卡反复重排。
+                pc["from_history"] = True
                 cards.append(pc)
                 seen.add(url)
         except Exception:

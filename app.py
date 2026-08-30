@@ -773,11 +773,19 @@ def api_stream():
 
     # 排序键：rise→trend, hot→score, new→published（统一字段）
     # 先按身份升序，再按榜单值倒序；稳定排序保证同值卡片每次顺序相同。
-    cards.sort(key=lambda x: _stream_card_identity(x) or ("", ""))
+    # 「二次排序」根因：历史卡（get_news_cards 打 from_history 标记）的时效分
+    # 每次刷新重算，60 条之后的历史卡会随衰减反复重排。修复：历史卡按
+    # published 降序固定排序（存档语义），当前卡仍按榜单键排序。
+    current = [c for c in cards if not c.get("from_history")]
+    history = [c for c in cards if c.get("from_history")]
+    current.sort(key=lambda x: _stream_card_identity(x) or ("", ""))
     sort_key = {"rise": lambda x: _stream_number(x, "trend"),
                 "hot":  lambda x: _stream_number(x, "score"),
                 "new":  lambda x: x.get("published", "") or ""}[sort]
-    cards.sort(key=sort_key, reverse=True)
+    current.sort(key=sort_key, reverse=True)
+    history.sort(key=lambda x: _stream_card_identity(x) or ("", ""))
+    history.sort(key=lambda x: x.get("published", "") or "", reverse=True)
+    cards = current + history
 
     fetched_at = max(m_at, n_at)
     return jsonify({
