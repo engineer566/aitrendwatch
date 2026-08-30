@@ -160,6 +160,7 @@ def init_db():
                 term           TEXT PRIMARY KEY,  -- canonical 键（小写归一），如 "gpt-5"
                 display        TEXT,              -- 最佳展示形（如 "GPT-5"）
                 display_zh     TEXT DEFAULT '',   -- 中文别名（词典提供，可空）
+                display_en     TEXT DEFAULT '',   -- 英文展示名（中文词的 LLM 翻译，可空）
                 origin         TEXT DEFAULT 'news', -- news | hf | both
                 first_seen_at  TEXT,              -- 首次进入词池（取关联报道最早 published 兜底）
                 last_seen_at   TEXT,
@@ -179,6 +180,14 @@ def init_db():
                 PRIMARY KEY (term, cycle)
             );
         """)
+        # 老库补列（幂等）：display_en 列缺失时 ALTER 加上
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(terms)")}
+            if "display_en" not in cols:
+                conn.execute(
+                    "ALTER TABLE terms ADD COLUMN display_en TEXT DEFAULT ''")
+        except Exception:
+            pass
         conn.commit()
         conn.close()
         _DB_OK = True
@@ -435,6 +444,37 @@ def _title_matches_term(text, surfaces):
     return False
 
 
+def _compile_surface_patterns(surfaces):
+    """预编译表面匹配模式，供词聚合标题关联计数批量复用（避免逐卡逐词 re.compile）。"""
+    pats = []
+    for surface in surfaces:
+        if not surface:
+            continue
+        if any(ord(c) >= 128 for c in surface):
+            pats.append(("cjk", surface.casefold(), None))
+        else:
+            pats.append(("ascii", None,
+                         re.compile(r"(?<![a-z0-9])" + re.escape(surface)
+                                    + r"(?!\.\d)(?![a-z0-9])", re.I)))
+    return pats
+
+
+def _title_matches_patterns(titles, pats):
+    """与 ``_title_matches_term`` 同口径：任一标题字段命中任一表面即 True。"""
+    for t in titles:
+        t = str(t or "")
+        if not t:
+            continue
+        tf = t.casefold()
+        for kind, cjk, pat in pats:
+            if kind == "cjk":
+                if cjk in tf:
+                    return True
+            elif pat.search(t):
+                return True
+    return False
+
+
 def _keyword_canons(value):
     """Decode old/new ``news_cards.keywords`` values to canonical keys."""
     raw = value
@@ -521,11 +561,14 @@ def _hf_canon(mc):
     return normalize_term(name or display)
 
 
-def refresh_words(all_cards, model_cards, fetched_at=None):
+def refresh_words(all_cards, model_cards, fetched_at=None,
+                  term_translator=None):
     """一轮刷新的词聚合：关联 → 归并 → 打分 → 快照 → 写 words.json。
 
     输入：all_cards（dims 当轮全量新闻卡，含 keywords）、
-          model_cards（tracker 当轮 HF 模型卡）。
+          model_cards（tracker 当轮 HF 模型卡）、
+          term_translator（可选：中文热词 → 英文展示名 的批量翻译回调，
+          入参为中文展示名列表，返回 {原文: 英文} 字典；无则英文页回退中文）。
     数据源：新闻关联以**历史库全量扫描**为准（跨周期累积 total_mentions /
     7 天热窗），当轮 all_cards 只用于本周期快照 news_cnt/score_sum。
     失败静默，绝不阻塞 dims 刷新主流程。
@@ -534,12 +577,14 @@ def refresh_words(all_cards, model_cards, fetched_at=None):
         return
     try:
         _refresh_words_inner(all_cards or [], model_cards or [],
-                             fetched_at or int(datetime.datetime.now().timestamp()))
+                             fetched_at or int(datetime.datetime.now().timestamp()),
+                             term_translator)
     except Exception:
         pass
 
 
-def _refresh_words_inner(all_cards, model_cards, fetched_at):
+def _refresh_words_inner(all_cards, model_cards, fetched_at,
+                         term_translator=None):
     now = _now_iso()
     today = datetime.date.today()
     hot_cutoff = (today - datetime.timedelta(days=HOT_WINDOW_DAYS)).isoformat()
@@ -659,7 +704,10 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
         except Exception:
             pass
     for a in agg.values():
+        # top news 与 get_term_news 同序（published 降序 + score 降序），
+        # 保证卡片内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
         a["top"].sort(key=lambda x: -x["score"])
+        a["top"].sort(key=lambda x: x["card"].get("published") or "", reverse=True)
         a["top"] = [t["card"] for t in a["top"][:3]]
 
     # ---- 3. 归并 HF 词（无新闻命中也入池，origin=hf）----
@@ -696,6 +744,58 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
                 continue
             new_budget -= 1
         kept[canon] = a
+
+    # ---- 5.6 英文展示名（display_en）----
+    # 词典外 LLM 抽取的中文词（债务融资/并购/自动驾驶卡车等）没有英文形态，
+    # 英文页会显示中文热词。有 term_translator 时批量翻译；失败/无回调降级为空，
+    # 前端回退 term（英文页仍有中文，但不阻塞）。
+    if term_translator:
+        try:
+            _needs = {}
+            for canon in kept:
+                _disp = (hf_terms.get(canon, {}).get("display")
+                         or _display_of(canon, [canon]))
+                if _disp and re.search(r"[\u4e00-\u9fff]", _disp):
+                    _needs[canon] = _disp
+            if _needs:
+                _translated = term_translator(list(_needs.values())) or {}
+                for canon, disp in _needs.items():
+                    _en = _translated.get(disp)
+                    if isinstance(_en, str) and _en.strip():
+                        kept[canon]["display_en"] = _en.strip()[:80]
+        except Exception:
+            pass
+
+    # ---- 5.5 标题关联计数（与 get_term_news 标题兜底同口径）----
+    # 词卡 news_cnt / 详情页「N 篇相关报道」需与 get_term_news 一致：除关键词命中外，
+    # 标题表面命中（_term_surfaces）也算关联报道。只对 kept 词补算展示计数，
+    # 不影响三榜打分与噪词过滤（词池与榜单保持稳定）。
+    if news_store:
+        try:
+            kept_pats = {canon: _compile_surface_patterns(_term_surfaces(canon))
+                         for canon in kept}
+            conn = _conn()
+            news_columns = {r[1] for r in
+                            conn.execute("PRAGMA table_info(news_cards)")}
+            keyword_expr = ("keywords" if "keywords" in news_columns
+                            else "NULL AS keywords")
+            query = ("SELECT url, title, title_zh, title_en, " + keyword_expr +
+                     " FROM news_cards")
+            for r in conn.execute(query):
+                url = r["url"] or ""
+                if not url:
+                    continue
+                titles = [str(r[f] or "")
+                          for f in ("title", "title_zh", "title_en")]
+                for canon, a in kept.items():
+                    if url in a["urls"]:
+                        continue
+                    if _title_matches_patterns(titles, kept_pats[canon]):
+                        a["urls"].add(url)
+                        a["mentions"] += 1
+            conn.close()
+        except Exception:
+            pass
 
     # ---- 6. 三榜打分 + 写 terms 主表 + 快照 ----
     with _db_lock:
@@ -758,18 +858,21 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
                        or o.get("display") or _display_of(canon, []))
             display_zh = o.get("display_zh") or _display_zh_of(canon)
 
+            display_en = kept[canon].get("display_en") or ""
+
             conn.execute(
-                """INSERT INTO terms (term, display, display_zh, origin,
+                """INSERT INTO terms (term, display, display_zh, display_en, origin,
                        first_seen_at, last_seen_at, total_mentions, hf_json,
                        cur_hot, cur_rise, cur_novelty)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(term) DO UPDATE SET
                        display=excluded.display, display_zh=excluded.display_zh,
+                       display_en=excluded.display_en,
                        origin=excluded.origin, last_seen_at=excluded.last_seen_at,
                        total_mentions=excluded.total_mentions,
                        hf_json=excluded.hf_json, cur_hot=excluded.cur_hot,
                        cur_rise=excluded.cur_rise, cur_novelty=excluded.cur_novelty""",
-                (canon, display, display_zh, origin,
+                (canon, display, display_zh, display_en, origin,
                  first_seen, now, a["mentions"],
                  json.dumps(hf_meta, ensure_ascii=False) if hf_meta else "",
                  hot, round(rise, 4), novelty),
@@ -801,9 +904,9 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
         conn = _conn()
         final_rows = {}
         for r in conn.execute(
-                "SELECT term, display, display_zh, origin, first_seen_at, "
-                "last_seen_at, total_mentions, hf_json, cur_hot, cur_rise, "
-                "cur_novelty FROM terms"):
+                "SELECT term, display, display_zh, display_en, origin, "
+                "first_seen_at, last_seen_at, total_mentions, hf_json, "
+                "cur_hot, cur_rise, cur_novelty FROM terms"):
             if r["term"] in kept:
                 final_rows[r["term"]] = dict(r)
         conn.close()
@@ -827,6 +930,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
             "id": canon,
             "term": row["display"] or canon,
             "display_zh": row["display_zh"] or "",
+            "display_en": row["display_en"] or "",
             "origin": row["origin"],
             "news_cnt": a["mentions"],
             "hot": row["cur_hot"],
@@ -876,6 +980,9 @@ def get_word_cards(sort="rise", lang="zh", limit=60):
                 wc[field] = decode_html_entities(wc[field])
         if lang == "zh" and wc.get("display_zh"):
             wc["term_display"] = wc["display_zh"]
+        elif lang == "en" and wc.get("display_en"):
+            # 中文热词的英文展示名（词典外词由刷新期 LLM 翻译，缺失回退 term）
+            wc["term_display"] = wc["display_en"]
         else:
             wc["term_display"] = wc.get("term", "")
         topn = []

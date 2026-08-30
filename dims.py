@@ -34,7 +34,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-from config import (CACHE_DIR, LLM_CHAIN, LLM_FAILOVER_THRESHOLD, llm_endpoint,
+from config import (CACHE_DIR, LLM_CHAIN, LLM_CYCLE_ESCAPE,
+                    LLM_FAILOVER_THRESHOLD, llm_endpoint,
                     DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
 from text_utils import decode_html_entities, decode_url_entities
 
@@ -658,6 +659,11 @@ class _LLMTransientError(RuntimeError):
     """LLM API 瞬态错误（免费档过载等，如 GLM-4.7-Flash 的 1305）。进重试，区别于永久错误直接降级。"""
 
 
+class _LLMAccountRateLimit(RuntimeError):
+    """LLM 账户级限流（如智谱 BigModel 1302）：同 key 下该 provider 全部档位都受限，
+    无需逐档烧满失败阈值，直接顺链跳到下一个 provider。"""
+
+
 def _strip_llm_title_suffix(s):
     """剥掉 LLM 翻译标题尾部误带的 ` | 来源` 噪音。
 
@@ -677,6 +683,7 @@ def _strip_llm_title_suffix(s):
 _llm_lock = threading.Lock()
 _LLM_ACTIVE_IDX = 0   # 当前档在 LLM_CHAIN 的下标
 _LLM_FAILS = 0        # 当前档连续失败次数
+_LLM_CYCLE_FAILS = 0  # 本刷新周期内累计失败次数（不限连续，_dims_refresh_once 复位）
 
 
 def _active_llm():
@@ -696,10 +703,13 @@ def _llm_success():
 
 def _llm_failure(permanent=False):
     """一次失败调用：连续计数满阈值顺链切下一档。permanent（无 key 等永久条件）
-    视为 1 次即切，不烧 10 次重试；末档不再切换，计数清零待下轮。"""
-    global _LLM_ACTIVE_IDX, _LLM_FAILS
+    视为 1 次即切，不烧 10 次重试；末档不再切换，计数清零待下轮。
+    同时累计本刷新周期失败数（不限连续）：达到 LLM_CYCLE_ESCAPE 跳过当前
+    provider 剩余档位（GLM 429 多为散落单发，连续阈值抓不到）。"""
+    global _LLM_ACTIVE_IDX, _LLM_FAILS, _LLM_CYCLE_FAILS
     with _llm_lock:
         _LLM_FAILS += 1
+        _LLM_CYCLE_FAILS += 1
         need = 1 if permanent else LLM_FAILOVER_THRESHOLD
         if _LLM_FAILS >= need:
             if _LLM_ACTIVE_IDX < len(LLM_CHAIN) - 1:
@@ -707,7 +717,39 @@ def _llm_failure(permanent=False):
                 reason = ("无 key 顺链跳过" if permanent
                           else f"连续 {LLM_FAILOVER_THRESHOLD} 次失败")
                 print(f"[dims][llm] {reason} → {LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
+                # 连续阈值切档时同步清零周期累计：新档（如 5.3）应有独立的
+                # LLM_CYCLE_ESCAPE 预算，不能背着上一档（4.7 的 429）的旧账。
+                _LLM_CYCLE_FAILS = 0
             _LLM_FAILS = 0
+    if (_LLM_CYCLE_FAILS >= LLM_CYCLE_ESCAPE
+            and _LLM_ACTIVE_IDX < len(LLM_CHAIN) - 1):
+        # 周期累计失败（不限连续）→ 前进一档而非整族跳过：4.7 的 429 多为
+        # 模型级免费档限流，同一账户的 5.3（付费）不受影响，整族跳过会绕过它。
+        # 每档独立累计预算；1302 账户级限流仍由 _LLM_AccountRateLimit 整族跳过。
+        with _llm_lock:
+            _LLM_ACTIVE_IDX += 1
+            _LLM_FAILS = 0
+            _LLM_CYCLE_FAILS = 0
+        print(f"[dims][llm] 周期内累计 {LLM_CYCLE_ESCAPE} 次失败 → "
+              f"{LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
+
+
+def _llm_skip_provider(reason="账户级限流"):
+    """跳过当前 provider 剩余档位（如 GLM 1302 同 key 全档受限，或周期内累计失败
+    过多），直达链中下一个 provider；末档不再切换。"""
+    global _LLM_ACTIVE_IDX, _LLM_FAILS
+    with _llm_lock:
+        def _provider(model):
+            return "deepseek" if model.startswith("deepseek") else "glm"
+        cur = _provider(LLM_CHAIN[min(_LLM_ACTIVE_IDX, len(LLM_CHAIN) - 1)])
+        while _LLM_ACTIVE_IDX < len(LLM_CHAIN) - 1:
+            nxt = LLM_CHAIN[_LLM_ACTIVE_IDX + 1]
+            _LLM_ACTIVE_IDX += 1
+            if _provider(nxt) != cur:
+                break
+        _LLM_FAILS = 0
+        print(f"[dims][llm] {reason}，跳过 {cur} 剩余档 → "
+              f"{LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
 
 
 def _llm_classify_batch(batch):
@@ -732,7 +774,15 @@ def _llm_classify_batch(batch):
         if key:
             break
         if idx >= len(LLM_CHAIN) - 1:
-            raise RuntimeError("LLM key 未配置（GLM_API_KEY 或 DEEPSEEK_API_KEY 至少设一个）")
+            # 末档无 key（如测试机只有 GLM 未配 deepseek）：回绕首档重试，
+            # 避免链走到末档后整轮全部静默降级（「key 未配置」在 try 外抛、
+            # 无日志且不触发故障转移）。
+            with _llm_lock:
+                _LLM_ACTIVE_IDX = 0
+                _LLM_FAILS = 0
+            print("[dims][llm] 末档无 key，回绕首档重试", flush=True)
+            raise RuntimeError(
+                "LLM key 未配置（GLM_API_KEY 或 DEEPSEEK_API_KEY 至少设一个）")
         _llm_failure(permanent=True)
 
     # ---- prompt 重组：最大化 LLM 前缀缓存命中 ----
@@ -796,9 +846,15 @@ def _llm_classify_batch(batch):
                 # 1305 = 免费档访问量过大（瞬态）→ 进重试；其余错误直接抛（调用方降级）。
                 err = body.get("error")
                 if err:
-                    if str(err.get("code", "")) == "1305":
+                    code = str(err.get("code", ""))
+                    if code == "1305":
                         raise _LLMTransientError(
                             f"LLM API 过载: {err.get('message')}")
+                    if code == "1302":
+                        # 账户级速率限制：同 key 下该 provider 所有档位都受限
+                        # （GLM 免费档全档共享账户配额），跳过 provider 剩余档位。
+                        raise _LLMAccountRateLimit(
+                            f"LLM 账户级限流: {err.get('message')}")
                     raise RuntimeError(f"LLM API 错误: {err}")
                 # 缓存命中监控（best-effort，任何异常都忽略，不影响主流程）
                 try:
@@ -849,10 +905,49 @@ def _llm_classify_batch(batch):
         if not m:
             raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
         parsed = json.loads(m.group(0))
-    except Exception:
+
+        # 批完整性检查：GLM 免费档超载时偶发返回「缺条目/缺翻译字段」的部分数组，
+        # 甚至把英文原标题原样抄进 title_zh（回显）而摘要留空。静默回退会让整批卡
+        # 变成英文原标题（中英文混杂的根因之一）。非母语标题与摘要任一缺失/为空
+        # 都视为该批失败——计故障转移次数，换档/换 provider 重试。
+        _FIELDS = ("idx", "dimension", "title_zh", "title_en",
+                   "summary_zh", "summary_en", "keywords")
+        _pby = {}
+        for p in parsed:
+            if isinstance(p, dict) and p.get("idx") is not None:
+                _pby[p["idx"]] = p
+            elif isinstance(p, list) and len(p) >= 7:
+                _pby[p[0]] = dict(zip(_FIELDS, p))
+        _missing = 0
+        for i, it in enumerate(batch):
+            p = _pby.get(i) or {}
+            if it.get("lang", "en") == "zh":
+                t_ok = bool((p.get("title_en") or "").strip())
+                s_ok = bool((p.get("summary_en") or "").strip())
+            else:
+                t_ok = bool((p.get("title_zh") or "").strip())
+                s_ok = bool((p.get("summary_zh") or "").strip())
+            if not (t_ok and s_ok):
+                _missing += 1
+        if _missing:
+            raise RuntimeError(
+                f"LLM 返回缺翻译条目 {_missing}/{len(batch)} 个，按失败计")
+    except _LLMAccountRateLimit as e:
+        # 账户级限流：跳过当前 provider 剩余档位（同 key 全档受限），
+        # 本批降级，下一批直接用下一个 provider。
+        print(f"[dims][llm] 批次失败(账户级限流): {e}", flush=True)
+        _llm_skip_provider()
+        raise
+    except Exception as e:
+        # 记录具体错误（含 provider 错误码/HTTP 状态，如 1302/1305/429），
+        # 供排查「翻译覆盖」问题时核对真实失败原因。
+        print(f"[dims][llm] 批次失败: {type(e).__name__}: {e}", flush=True)
         _llm_failure()
         raise
     _llm_success()
+    # 成功批次日志（含当前档模型名）：GLM-5.3 等不回传 usage 缓存字段，
+    # cache-hit 日志不会打印，必须有这行才能核对「哪个模型处理了哪些批次」。
+    print(f"[dims][llm] 批次成功({model}): {len(batch)} 条", flush=True)
 
     # LLM 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en,kw]），
     # 统一归一成 dict 再回填，两种格式都能吃。
@@ -931,6 +1026,7 @@ def enrich_with_llm(items):
         it["title"] = decode_html_entities(it.get("title") or "")
 
     SUB = max(1, LLM_BATCH // 2)  # 子批大小（默认 6）
+    retry_subs = []  # 主循环失败的子批：末尾重试一次（链可能已切到可用档）
     for start in range(0, len(items), LLM_BATCH):
         batch = items[start:start + LLM_BATCH]
         for sub_start in range(0, len(batch), SUB):
@@ -948,7 +1044,61 @@ def enrich_with_llm(items):
                     it["summary_en"] = it["title"][:30]
                     it["keywords"] = (terms_mod.extract_keywords_dict(it["title"])
                                       if terms_mod else [])
+                retry_subs.append(sub)
+    # 主循环后重试：GLM 429 多为散落单发，主循环内链可能已因累计失败逃到
+    # deepseek——重试能找回这批翻译；仍失败则保持降级（不再逐批计故障转移）。
+    for sub in retry_subs:
+        try:
+            _llm_classify_batch(sub)
+        except Exception:
+            pass
     return items
+
+
+def _translate_terms(chinese_terms):
+    """中文热词 → 英文展示名（供 terms.refresh_words 的 term_translator 回调）。
+
+    批量走当前 LLM 档（含故障转移链）；失败降级返回空映射（英文页回退中文）。
+    只用于词展示名，不影响新闻翻译与维度打标。
+    """
+    if not chinese_terms:
+        return {}
+    out = {}
+    sys_msg = ("你是AI热词翻译器。把中文AI领域热词翻译成简洁英文"
+               "（含常见英文缩写/专名，如 大模型→LLM、并购→M&A）。"
+               "只输出JSON对象，键为原文，值为英文翻译，不要任何解释。")
+    for start in range(0, len(chinese_terms), LLM_BATCH):
+        chunk = chinese_terms[start:start + LLM_BATCH]
+        user_msg = ("翻译以下中文热词为英文，输出JSON对象 "
+                    '{"原文":"英文"}：\n' + "\n".join(f"- {t}" for t in chunk))
+        try:
+            model, url, key, _idx = _active_llm()
+            if not key:
+                raise RuntimeError("LLM key 未配置")
+            payload = {"model": model,
+                       "messages": [{"role": "system", "content": sys_msg},
+                                    {"role": "user", "content": user_msg}],
+                       "max_tokens": 2000, "temperature": 0.1}
+            resp = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {key}",
+                         "Content-Type": "application/json"},
+                json=payload, timeout=(15, 90))
+            resp.raise_for_status()
+            body = resp.json()
+            content = ((body.get("choices") or [{}])[0]
+                       .get("message", {}).get("content") or "")
+            m = re.search(r"\{.*\}", content, re.S)
+            parsed = json.loads(m.group(0)) if m else {}
+            for k, v in parsed.items():
+                if isinstance(v, str) and v.strip():
+                    out[k] = v.strip()[:80]
+            _llm_success()
+        except Exception as e:
+            print(f"[dims][llm] 热词翻译失败: {type(e).__name__}: {e}",
+                  flush=True)
+            _llm_failure()
+    return out
 
 
 # ---------- 顶层聚合 ----------
@@ -1191,6 +1341,8 @@ def _dims_refresh_once():
     try:
         try:
             with _cross_proc_lock(DIMS_REFRESH_LOCKFILE):
+                global _LLM_CYCLE_FAILS
+                _LLM_CYCLE_FAILS = 0  # 每周期复位：累计失败只在本刷新内生效
                 data = _fetch_dims_raw()
                 if data.get("ok"):
                     # 全量卡（all_cards）只在本刷新管道内用（持久化 + 词聚合），
@@ -1218,7 +1370,8 @@ def _dims_refresh_once():
                             model_cards, _ = tracker.get_model_cards("zh")
                             terms_mod.refresh_words(
                                 all_cards, model_cards,
-                                fetched_at=data["fetched_at"])
+                                fetched_at=data["fetched_at"],
+                                term_translator=_translate_terms)
                         except Exception:
                             pass
                     return True

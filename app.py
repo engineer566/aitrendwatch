@@ -152,7 +152,8 @@ def _word_detail(term_name, lang="zh"):
         news = [_project(c) for c in
                 terms_mod.get_term_news(canon, limit=50, lang=lang)]
         term_info = {
-            "term": row.get("display") or canon,
+            "term": (row.get("display_en") if lang == "en"
+                     else row.get("display")) or row.get("display") or canon,
             "display_zh": row.get("display_zh") or "",
             "origin": row.get("origin") or "news",
             "news_cnt": row.get("total_mentions", 0),

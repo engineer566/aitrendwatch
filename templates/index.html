@@ -1194,8 +1194,8 @@ renderTopBanner();
 renderFooterSponsor();
 applyLang();          // 首屏按 LANG 本地化静态文案 + 设 <html lang> + 语言按钮 label
 fetchAll({ initial: true });
-// 后端底层 6 小时预热一次榜单数据，前端对齐该节奏，避免无意义轮询拿到相同数据
-setInterval(fetchAll, 6 * 60 * 60 * 1000);
+// 不再做定时自动刷新：后端每 6 小时才预热一次榜单，期间数据不变，定时重拉只会
+// 在数据刷新后把整页重排一遍（用户视角的「二次排序」）。新数据靠用户刷新/重进获取。
 
 // ============ Mock 数据（后端就绪后自动失效；含多分类预览分类徽章体系） ============
 function MOCK_DATA() {
