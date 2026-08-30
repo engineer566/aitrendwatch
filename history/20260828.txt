@@ -1,0 +1,2 @@
+1. 在后台创建一个GLM-4.7-Flash的模型调用方案，替换DeepSeek-V4-Flash，在代码里配置一个切换开关，可以快速切换。GLM的参考文档在https://docs.bigmodel.cn/cn/api/introduction，key是5fd2a710be0a4566a98cdd34ec289434.FjLJq7WxA16FMGLs，请测试GLM-4.7-Flash的可行性
+2. 现在整个项目的内存消耗太大，帮我降低一下整体内存消耗，进行优化

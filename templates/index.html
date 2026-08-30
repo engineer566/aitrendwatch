@@ -1,5 +1,15 @@
+{% set page_lang = default_lang or 'zh' %}
+{% set is_en = page_lang == 'en' %}
+{% set dim_labels = {
+  '模型与技术': 'Models & Tech',
+  '产品与应用': 'Products & Apps',
+  '研究与论文': 'Research & Papers',
+  '商业与投融资': 'Business & Funding',
+  '政策与行业': 'Policy & Industry',
+  '其他': 'Other'
+} %}
 <!DOCTYPE html>
-<html lang="{{ 'zh-CN' if (default_lang or 'zh') == 'zh' else 'en' }}">
+<html lang="{{ 'en' if is_en else 'zh-CN' }}">
 <head>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
@@ -11,7 +21,7 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ site_name }} · AI 热点聚合</title>
+<title>{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}</title>
 <meta name="description" content="{{ site_desc }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -22,13 +32,13 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ site_name }} · AI 热点聚合">
+<meta property="og:title" content="{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}">
 <meta property="og:description" content="{{ site_desc }}">
-<meta property="og:locale" content="zh_CN">
+<meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="{{ site_name }} · AI 热点聚合">
+<meta name="twitter:title" content="{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}">
 <meta name="twitter:description" content="{{ site_desc }}">
 {% else %}
 <meta name="robots" content="noindex,nofollow">
@@ -213,8 +223,11 @@
   .word-top-item a:hover { color: var(--accent); }
   .word-top-item .src { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   .word-top-item .hd { color: var(--orange); font-size: 11px; white-space: nowrap; }
-  .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; margin-top: 8px; }
+  .word-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
   .word-expand-btn:hover { background: var(--bg-hover); }
+  .word-detail-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+  .word-detail-link:hover { text-decoration: underline; }
   .word-expand { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 
   /* ---- 骨架屏 ---- */
@@ -284,7 +297,7 @@
 {
   "@context": "https://schema.org",
   "@type": "ItemList",
-  "name": "AI 热点榜 · 上升最快",
+  "name": {{ ('AI Trends · Trending' if is_en else 'AI 热点榜 · 上升最快') | tojson }},
   "itemListElement": [
     {% for t in initial_terms %}
     {
@@ -309,18 +322,18 @@
     <h1>🤖 {{ site_name }}</h1>
     <div class="search-box">
       <span>🔍</span>
-      <input id="search-input" type="text" placeholder="搜索热点 / 作者…" autocomplete="off">
+      <input id="search-input" type="text" placeholder="{{ 'Search trends / authors…' if is_en else '搜索热点 / 作者…' }}" autocomplete="off">
       <kbd>/</kbd>
     </div>
     <div class="header-right">
       <span id="last-update">—</span>
-      <button class="btn" id="lang-btn" title="切换语言 / Toggle language">EN</button>
-      <button class="btn" id="theme-btn" title="切换深浅色">🌙</button>
+      <button class="btn" id="lang-btn" title="{{ 'Switch language' if is_en else '切换语言' }}">{{ lang_toggle_label }}</button>
+      <button class="btn" id="theme-btn" title="{{ 'Toggle theme' if is_en else '切换深浅色' }}">🌙</button>
     </div>
   </div>
 </header>
 
-<div class="demo-banner"><span class="pill" id="demo-pill" {% if initial_terms %}style="display:none"{% endif %}>⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据</span></div>
+<div class="demo-banner"><span class="pill" id="demo-pill" {% if initial_terms %}style="display:none"{% endif %}>{{ '⚠ Demo preview · built-in mock data; switches to real data once backend is ready' if is_en else '⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据' }}</span></div>
 
 <!-- 联盟广告槽：自建 top-banner 不存在时由 JS 填充 AdSense / 百度联盟 -->
 <div class="ads-slot empty" id="ads-top"></div>
@@ -329,13 +342,13 @@
   <div class="cat-bar" id="cat-bar"></div>
   <div class="sort-row">
     <div class="seg" id="view-seg">
-      <button class="active" data-view="words">🔤 热词</button>
-      <button data-view="news">📰 逐条新闻</button>
+      <button class="active" data-view="words">{{ '🔤 Words' if is_en else '🔤 热词' }}</button>
+      <button data-view="news">{{ '📰 News feed' if is_en else '📰 逐条新闻' }}</button>
     </div>
     <div class="seg" id="sort-seg">
-      <button class="active" data-sort="rise">📈 上升最快</button>
-      <button data-sort="hot">🔥 最热</button>
-      <button data-sort="new">🕒 最新</button>
+      <button class="active" data-sort="rise">{{ '📈 Trending' if is_en else '📈 上升最快' }}</button>
+      <button data-sort="hot">{{ '🔥 Hottest' if is_en else '🔥 最热' }}</button>
+      <button data-sort="new">{{ '🕒 Newest' if is_en else '🕒 最新' }}</button>
     </div>
   </div>
 </div>
@@ -349,9 +362,9 @@
 <div class="term-card" style="--cat-color:#4f8cff">
   <div class="word-head">
     <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
-    <span class="cat-badge">🔤 {{ dim }}</span>
-    <span class="word-name"><a href="/term/{{ t.id }}"><span class="zh">{{ t.display_zh or t.term }}</span></a></span>
-    <span class="head-right"><span>{{ t.news_cnt }} 篇报道 · {{ t.published or '' }}</span></span>
+    <span class="cat-badge">🔤 {{ dim_labels.get(dim, dim) if is_en else dim }}</span>
+    <span class="word-name"><a href="/term/{{ t.id|urlencode }}?lang={{ page_lang }}"><span class="{{ 'en' if is_en else 'zh' }}">{{ t.term_display or t.display_zh or t.term }}</span></a></span>
+    <span class="head-right"><span>{{ t.news_cnt }} {{ 'reports' if is_en else '篇报道' }} · {{ t.published or '' }}</span></span>
   </div>
   <div class="term-meta">
     <span class="m-hot">🔥 <span class="num">{{ t.hot }}</span></span>
@@ -360,7 +373,7 @@
   {% if t.top_news %}
   <div class="word-top">
     {% for n in t.top_news[:3] %}
-    <div class="word-top-item"><a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title_zh or n.title_en or '' }}</a><span class="hd">🔥 {{ n.hot }}</span></div>
+    <div class="word-top-item"><a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title or n.title_en or n.title_zh or '' }}</a><span class="hd">🔥 {{ n.hot }}</span></div>
     {% endfor %}
   </div>
   {% endif %}
@@ -371,7 +384,7 @@
 <div class="term-card" style="--cat-color:#4f8cff">
   <div class="term-head">
     <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
-    <span class="cat-badge">{{ dim_icon }} {{ dim }}</span>
+    <span class="cat-badge">{{ dim_icon }} {{ dim_labels.get(dim, dim) if is_en else dim }}</span>
     <span class="term-name">
       {% if t.kind == 'news' %}<a href="{{ t.official_url }}" target="_blank" rel="noopener">{{ t.title }}</a>{% else %}{% if t.author %}<span class="author">{{ t.author }} / </span>{% endif %}<a href="{{ t.official_url }}" target="_blank" rel="noopener">{{ t.term }}</a>{% endif %}
     </span>
@@ -380,17 +393,17 @@
   {% if t.kind == 'news' %}
     {% if t.hot %}<div class="term-meta"><span class="m-hot">🔥 <span class="num">{{ t.hot }}</span></span>{% if t.hn_points %}<span>HN <span class="num">{{ t.hn_points }}</span></span>{% endif %}{% if t.reddit_score %}<span>Reddit ❤ <span class="num">{{ t.reddit_score }}</span></span>{% endif %}</div>{% endif %}
     {% if t.summary %}<div class="term-meta"><span>{{ t.summary }}</span></div>{% endif %}
-    <div class="links"><a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.source or '官方' }}</a></div>
+    <div class="links"><a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.source or ('Source' if is_en else '官方') }}</a></div>
   {% else %}
-    {% if t.trending_score != none %}<div class="term-meta"><span class="m-up">📈 趋势 <span class="num">{{ t.trending_score }}</span></span>{% if t.likes != none %}<span class="m-hot">❤ <span class="num">{{ t.likes }}</span></span>{% endif %}{% if t.downloads != none %}<span>↓ <span class="num">{{ t.downloads }}</span></span>{% endif %}</div>{% endif %}
+    {% if t.trending_score != none %}<div class="term-meta"><span class="m-up">📈 {{ 'Trend' if is_en else '趋势' }} <span class="num">{{ t.trending_score }}</span></span>{% if t.likes != none %}<span class="m-hot">❤ <span class="num">{{ t.likes }}</span></span>{% endif %}{% if t.downloads != none %}<span>↓ <span class="num">{{ t.downloads }}</span></span>{% endif %}</div>{% endif %}
     {% if t.tags %}<div class="tags">{% for tg in t.tags[:5] %}<span class="tag">{{ tg }}</span>{% endfor %}</div>{% endif %}
     <div class="links">
-      <a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.official_label or '官方' }}</a>
+      <a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.official_label or ('Source' if is_en else '官方') }}</a>
       {% for c in (t.community or []) %}<a class="link-btn" href="{{ c.url }}" target="_blank" rel="noopener">💬 {{ c.site }}</a>{% endfor %}
     </div>
     {% if t.papers %}
     <div class="papers">
-      <div class="papers-title">📄 相关论文（arXiv）</div>
+      <div class="papers-title">📄 {{ 'Related papers (arXiv)' if is_en else '相关论文（arXiv）' }}</div>
       {% for p in t.papers %}<div class="paper"><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a><span class="pm">{{ p.published or '' }}</span></div>{% endfor %}
     </div>
     {% endif %}
@@ -407,10 +420,17 @@
 <div class="ads-footer-slot empty" id="ads-footer"></div>
 
 <footer>
+  {% if is_en %}
+  Unified feed: HuggingFace models (trends/likes/downloads) · arXiv papers · Zhihu/Bilibili/GitHub discussion<br>
+  News: OpenAI/TechCrunch/HF/arXiv/QbitAI etc. official RSS · Hacker News + Reddit community heat · DeepSeek tagging (links go to official sources)<br>
+  Categories: Model Releases / Product Launches / Research Papers / Funding / Industry News / Other<br>
+  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=en" class="footer-link">Terms of Service</a></span>
+  {% else %}
   统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论<br>
   新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）<br>
   分类：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 / 政策与行业 / 其他<br>
-  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">服务条款 / Terms of Service</a></span>
+  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=zh" class="footer-link">服务条款</a></span>
+  {% endif %}
 </footer>
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
@@ -434,6 +454,8 @@ const I18N = {
     empty: "没有匹配的热点",
     empty_q: "（搜索「",
     official_default: "官方原文",
+    trend: "趋势", rise: "上升", novelty: "新奇度", papers: "相关论文（arXiv）",
+    sponsor_badge: "赞助", sponsor_cta: "了解",
     news_cnt: " 篇报道", more_btn: "展开更多", detail_link: "查看聚合页 →", related: "相关报道",
     demo_pill: "⚠ 示例预览 · 当前为内置 Mock，后端接入后自动切换真实数据",
     footer_l1: "统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论",
@@ -454,6 +476,8 @@ const I18N = {
     empty: "No matching trends",
     empty_q: " (search: «",
     official_default: "Source",
+    trend: "Trend", rise: "Rise", novelty: "Novelty", papers: "Related papers (arXiv)",
+    sponsor_badge: "Sponsored", sponsor_cta: "Learn more",
     news_cnt: " reports", more_btn: "Show more", detail_link: "View page →", related: "Reports",
     demo_pill: "⚠ Demo preview · built-in mock data; switches to real data once backend is ready",
     footer_l1: "Unified feed: HuggingFace models (trends/likes/downloads) · arXiv papers · Zhihu/Bilibili/GitHub discussion",
@@ -474,19 +498,45 @@ const searchInput = document.getElementById("search-input");
 const catBar = document.getElementById("cat-bar");
 const sortSeg = document.getElementById("sort-seg");
 
-let allData = [];            // 当前 view 的全量数据（词卡 或 model+news）
+let allData = [];            // 当前 view 的服务端排序展示数据（词卡 或 model+news）
 let currentCat = "all";      // 当前维度筛选：all 或维度中文 key
 let currentSort = "rise";    // rise / hot / new
 let currentView = "words";   // words（热词，默认）/ news（逐条新闻）
 // v2: 搜索已独立为 /search 页面，首页不再持有本地 query 状态
-let LANG = "{{ default_lang or 'zh' }}";   // zh | en（SSR 注入默认，可被 localStorage / ?lang= 覆盖）
+let LANG = {{ page_lang | tojson }};   // zh | en（SSR 注入默认，可被 localStorage / ?lang= 覆盖）
 let dimensionList = [];      // 后端下发的维度顺序
 
+// 卡片身份与后端保持同一口径：同一词/同一官方链接只渲染一次。
+// 所有进入 allData 的数据都先走这里，分类计数、过滤和渲染共享同一数组。
+function cardIdentity(card) {
+  if (!card || typeof card !== "object") return null;
+  const value = card.id || card.full_id || card.official_url || card.term || card.title;
+  if (value === undefined || value === null || String(value) === "") return null;
+  return `${card.kind || ""}\u0000${String(value)}`;
+}
+function uniqueCards(cards) {
+  const out = [], seen = new Set();
+  (Array.isArray(cards) ? cards : []).forEach(card => {
+    if (!card || typeof card !== "object") return;
+    const id = cardIdentity(card);
+    if (id !== null) {
+      if (seen.has(id)) return;
+      seen.add(id);
+    }
+    out.push(card);
+  });
+  return out;
+}
+function setAllData(cards) {
+  allData = uniqueCards(cards);
+}
+
 // URL 参数恢复状态（?view=&cat=&sort=&lang= 可分享）
+let langFromURL = false;
 (function initFromURL() {
   const p = new URLSearchParams(location.search);
   const lp = p.get("lang");
-  if (lp === "zh" || lp === "en") LANG = lp;
+  if (lp === "zh" || lp === "en") { LANG = lp; langFromURL = true; }
   if (p.get("view") && ["words","news"].includes(p.get("view"))) currentView = p.get("view");
   if (p.get("sort") && ["rise","hot","new"].includes(p.get("sort"))) currentSort = p.get("sort");
   if (p.get("cat")) currentCat = p.get("cat");
@@ -494,13 +544,13 @@ let dimensionList = [];      // 后端下发的维度顺序
 // localStorage 优先级高于 SSR 默认（用户上次手动切过则记住）
 try {
   const saved = localStorage.getItem("aitw_lang");
-  if (saved === "zh" || saved === "en") LANG = saved;
+  if (!langFromURL && (saved === "zh" || saved === "en")) LANG = saved;
   const v = localStorage.getItem("aitw_view");
   if (v === "words" || v === "news") currentView = v;
 } catch (e) {}
 function syncURL() {
   const p = new URLSearchParams();
-  if (LANG !== "zh") p.set("lang", LANG);
+  p.set("lang", LANG);
   if (currentView !== "words") p.set("view", currentView);
   if (currentCat !== "all") p.set("cat", currentCat);
   if (currentSort !== "rise") p.set("sort", currentSort);
@@ -512,6 +562,8 @@ function syncURL() {
 const langBtn = document.getElementById("lang-btn");
 function localizeStatic() {
   document.title = `{{ site_name }} · ${t("site_subtitle")}`;
+  langBtn.title = LANG === "en" ? "Switch language" : "切换语言";
+  themeBtn.title = LANG === "en" ? "Toggle theme" : "切换深浅色";
   searchInput.placeholder = t("search_ph");
   document.querySelectorAll("#view-seg button").forEach(b => {
     if (b.dataset.view === "words") b.textContent = t("view_words");
@@ -524,21 +576,23 @@ function localizeStatic() {
   });
   if (demoPill) demoPill.textContent = t("demo_pill");
   const f = document.querySelector("footer");
-  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}<br><span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">${t("footer_terms")}</a></span>`;
+  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}<br><span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=${LANG}" class="footer-link">${t("footer_terms")}</a></span>`;
   const yEl = document.getElementById("footer-year");
   if (yEl) yEl.textContent = new Date().getFullYear();
 }
-function applyLang() {
+function applyLang(renderData = true) {
   document.documentElement.lang = LANG === "en" ? "en" : "zh-CN";
   langBtn.textContent = LANG === "en" ? "中" : "EN";
   localizeStatic();
-  render();
+  if (renderData) render();
 }
 langBtn.addEventListener("click", () => {
   LANG = LANG === "zh" ? "en" : "zh";
   try { localStorage.setItem("aitw_lang", LANG); } catch (e) {}
   syncURL();
-  applyLang();
+  applyLang(false);
+  setAllData([]);
+  render();
   fetchAll();   // 切语言后重拉（后端按 lang 投影）
 });
 
@@ -582,11 +636,19 @@ document.addEventListener("keydown", e => {
 
 // ==================== 排名变化追踪（localStorage 存上次榜单） ====================
 const RANK_KEY = s => `aitw_prev_rank_${s}`;
+function rankIdentity(card) {
+  return card && (card.id || card.full_id || card.term || card.official_url || card.title);
+}
+function currentRankIndex(card) {
+  const id = rankIdentity(card);
+  const index = allData.findIndex(item => rankIdentity(item) === id);
+  return index >= 0 ? index : 0;
+}
 function rankDelta(t, rankIdx) {
   if (currentSort === "new") return null;   // 最新排序无排名概念
   try {
     const prev = JSON.parse(localStorage.getItem(RANK_KEY(currentSort)) || "{}");
-    const id = t.id || t.full_id || t.term || t.official_url;
+    const id = rankIdentity(t);
     if (!(id in prev)) return "new";
     const d = prev[id] - rankIdx;   // 正 = 上升
     return d === 0 ? null : d;
@@ -595,7 +657,7 @@ function rankDelta(t, rankIdx) {
 function saveRanks(items) {
   if (currentSort === "new") return;
   const m = {};
-  items.forEach((t, i) => { m[t.id || t.full_id || t.term || t.official_url] = i; });
+  items.forEach((t, i) => { m[rankIdentity(t)] = i; });
   try { localStorage.setItem(RANK_KEY(currentSort), JSON.stringify(m)); } catch (e) {}
 }
 
@@ -633,12 +695,12 @@ function fillAdsSlot(elId, kind) {
 function sponsorCardHTML(s) {
   const click = `/api/click/${encodeURIComponent(s.slot_id)}`;
   if (s.banner_html) {
-    return `<div class="sponsor-card"><span class="sponsor-badge">赞助</span>${s.banner_html}</div>`;
+    return `<div class="sponsor-card"><span class="sponsor-badge">${t("sponsor_badge")}</span>${s.banner_html}</div>`;
   }
   const img = s.image_url
     ? `<img src="${escapeHtml(s.image_url)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover">` : "";
   return `<div class="sponsor-card">
-    <span class="sponsor-badge">赞助</span>
+    <span class="sponsor-badge">${t("sponsor_badge")}</span>
     <div class="sponsor-row">
       ${img}
       <div style="flex:1;min-width:0">
@@ -646,7 +708,7 @@ function sponsorCardHTML(s) {
         <div class="sponsor-text">${escapeHtml(s.text||"")}</div>
         ${s.subtext ? `<div class="sponsor-sub">${escapeHtml(s.subtext)}</div>` : ""}
       </div>
-      <a class="sponsor-cta" href="${click}" target="_blank" rel="noopener sponsored">${escapeHtml(s.cta_text||"了解")} →</a>
+      <a class="sponsor-cta" href="${click}" target="_blank" rel="noopener sponsored">${escapeHtml(s.cta_text||t("sponsor_cta"))} →</a>
     </div>
   </div>`;
 }
@@ -692,26 +754,29 @@ function dimLabel(dim) {
   return { icon: c.icon, lbl: LANG === "en" ? (c.label_en || c.label) : c.label, color: c.color };
 }
 
-// 统一卡片流分类条：按 dimension 计数，用后端 dimensionList 顺序展示。
+// 统一卡片流分类条：按实际可渲染的去重卡片计数，用后端 dimensionList 顺序展示。
 // words 视图：词卡可能跨领域（dims 数组），成员资格过滤——词涉及任一领域即计入该 pill；
-// news 视图：按单标签 dimension 计数（旧逻辑）。
+// news 视图：按单标签 dimension 计数；同一张卡在同一维度只计一次。
 function renderCatBar() {
   const order = dimensionList.length ? dimensionList : Object.keys(DIMS_CATEGORY);
   const counts = {};
   allData.forEach(t => {
-    if (currentView === "words" && Array.isArray(t.dims)) {
-      (t.dims.length ? t.dims : [t.dimension || "其他"]).forEach(d => { counts[d] = (counts[d] || 0) + 1; });
-    } else {
-      const d = t.dimension || "其他"; counts[d] = (counts[d] || 0) + 1;
-    }
+    const values = currentView === "words" && Array.isArray(t.dims) && t.dims.length
+      ? t.dims : [t.dimension || (t.kind === "model" ? "模型与技术" : "其他")];
+    [...new Set(values.map(d => String(d || "其他")))].forEach(d => {
+      counts[d] = (counts[d] || 0) + 1;
+    });
   });
-  const keys = order.filter(k => counts[k]);
-  if (!keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
-  let html = `<button class="cat-pill ${currentCat==="all"?"active":""}" data-cat="all"
+  // 后端枚举优先，同时补上数据中出现的未知维度，避免卡片可渲染但无对应标签。
+  const keys = [...order, ...Object.keys(counts).filter(k => !order.includes(k))]
+    .filter(k => counts[k]);
+  if (allData.length && !keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
+  const selectedCat = allData.length ? currentCat : "all";
+  let html = `<button class="cat-pill ${selectedCat==="all"?"active":""}" data-cat="all"
     style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${allData.length}</span></button>`;
   keys.forEach(k => {
     const m = dimLabel(k);
-    html += `<button class="cat-pill ${currentCat===k?"active":""}" data-cat="${k}"
+    html += `<button class="cat-pill ${selectedCat===k?"active":""}" data-cat="${k}"
       style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${counts[k]}</span></button>`;
   });
   catBar.innerHTML = html;
@@ -722,8 +787,8 @@ catBar.addEventListener("click", e => {
   syncURL(); render();
 });
 
-// 视图切换：热词 / 逐条新闻。仅本地过滤排序，不重启拉取（数据同源 /api/stream，
-// 已带 view 参数；切视图只换渲染分支 + 清展开缓存）。记忆到 localStorage + URL。
+// 视图切换：热词 / 逐条新闻。切换后重新拉取对应 view，避免拿旧视图数据渲染。
+// 排序由 /api/stream 完成；本地只做分类过滤。记忆到 localStorage + URL。
 const viewSeg = document.getElementById("view-seg");
 viewSeg.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -732,8 +797,9 @@ viewSeg.addEventListener("click", e => {
   b.classList.add("active");
   currentView = b.dataset.view;
   try { localStorage.setItem("aitw_view", currentView); } catch (err) {}
+  currentCat = "all";        // 两个视图的分类成员口径不同
   _wordDetailCache = {};   // 换视图清词展开缓存
-  syncURL(); render(); fetchAll();
+  syncURL(); setAllData([]); render(); fetchAll();
 });
 document.querySelectorAll("#view-seg button").forEach(x =>
   x.classList.toggle("active", x.dataset.view === currentView));
@@ -744,9 +810,8 @@ sortSeg.addEventListener("click", e => {
   document.querySelectorAll("#sort-seg button").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
   currentSort = b.dataset.sort;
-  syncURL(); render();
-  // 切排序后端拉对应 sort 的全量数据（前端 visibleData 仅在已有 allData 上重排，
-  // 但不同 sort 后端已预排序+历史库合并，全量拉取保证内容池一致）。abort 旧请求。
+  syncURL(); setAllData([]); render();
+  // 不在旧数据上临时套用新排序；等待服务端按新榜单排序并截断后再替换。
   fetchAll();
 });
 // 初始排序按钮状态（可能被 URL 参数改过）
@@ -792,18 +857,18 @@ function isFresh(iso) {
 
 // ==================== 渲染 ====================
 // 统一卡片渲染：同时吃 model 卡和 news 卡，按 kind 分支显示指标
-function metricsHTML(t) {
+function metricsHTML(card) {
   const m = [];
-  if (t.kind === "news") {
+  if (card.kind === "news") {
     // 新闻卡：热度分（复合分）+ HN 分 + Reddit 赞
-    if (t.hot != null && t.hot > 0) m.push(`<span class="m-hot">🔥 <span class="num">${fmtNum(t.hot)}</span></span>`);
-    if (t.hn_points > 0) m.push(`<span>HN <span class="num">${fmtNum(t.hn_points)}</span></span>`);
-    if (t.reddit_score > 0) m.push(`<span>Reddit ❤ <span class="num">${fmtNum(t.reddit_score)}</span></span>`);
+    if (card.hot != null && card.hot > 0) m.push(`<span class="m-hot">🔥 <span class="num">${fmtNum(card.hot)}</span></span>`);
+    if (card.hn_points > 0) m.push(`<span>HN <span class="num">${fmtNum(card.hn_points)}</span></span>`);
+    if (card.reddit_score > 0) m.push(`<span>Reddit ❤ <span class="num">${fmtNum(card.reddit_score)}</span></span>`);
   } else {
     // model 卡：趋势/赞/下载
-    if (t.trending_score != null) m.push(`<span class="m-up">📈 趋势 <span class="num">${fmtNum(t.trending_score)}</span></span>`);
-    if (t.likes != null) m.push(`<span class="m-hot">❤ <span class="num">${fmtNum(t.likes)}</span></span>`);
-    if (t.downloads != null) m.push(`<span>↓ <span class="num">${fmtNum(t.downloads)}</span></span>`);
+    if (card.trending_score != null) m.push(`<span class="m-up">📈 ${t("trend")} <span class="num">${fmtNum(card.trending_score)}</span></span>`);
+    if (card.likes != null) m.push(`<span class="m-hot">❤ <span class="num">${fmtNum(card.likes)}</span></span>`);
+    if (card.downloads != null) m.push(`<span>↓ <span class="num">${fmtNum(card.downloads)}</span></span>`);
   }
   return m.length ? `<div class="term-meta">${m.join("")}</div>` : "";
 }
@@ -815,23 +880,27 @@ function escapeTerm(term) {
   return encodeURIComponent(String(term || ""));
 }
 
+function termHref(term) {
+  return `/term/${escapeTerm(term)}?lang=${encodeURIComponent(LANG)}`;
+}
+
 function renderWordCard(w, i) {
   const dim = w.dimension || "其他";
   const dInfo = dimLabel(dim);
-  const d = rankDelta(w, i);
+  const d = rankDelta(w, currentRankIndex(w));
   const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
     : d ? `<span class="delta ${d>0?"up":"down"}">${d>0?"↑":"↓"}${Math.abs(d)}</span>` : "";
   const published = w.published || "";
   const nameHtml = (w.term_display || w.term || w.id)
-    ? `<a href="/term/${escapeTerm(w.term || w.id)}">${escapeHtml(w.term_display || w.term || w.id)}</a>` : "";
+    ? `<a href="${termHref(w.term || w.id)}">${escapeHtml(w.term_display || w.term || w.id)}</a>` : "";
   const originMap = { news: "📰", hf: "🤗", both: "📰🤗" };
   const originBadge = originMap[w.origin]
     ? `<span class="origin-badge">${originMap[w.origin]}</span>` : "";
   let metrics = `<span class="m-hot">🔥 <span class="num">${fmtNum(w.hot)}</span></span>`;
   if (currentSort === "rise" && w.rise != null)
-    metrics += `<span class="m-up">📈 <span class="num">${Number(w.rise).toFixed(2)}</span></span>`;
+    metrics += `<span class="m-up">📈 ${t("rise")} <span class="num">${Number(w.rise).toFixed(2)}</span></span>`;
   if (currentSort === "new" && w.novelty != null)
-    metrics += `<span class="m-up">✨ <span class="num">${Number(w.novelty).toFixed(2)}</span></span>`;
+    metrics += `<span class="m-up">✨ ${t("novelty")} <span class="num">${Number(w.novelty).toFixed(2)}</span></span>`;
   const topHtml = (w.top_news && w.top_news.length)
     ? `<div class="word-top">${w.top_news.slice(0, 3).map(n =>
         `<div class="word-top-item">
@@ -839,9 +908,14 @@ function renderWordCard(w, i) {
           ${n.hot ? `<span class="hd">🔥 ${fmtNum(n.hot)}</span>` : ""}
           ${n.source ? `<span class="src">${escapeHtml(n.source)}</span>` : ""}
         </div>`).join("")}</div>` : "";
+  const term = w.term || w.id;
+  const detailHref = termHref(term);
   const expandBtn = (w.news_cnt || 0) > (w.top_news || []).length
-    ? `<button class="word-expand-btn" data-term="${escapeHtml(w.term || w.id)}">${t("more_btn")} (${w.news_cnt || 0}) · <a class="word-detail-link" href="/term/${escapeTerm(w.term || w.id)}" onclick="event.stopPropagation()">${t("detail_link")}</a></button>`
-    : `<a class="link-btn official" href="/term/${escapeTerm(w.term || w.id)}" style="margin-top:8px">${t("detail_link")}</a>`;
+    ? `<div class="word-actions">
+         <button class="word-expand-btn" data-term="${escapeHtml(term)}"><span class="word-expand-label">${t("more_btn")} (${w.news_cnt || 0})</span></button>
+         <a class="word-detail-link" href="${detailHref}">${t("detail_link")}</a>
+       </div>`
+    : `<a class="link-btn official" href="${detailHref}" style="margin-top:8px">${t("detail_link")}</a>`;
   return `<div class="term-card" style="--cat-color:${dInfo.color}" data-wid="${escapeHtml(w.id)}">
     <div class="word-head">
       <span class="rank ${i<3?"top":""} num">${i+1}</span>
@@ -871,14 +945,15 @@ async function toggleWordExpand(term, btn) {
   // 已缓存过：直接渲染
   if (_wordDetailCache[term]) { renderWordExpand(box, _wordDetailCache[term], term); box.style.display = "block"; return; }
   btn.disabled = true;
-  const oldText = btn.textContent;
-  btn.textContent = "…";
+  const label = btn.querySelector(".word-expand-label");
+  const oldText = label ? label.textContent : "";
+  if (label) label.textContent = "…";
   const ctrl = new AbortController();
   _wordFetchCtrls[term] = ctrl;
-  const d = await fetchJSON(`/api/word/${encodeURIComponent(term)}`, ctrl.signal);
+  const d = await fetchJSON(`/api/word/${encodeURIComponent(term)}?lang=${encodeURIComponent(LANG)}`, ctrl.signal);
   delete _wordFetchCtrls[term];
   btn.disabled = false;
-  btn.textContent = oldText;
+  if (label) label.textContent = oldText;
   if (d && d.ok) {
     _wordDetailCache[term] = d;
     renderWordExpand(box, d, term);
@@ -896,7 +971,7 @@ function renderWordExpand(box, d, term) {
     </div>`;
   });
   if (!news.length) html += `<div class="word-top-item">—</div>`;
-  html += `<div class="word-top-item"><a href="/term/${escapeTerm(term)}" class="link-btn official">${t("detail_link")}</a></div></div>`;
+  html += `<div class="word-top-item"><a href="${termHref(term)}" class="link-btn official">${t("detail_link")}</a></div></div>`;
   box.innerHTML = html;
 }
 listEl.addEventListener("click", e => {
@@ -904,22 +979,22 @@ listEl.addEventListener("click", e => {
   if (b && b.dataset.term) toggleWordExpand(b.dataset.term, b);
 });
 
-function renderCard(t, i) {
-  const dim = t.dimension || (t.kind === "model" ? "模型与技术" : "其他");
+function renderCard(card, i) {
+  const dim = card.dimension || (card.kind === "model" ? "模型与技术" : "其他");
   const dInfo = dimLabel(dim);
-  const d = rankDelta(t, i);
+  const d = rankDelta(card, currentRankIndex(card));
   const deltaHtml = d === "new" ? `<span class="delta up">new</span>`
     : d ? `<span class="delta ${d>0?"up":"down"}">${d>0?"↑":"↓"}${Math.abs(d)}</span>` : "";
-  const published = t.published || t.created_at || "";
+  const published = card.published || card.created_at || "";
 
-  if (t.kind === "news") {
+  if (card.kind === "news") {
     // —— 新闻卡 ——
     return `<div class="term-card" style="--cat-color:${dInfo.color}">
       <div class="term-head">
         <span class="rank ${i<3?"top":""} num">${i+1}</span>
         <span class="cat-badge">${dInfo.icon} ${escapeHtml(dInfo.lbl)}</span>
         <span class="term-name">
-          <a href="${t.official_url}" target="_blank" rel="noopener">${escapeHtml(t.title)}</a>
+          <a href="${card.official_url}" target="_blank" rel="noopener">${escapeHtml(card.title)}</a>
         </span>
         <span class="head-right">
           ${deltaHtml}
@@ -927,29 +1002,29 @@ function renderCard(t, i) {
           ${published ? `<span>${escapeHtml(published)}</span>` : ""}
         </span>
       </div>
-      ${metricsHTML(t)}
-      ${t.summary ? `<div class="term-meta"><span>${escapeHtml(t.summary)}</span></div>` : ""}
+      ${metricsHTML(card)}
+      ${card.summary ? `<div class="term-meta"><span>${escapeHtml(card.summary)}</span></div>` : ""}
       <div class="links">
-        <a class="link-btn official" href="${t.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(t.source||t("official_default"))}</a>
+        <a class="link-btn official" href="${card.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(card.source || t("official_default"))}</a>
       </div>
     </div>`;
   }
 
   // —— 模型卡 ——
-  const tagsHtml = (t.tags||[]).slice(0, 5).map(tg => `<span class="tag">${escapeHtml(tg)}</span>`).join("");
-  const commHtml = (t.community||[]).map(c2 =>
+  const tagsHtml = (card.tags||[]).slice(0, 5).map(tg => `<span class="tag">${escapeHtml(tg)}</span>`).join("");
+  const commHtml = (card.community||[]).map(c2 =>
     `<a class="link-btn" href="${c2.url}" target="_blank" rel="noopener">💬 ${escapeHtml(c2.site)}</a>`).join("");
-  const papersHtml = (t.papers && t.papers.length) ? `
+  const papersHtml = (card.papers && card.papers.length) ? `
     <div class="papers">
-      <div class="papers-title">📄 相关论文（arXiv）</div>
-      ${t.papers.map(p => `<div class="paper"><a href="${p.url}" target="_blank" rel="noopener">${escapeHtml(p.title)}</a><span class="pm">${escapeHtml(p.published||"")}</span></div>`).join("")}
+      <div class="papers-title">📄 ${t("papers")}</div>
+      ${card.papers.map(p => `<div class="paper"><a href="${p.url}" target="_blank" rel="noopener">${escapeHtml(p.title)}</a><span class="pm">${escapeHtml(p.published||"")}</span></div>`).join("")}
     </div>` : "";
   return `<div class="term-card" style="--cat-color:${dInfo.color}">
     <div class="term-head">
       <span class="rank ${i<3?"top":""} num">${i+1}</span>
       <span class="cat-badge">${dInfo.icon} ${escapeHtml(dInfo.lbl)}</span>
       <span class="term-name">
-        ${t.author ? `<span class="author">${escapeHtml(t.author)} / </span>` : ""}<a href="${t.official_url}" target="_blank" rel="noopener">${escapeHtml(t.term)}</a>
+        ${card.author ? `<span class="author">${escapeHtml(card.author)} / </span>` : ""}<a href="${card.official_url}" target="_blank" rel="noopener">${escapeHtml(card.term)}</a>
       </span>
       <span class="head-right">
         ${deltaHtml}
@@ -957,10 +1032,10 @@ function renderCard(t, i) {
         <span>${relTime(published)}</span>
       </span>
     </div>
-    ${metricsHTML(t)}
+    ${metricsHTML(card)}
     ${tagsHtml ? `<div class="tags">${tagsHtml}</div>` : ""}
     <div class="links">
-      <a class="link-btn official" href="${t.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(t.official_label||"官方")}</a>
+      <a class="link-btn official" href="${card.official_url}" target="_blank" rel="noopener">🔗 ${escapeHtml(card.official_label || t("official_default"))}</a>
       ${commHtml}
     </div>
     ${papersHtml}
@@ -981,21 +1056,15 @@ function visibleData() {
     let items = allData;
     // words 视图分类过滤：成员资格（词跨领域，涉及任一选中的领域即入选）
     if (currentCat !== "all") items = items.filter(t =>
-      (Array.isArray(t.dims) && t.dims.length ? t.dims : [t.dimension || "其他"]).includes(currentCat));
-    // 词视图排序键：rise→rise, hot→score(兼容), new→novelty（新奇度）
-    const key = { rise: "rise", hot: "score", new: "novelty" }[currentSort] || "score";
-    return [...items].sort((a, b) => (Number(b[key])||0) - (Number(a[key])||0));
+      [...new Set((Array.isArray(t.dims) && t.dims.length ? t.dims : [t.dimension || "其他"])
+        .map(d => String(d || "其他")))].includes(currentCat));
+    // 排序已由 /api/stream 在截断前完成；这里仅过滤，保持服务端顺序。
+    return items;
   }
   let items = allData;
   if (currentCat !== "all") items = items.filter(t => (t.dimension || "其他") === currentCat);
-  // v2: 首页不再做 query 过滤——搜索已独立为 /search 页面，避免「混合过滤器」体验。
-  // 统一排序键：rise→trend, hot→score, new→published
-  const key = { rise: "trend", hot: "score", new: "published" }[currentSort];
-  return [...items].sort((a, b) => {
-    const va = a[key], vb = b[key];
-    if (key === "published") return String(vb||"").localeCompare(String(va||""));
-    return (Number(vb)||0) - (Number(va)||0);
-  });
+  // news 视图同样直接保留 /api/stream 的稳定排序。
+  return items;
 }
 
 function render() {
@@ -1035,7 +1104,8 @@ function render() {
   if (useAdsInline) {
     for (let k = 0; k < adsInlineCount; k++) fillAdsSlot(`ads-inline-${k}`, "inline");
   }
-  saveRanks(items);
+  // 保存整份服务端排序结果；分类页的局部序号不能污染全榜排名基线。
+  saveRanks(allData);
 }
 
 // ==================== 数据拉取：统一卡片流（/api/stream） ====================
@@ -1057,73 +1127,73 @@ async function fetchJSON(url, signal) {
 
 let fetching = false;
 let _fetchCtrl = null;        // 当前 /api/stream 请求的 AbortController，切语言/排序时 abort 旧请求
+let _fetchSeq = 0;             // 只允许最新请求写回 allData，避免旧语言/视图响应回写
 // 后台为定时更新（非实时），不再显示「更新于」时间，避免「实时更新」误导（issue 4）。
 // _lastFetchedAt 仅内部缓存，不渲染到 DOM。
 let _lastFetchedAt = 0;
-async function fetchAll() {
-  // 切语言/排序时若上一次请求仍在飞，abort 它并立即发起新请求——
-  // 否则首次加载 /api/stream 慢（公网 1-3s）期间用户切语言会被旧 fetch 占住
-  // fetching 锁，allData 停留在 SSR 18 条，要切两次语言才显示全量（issue 1）。
+function readInitialTerms() {
+  try {
+    const el = document.getElementById("initial-terms-data");
+    const raw = el && el.textContent.trim();
+    const data = raw ? JSON.parse(raw) : [];
+    return uniqueCards(data);
+  } catch (e) { return []; }
+}
+async function fetchAll({ initial = false } = {}) {
+  // 切语言/排序/视图时 abort 旧请求；序号检查还可防止旧响应在 abort 竞态中回写。
+  const seq = ++_fetchSeq;
   if (_fetchCtrl) { try { _fetchCtrl.abort(); } catch (e) {} }
   fetching = true;
-  _fetchCtrl = new AbortController();
-
-  // 首屏：优先用 SSR 注入的数据立即渲染，避免空骨架闪烁。
-  // 但 SSR 只注入少量首屏卡（SSR_INITIAL_LIMIT），内容池远小于 /api/stream，
-  // 若就此 return，rise/hot/new 三个 tab 只会在小池里排序，内容几乎一样、数量少。
-  // 故：SSR 仅做即时渲染，随后立即异步拉取 /api/stream 全量数据替换。
-  const hadSSR = !allData.length;
-  if (hadSSR) {
-    try {
-      const raw = document.getElementById("initial-terms-data").textContent.trim();
-      if (raw) {
-        const ssr = JSON.parse(raw);
-        if (Array.isArray(ssr) && ssr.length) {
-          allData = ssr;
-          if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
-          render();
-        }
+  const ctrl = new AbortController();
+  _fetchCtrl = ctrl;
+  const hadSSR = initial && currentView === "words" && currentCat === "all";
+  try {
+    // SSR 只作为同一排序结果的临时前缀；它不参与其他排序，也不会在切换后重复注入。
+    if (hadSSR) {
+      const ssr = readInitialTerms();
+      if (ssr.length) {
+        setAllData(ssr);
+        if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
       }
-    } catch (e) {}
-    if (!allData.length) listEl.innerHTML = skeletonHTML();
-  }
-  // SSR 注入的是词卡，但用户已切到 news 视图 → 立即拉 news 全量，避免用词卡渲染新闻视图
-  if (hadSSR && currentView === "news") {
-    allData = [];
-    listEl.innerHTML = skeletonHTML();
-  }
+      render();
+    } else if (!allData.length) {
+      render();
+    }
 
-  // 无论是否命中 SSR，都拉取全量 /api/stream 替换首屏小池，
-  // 保证 rise/hot/new 有足够大的内容池产生区分度，且数量稳定。
-  // view 参数：words=热词卡（默认）/ news=逐条新闻。后端按 view 返回不同 terms。
-  const d = await fetchJSON(`/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}&view=${currentView}`, _fetchCtrl.signal);
+    const d = await fetchJSON(
+      `/api/stream?lang=${encodeURIComponent(LANG)}&sort=${currentSort}&view=${currentView}`,
+      ctrl.signal);
+    if (seq !== _fetchSeq) return;
 
-  let terms = null;
-  if (d && d.ok !== false && Array.isArray(d.terms)) {
-    terms = d.terms;
-    if (d.dimension_list) dimensionList = d.dimension_list;
-    if (demoPill) demoPill.style.display = "none";
-  } else if (!hadSSR) {
-    // 非 SSR 首屏且后端未就绪 → Mock 回退
-    terms = MOCK_DATA().terms;
-    if (demoPill) demoPill.style.display = "inline-flex";
+    let terms = null;
+    if (d && d.ok !== false && Array.isArray(d.terms)) {
+      terms = d.terms;
+      if (Array.isArray(d.dimension_list)) dimensionList = d.dimension_list;
+      if (demoPill) demoPill.style.display = "none";
+    } else if (!hadSSR) {
+      // 非 SSR 首屏且后端未就绪 → Mock 回退
+      terms = MOCK_DATA().terms;
+      if (demoPill) demoPill.style.display = "inline-flex";
+    }
+    // SSR 命中但 /api/stream 失败：保留 SSR 数据，不回退 Mock。
+    if (terms) {
+      setAllData(terms);
+      render();
+    }
+    // 后台定时更新，不向前端展示更新时间（issue 4）。
+    if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
+  } finally {
+    if (seq === _fetchSeq) {
+      fetching = false;
+      _fetchCtrl = null;
+    }
   }
-  // SSR 命中但 /api/stream 失败：保留 SSR 数据，不回退 Mock
-
-  if (terms) {
-    allData = terms;
-    render();
-  }
-  // 后台定时更新，不向前端展示更新时间（issue 4）。
-  if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
-  fetching = false;
-  _fetchCtrl = null;
 }
 
 renderTopBanner();
 renderFooterSponsor();
 applyLang();          // 首屏按 LANG 本地化静态文案 + 设 <html lang> + 语言按钮 label
-fetchAll();
+fetchAll({ initial: true });
 // 后端底层 6 小时预热一次榜单数据，前端对齐该节奏，避免无意义轮询拿到相同数据
 setInterval(fetchAll, 6 * 60 * 60 * 1000);
 
@@ -1180,6 +1250,20 @@ function MOCK_DATA() {
      community:[{site:"知乎",url:"https://www.zhihu.com/search?q=FLUX.1"},{site:"B站",url:"https://search.bilibili.com/all?keyword=FLUX.1"},{site:"GitHub",url:"https://github.com/search?q=FLUX.1"}],
      papers:[]},
   ];
+  // Mock 也遵守真实 stream 的“服务端排序后再交付”约定，避免后端暂未就绪
+  // 时切换排序又在前端临时重排一遍。
+  const key = currentView === "words"
+    ? ({ rise: "rise", hot: "score", new: "novelty" }[currentSort] || "score")
+    : ({ rise: "trend", hot: "score", new: "published" }[currentSort] || "trend");
+  base.sort((a, b) => {
+    const ia = cardIdentity(a) || "", ib = cardIdentity(b) || "";
+    if (key === "published") {
+      const d = String(b.published || "").localeCompare(String(a.published || ""));
+      return d || ia.localeCompare(ib);
+    }
+    const d = (Number(b[key]) || 0) - (Number(a[key]) || 0);
+    return d || ia.localeCompare(ib);
+  });
   return { ok: true, count: base.length, terms: base };
 }
 </script>

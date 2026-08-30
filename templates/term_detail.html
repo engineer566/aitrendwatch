@@ -1,5 +1,6 @@
+{% set is_en = lang == 'en' %}
 <!DOCTYPE html>
-<html lang="{% if lang == 'en' %}en{% else %}zh-CN{% endif %}">
+<html lang="{{ 'en' if is_en else 'zh-CN' }}">
 <head>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
@@ -154,7 +155,7 @@
   "@type": "DefinedTerm",
   "name": {{ (word.term.term or '') | tojson }},
   "description": {{ (site_desc or '') | tojson }},
-  {% if word.term.news_cnt %}"usageInfo": "{{ word.term.news_cnt }} related reports aggregated",{% endif %}
+  {% if word.term.news_cnt %}"usageInfo": "{{ word.term.news_cnt }} {{ 'related reports aggregated' if is_en else '篇相关报道' }}",{% endif %}
   "url": {{ (canonical or '') | tojson }}
 }
 </script>
@@ -163,13 +164,13 @@
 {
   "@context": "https://schema.org",
   "@type": "ItemList",
-  "name": "Reports about {{ (word.term.term or '') | tojson }}",
+  "name": {{ (('Reports about ' ~ (word.term.term or '')) if is_en else ('关于' ~ (word.term.term or '') ~ '的报道')) | tojson }},
   "itemListElement": [
     {% for n in word.news[:20] %}
     {
       "@type": "ListItem",
       "position": {{ loop.index }},
-      "name": {{ (n.title_zh or n.title_en or n.title or '') | tojson }},
+      "name": {{ (n.title or n.title_en or n.title_zh or '') | tojson }},
       "url": {{ (n.official_url or '') | tojson }},
       {% if n.published %}"datePublished": {{ n.published | tojson }},{% endif %}
       "author": { "@type": "Organization", "name": {{ (n.source or '') | tojson }} }
@@ -212,9 +213,10 @@
 <body>
 <header>
   <div class="header-inner">
-    <h1>🤖 <a href="/">{{ site_name }}</a></h1>
+    <h1>🤖 <a href="{{ home_url }}">{{ site_name }}</a></h1>
     <div class="header-right">
-      <a class="btn" href="/">← {% if lang == 'en' %}Home{% else %}返回首页{% endif %}</a>
+      <a class="btn" href="{{ home_url }}">← {% if is_en %}Home{% else %}返回首页{% endif %}</a>
+      <a class="btn" href="{{ lang_toggle_url }}">{{ lang_toggle_label }}</a>
     </div>
   </div>
 </header>
@@ -222,25 +224,25 @@
 <main>
 <div class="word-card">
   <div class="term-head">
-    <span class="cat-badge">{% if word.hf %}{% if word.legacy_hf %}🤗 HF 模型{% else %}🧠 / 🤗{% endif %}{% else %}🔤 热词{% endif %}</span>
+    <span class="cat-badge">{% if word.hf %}{% if word.legacy_hf %}🤗 {% if is_en %}HF Model{% else %}HF 模型{% endif %}{% else %}🧠 / 🤗{% endif %}{% else %}🔤 {% if is_en %}Word{% else %}热词{% endif %}{% endif %}</span>
     <span class="term-name">
-      {% if lang == 'zh' and word.term.display_zh %}<span class="zh">{{ word.term.display_zh }}</span>{% if word.term.term and word.term.display_zh != word.term.term %}（<a href="{{ word.hf.official_url or '/' }}">{{ word.term.term }}</a>）{% endif %}
-      {% else %}<a href="{{ word.hf.official_url or '/' }}" target="_blank" rel="noopener">{{ word.term.term }}</a>{% endif %}
+      {% if lang == 'zh' and word.term.display_zh %}<span class="zh">{{ word.term.display_zh }}</span>{% if word.term.term and word.term.display_zh != word.term.term %}（<a href="{{ word.hf.official_url or home_url }}">{{ word.term.term }}</a>）{% endif %}
+      {% else %}<a href="{{ word.hf.official_url or home_url }}" target="_blank" rel="noopener">{{ word.term.term }}</a>{% endif %}
     </span>
     {% if word.term.origin == 'hf' %}<span class="origin-badge">🤗 HuggingFace</span>{% elif word.term.origin == 'both' %}<span class="origin-badge">📰 + 🤗</span>{% endif %}
   </div>
   {% if word.term.hot or word.term.rise or word.term.news_cnt %}
   <div class="term-meta">
-    {% if word.term.hot %}<span class="m-hot">🔥 {% if lang == 'en' %}Hotness{% else %}热度{% endif %} <span class="num">{{ word.term.hot }}</span></span>{% endif %}
-    {% if word.term.rise != none %}<span class="m-up">📈 {% if lang == 'en' %}Rise{% else %}上升{% endif %} <span class="num">{{ '%.2f' | format(word.term.rise) }}</span></span>{% endif %}
-    {% if word.term.news_cnt %}<span>📄 <span class="num">{{ word.term.news_cnt }}</span> {% if lang == 'en' %}reports{% else %}篇报道{% endif %}</span>{% endif %}
-    {% if word.term.first_seen_at %}<span>🗓 {% if lang == 'en' %}First seen{% else %}首次出现{% endif %} {{ word.term.first_seen_at[:10] }}</span>{% endif %}
+    {% if word.term.hot %}<span class="m-hot">🔥 {% if is_en %}Hotness{% else %}热度{% endif %} <span class="num">{{ word.term.hot }}</span></span>{% endif %}
+    {% if word.term.rise != none %}<span class="m-up">📈 {% if is_en %}Rise{% else %}上升{% endif %} <span class="num">{{ '%.2f' | format(word.term.rise) }}</span></span>{% endif %}
+    {% if word.term.news_cnt %}<span>📄 <span class="num">{{ word.term.news_cnt }}</span> {% if is_en %}reports{% else %}篇报道{% endif %}</span>{% endif %}
+    {% if word.term.first_seen_at %}<span>🗓 {% if is_en %}First seen{% else %}首次出现{% endif %} {{ word.term.first_seen_at[:10] }}</span>{% endif %}
   </div>
   {% endif %}
 
   {% if word.hf %}
   <div class="term-meta">
-    {% if word.hf.trending_score != none %}<span class="m-up">📈 Trend <span class="num">{{ word.hf.trending_score }}</span></span>{% endif %}
+    {% if word.hf.trending_score != none %}<span class="m-up">📈 {{ 'Trend' if is_en else '趋势' }} <span class="num">{{ word.hf.trending_score }}</span></span>{% endif %}
     {% if word.hf.likes != none %}<span class="m-hot">❤ <span class="num">{{ word.hf.likes }}</span></span>{% endif %}
     {% if word.hf.downloads != none %}<span>↓ <span class="num">{{ word.hf.downloads }}</span></span>{% endif %}
   </div>
@@ -255,7 +257,7 @@
   </div>
   {% if word.hf_detail.papers %}
   <div class="papers">
-    <div class="papers-title">📄 {% if lang == 'en' %}Related papers (arXiv){% else %}相关论文（arXiv）{% endif %}</div>
+    <div class="papers-title">📄 {% if is_en %}Related papers (arXiv){% else %}相关论文（arXiv）{% endif %}</div>
     {% for p in word.hf_detail.papers %}
     <div class="paper">
       <a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a><span class="pm">{{ p.published or '' }}</span>
@@ -268,11 +270,11 @@
 </div>
 
 {% if word.news %}
-<div class="section-title">🗞 {% if lang == 'en' %}Related reports{% else %}相关报道{% endif %}（{{ word.news | length }}）</div>
+<div class="section-title">🗞 {% if is_en %}Related reports{% else %}相关报道{% endif %}（{{ word.news | length }}）</div>
 <div class="word-card news-list">
   {% for n in word.news %}
   <div class="news-item">
-    <a href="{{ n.official_url }}" target="_blank" rel="noopener">{% if lang == 'zh' %}{{ n.title_zh or n.title_en or n.title }}{% else %}{{ n.title_en or n.title_zh or n.title }}{% endif %}</a>
+    <a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title or n.title_en or n.title_zh }}</a>
     {% if n.hot %}<span class="hd">🔥 {{ n.hot }}</span>{% endif %}
     {% if n.source %}<span class="src">{{ n.source }}</span>{% endif %}
     {% if n.published %}<span class="pm">{{ n.published }}</span>{% endif %}
@@ -282,13 +284,17 @@
 </div>
 {% endif %}
 
-<div class="back-link"><a class="btn" href="/">← {% if lang == 'en' %}More AI trends{% else %}查看更多 AI 热点{% endif %}</a></div>
+<div class="back-link"><a class="btn" href="{{ home_url }}">← {% if is_en %}More AI trends{% else %}查看更多 AI 热点{% endif %}</a></div>
 </main>
 
 <footer>
-  {# 词维度聚合：热词=新闻关键词（DeepSeek 抽取 / 词典匹配）+ HuggingFace 模型榜归并。#}
+  {% if is_en %}
+  {{ site_name }} · AI trend aggregation: models / products / papers / funding / policy<br>
+  Programmatic aggregation; links point to original sources
+  {% else %}
   {{ site_name }} · AI 热词聚合：模型 / 产品 / 论文 / 投融资 / 政策<br>
   纯程序聚合，链接均指向官方原文
+  {% endif %}
 </footer>
 </body>
 </html>

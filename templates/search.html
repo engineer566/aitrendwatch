@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ lang }}">
+<html lang="{{ 'en' if lang == 'en' else 'zh-CN' }}">
 <head>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
@@ -14,7 +14,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>{% if q %}搜索「{{ q }}」·{% endif %} {{ site_name }}</title>
+<title>{% if q %}{{ 'Search «' if lang == 'en' else '搜索「' }}{{ q }}{{ '» ·' if lang == 'en' else '」·' }}{% endif %} {{ site_name }}</title>
 <script>
 // 主题初始化须在 CSS 生效前执行，避免闪烁
 (function () {
@@ -222,7 +222,7 @@
 <body>
 <header>
   <div class="header-inner">
-    <a href="/" style="text-decoration:none;color:inherit">
+    <a href="{{ home_url }}" style="text-decoration:none;color:inherit">
       <h1>🤖 {{ site_name }}</h1>
     </a>
     <div class="search-box" id="search-box">
@@ -230,13 +230,14 @@
       <input id="search-input" type="text"
              placeholder="{{ '搜索热点 / 作者…' if lang == 'zh' else 'Search trends / authors…' }}"
              value="{{ q }}" autocomplete="off"
-             aria-label="搜索">
-      {% if q %}<kbd id="clear-btn" title="清空">✕</kbd>{% endif %}
+             aria-label="{{ 'Search' if lang == 'en' else '搜索' }}">
+      {% if q %}<kbd id="clear-btn" title="{{ 'Clear' if lang == 'en' else '清空' }}">✕</kbd>{% endif %}
       <div class="suggest" id="suggest"></div>
     </div>
     <div class="header-right">
-      <a class="btn" href="/">{{ '首页' if lang == 'zh' else 'Home' }}</a>
-      <button class="btn" id="theme-btn" title="切换深浅色">🌙</button>
+      <a class="btn" href="{{ home_url }}">{{ '首页' if lang == 'zh' else 'Home' }}</a>
+      <a class="btn" href="{{ lang_toggle_url }}">{{ lang_toggle_label }}</a>
+      <button class="btn" id="theme-btn" title="{{ 'Toggle theme' if lang == 'en' else '切换深浅色' }}">🌙</button>
     </div>
   </div>
 </header>
@@ -270,7 +271,7 @@
           <span class="result-score">{{ '相关度' if lang == 'zh' else 'score' }} {{ "%.1f"|format(wh._score) }}</span>
         </div>
         <div class="result-title">
-          <a href="/term/{{ wh.id }}" data-q="{{ q }}" data-url="/term/{{ wh.id }}">
+          <a href="/term/{{ wh.id|urlencode }}?lang={{ lang }}" data-q="{{ q }}" data-url="/term/{{ wh.id|urlencode }}?lang={{ lang }}">
             {% if wh._highlight_term %}{{ wh._highlight_term|safe }}{% else %}{{ wname }}{% endif %}
           </a>
         </div>
@@ -299,7 +300,7 @@
           {% if t._matched_fields %}
             <span class="match-tags">
               {% for f in t._matched_fields[:3] %}
-                <span class="match-tag">{{ {'title':'标题','title_zh':'标题','title_en':'标题','term':'模型名','summary':'摘要','summary_zh':'摘要','summary_en':'摘要','source':'来源','author':'作者'}.get(f, f) }}</span>
+                <span class="match-tag">{{ ({'title':'Title','title_zh':'Title','title_en':'Title','term':'Model name','summary':'Summary','summary_zh':'Summary','summary_en':'Summary','source':'Source','author':'Author'} if lang == 'en' else {'title':'标题','title_zh':'标题','title_en':'标题','term':'模型名','summary':'摘要','summary_zh':'摘要','summary_en':'摘要','source':'来源','author':'作者'}).get(f, f) }}</span>
               {% endfor %}
             </span>
           {% endif %}

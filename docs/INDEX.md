@@ -1,7 +1,7 @@
 # aitrendwatch 代码索引（Agent 入口）
 
 > **Agent 进场第一份文件。** 读这里定位目标，按需精读单文件，避免全量扫描。
-> 本索引基于 dev 分支（release 1.1.0, 2026-08）代码实读生成，行号真实可跳。
+> 本索引基于 dev 分支（release 1.2.0, 2026-08）代码实读生成，行号真实可跳。
 
 ## 项目一句话定位
 
@@ -11,32 +11,38 @@ AI 热点聚合单页应用：Flask 后端聚合 17 个 RSS 源 + HuggingFace �
 
 ```
 aitrendwatch/
-├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源（1300 行）
+├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源（1353 行）
 ├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链（126 行）
-├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词（1266 行）
+├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词（1289 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
-├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填（911 行，新增）
+├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填（1096 行，新增）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（474 行）
-├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列）（335 行）
+├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列）（350 行）
+├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
+├── text_utils.py   # RSS 文本/URL HTML entity 解码（78 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
-├── VERSION         # 版本号单一真相源（1.1.0）
-├── templates/      # 6 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1192 行：词卡/逐条新闻双视图，JS fetch + i18n）
+├── VERSION         # 版本号单一真相源（1.2.0）
+├── templates/      # 7 个 Jinja2 模板
+│   ├── index.html         # 首页主单页（1276 行：词卡/逐条新闻双视图，JS fetch + i18n）
 │   ├── terms.html         # 服务条款页（363 行）
-│   ├── term_detail.html   # 通用热词聚合页（293 行：相关报道聚合 + HF 区块）
-│   ├── search.html        # 搜索结果页（496 行：含热词命中卡区）
+│   ├── term_detail.html   # 通用热词聚合页（300 行：相关报道聚合 + HF 区块）
+│   ├── search.html        # 搜索结果页（498 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（345 行）
 │   ├── admin_login.html   # 管理员登录（60 行）
 │   └── monitor.html       # 流量监控页（390 行）
 ├── data/           # SQLite 库（sponsors.db, news.db）+ GeoLite2（运行产物，.gitkeep 占位）
 ├── cache/          # 文件缓存产物（terms.json, dims.json, words.json + .refresh.lock）
 ├── history/        # 开发任务备忘（非代码）
-├── docs/           # 本索引
+├── docs/           # 代码索引 + Codex 项目记忆
+│   ├── PROJECT_MEMORY.md # 迁移来的项目记忆索引
+│   └── memory/           # 5 条按主题拆分的记忆条目
 ├── vendor/         # ⚠️ vendored 依赖（flask/gunicorn/requests…），勿索引勿读
 ├── requirements.txt
 ├── Dockerfile / docker-compose.yml / docker-compose.prod.yml
 ├── .env.example    # 环境变量样板
-└── CLAUDE.md       # 项目 agent 守则
+├── AGENTS.md       # Codex 项目 agent 守则（自动入口）
+├── CLAUDE.md       # 原 Claude 项目守则（迁移凭据）
+└── CLAUDE_MEMORY_EXPORT.md # 原 Claude 记忆导出（迁移凭据）
 ```
 
 **⚠️ `vendor/`（~13 万行）是 pip 安装的第三方库源码，非本项目代码。任何 agent 不应读、不应索引、不应改。**
@@ -51,13 +57,15 @@ aitrendwatch/
 
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
-| `app.py` | 1300 | Flask 入口、路由、8 直连源抓取、词详情装配 | 37 个路由 view 函数 + `_word_detail` | tracker, dims, terms, config, store |
+| `app.py` | 1353 | Flask 入口、路由、8 直连源抓取、词详情装配 | 37 个路由 view 函数 + `_word_detail` | tracker, dims, terms, config, store, stream_utils |
 | `config.py` | 126 | 配置集中地 + LLM 故障转移链 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint` | os |
-| `dims.py` | 1266 | RSS 事件层 + LLM 故障转移链打标/抽词 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch` | config, requests, terms |
+| `dims.py` | 1289 | RSS 事件层 + LLM 故障转移链打标/抽词 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
-| `terms.py` | 911 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store |
+| `terms.py` | 1096 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
 | `store.py` | 474 | 赞助位/统计/GeoIP SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country` | config, sqlite3 |
-| `news_store.py` | 335 | 事件卡历史库 SQLite（含 keywords 列） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3 |
+| `news_store.py` | 350 | 事件卡历史库 SQLite（含 keywords 列） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
+| `stream_utils.py` | 70 | 统一信息流卡片身份、去重、维度成员与计数 | `card_identity`, `dedupe_cards`, `dimension_members`, `dimension_counts`, `dimension_list` | — |
+| `text_utils.py` | 78 | 文本有界双层解码、URL 单层解码与危险 scheme 拦截 | `decode_html_entities`, `decode_url_entities` | — |
 | `version.py` | 23 | 版本号 | `__version__` | pathlib |
 
 ## 按任务跳转表
@@ -78,13 +86,13 @@ aitrendwatch/
 
 - [architecture.md](index/architecture.md) — 模块依赖图、请求生命周期、后台预热、缓存层级
 - [api_routes.md](index/api_routes.md) — 37 条路由全表（路径/方法/函数/行号/分组）
-- [modules.md](index/modules.md) — 6 个 Python 模块函数索引（签名/行号/职责/分区）
-- [frontend.md](index/frontend.md) — 6 个模板索引（用途/区块/行号/API 引用）
+- [modules.md](index/modules.md) — 9 个 Python 模块函数索引（签名/行号/职责/分区）
+- [frontend.md](index/frontend.md) — 7 个模板索引（用途/区块/行号/API 引用）
 - [data_flow.md](index/data_flow.md) — 外部数据源、SQLite schema、缓存产物、环境变量
 
 ## Agent 使用约定
 
-1. **进场先读本文件**，用「模块速查表」+「按任务跳转表」定位，再精读单文件。
+1. **进场先读根目录 `AGENTS.md` 和本文件**，再读 `PROJECT_MEMORY.md` 索引；用「模块速查表」+「按任务跳转表」定位，再精读单文件。
 2. 行号锚点格式 `file.py:行号`，可直接跳读对应源码段。
 3. `vendor/`、`cache/`、`data/`、`__pycache__/` 永远不读——分别是依赖源码、运行缓存、运行数据、字节码。
 4. 索引与代码可能随开发漂移；改动代码后顺手更新对应索引条目（保持行号同步）。

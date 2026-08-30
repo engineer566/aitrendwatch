@@ -36,6 +36,7 @@ import requests
 
 from config import (CACHE_DIR, LLM_CHAIN, LLM_FAILOVER_THRESHOLD, llm_endpoint,
                     DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
+from text_utils import decode_html_entities, decode_url_entities
 
 try:
     import news_store  # 历史持久化（issue 6）；失败不阻塞，get_news_cards 自动降级
@@ -263,8 +264,11 @@ def _parse_rss(xml_text, src):
             link_m = re.search(r"<link>(.*?)</link>", b, re.S)
             pub_m = re.search(r"<pubDate>(.*?)</pubDate>", b, re.S)
 
-        title = re.sub(r"\s+", " ", _strip_cdata(title_m.group(1))).strip() if title_m else ""
-        url = link_m.group(1).strip() if link_m else ""
+        title = (re.sub(r"\s+", " ", decode_html_entities(
+            _strip_cdata(title_m.group(1)))).strip() if title_m else "")
+        # XML escapes are required for query-string ampersands.  Decode only
+        # this URL layer; text titles use the bounded double-decoder above.
+        url = decode_url_entities(link_m.group(1).strip()) if link_m else ""
         if not title or not url:
             continue
         # arXiv link 常带 #abs=... 后缀，去掉
@@ -277,7 +281,8 @@ def _parse_rss(xml_text, src):
             src_name_m = re.search(r"\s-\s([^\-]+)$", title)
             media_name = src_name_m.group(1).strip() if src_name_m else ""
             src_tag_m = re.search(r'<source[^>]*url="([^"]+)"', b, re.S)
-            media_domain = src_tag_m.group(1).strip() if src_tag_m else ""
+            media_domain = (decode_url_entities(src_tag_m.group(1).strip())
+                            if src_tag_m else "")
             # 去掉标题里的 " - 媒体名" 后缀
             if media_name and title.endswith(" - " + media_name):
                 title = title[: -(len(media_name) + 3)].strip()
@@ -872,11 +877,12 @@ def _llm_classify_batch(batch):
         it["dimension"] = dim
 
         native = it.get("lang", "en")
-        orig = it["title"]
+        orig = decode_html_entities(it["title"])
+        it["title"] = orig
         # 标题 slot：原生语言强制用 RSS 原标题（LLM 不改写原生标题，避免被加注释/截断）；
         # 外文语言取 LLM 翻译，缺失才回退原标题（保底不崩）。
-        t_zh = (p.get("title_zh") or "").strip()
-        t_en = (p.get("title_en") or "").strip()
+        t_zh = decode_html_entities(p.get("title_zh") or "").strip()
+        t_en = decode_html_entities(p.get("title_en") or "").strip()
         if native == "zh":
             t_zh = orig
             t_en = _strip_llm_title_suffix(t_en) or orig
@@ -887,8 +893,8 @@ def _llm_classify_batch(batch):
         it["title_en"] = t_en[:200]
 
         # 摘要 slot：原生 LLM 概括（空/废话→原标题前30字），外文取翻译（缺失→回退另一语摘要）
-        s_zh = (p.get("summary_zh") or "").strip()
-        s_en = (p.get("summary_en") or "").strip()
+        s_zh = decode_html_entities(p.get("summary_zh") or "").strip()
+        s_en = decode_html_entities(p.get("summary_en") or "").strip()
         if native == "zh":
             s_zh = s_zh if s_zh not in BAD else orig[:30]
             s_en = s_en if s_en not in BAD else s_zh
@@ -919,6 +925,11 @@ def enrich_with_llm(items):
     为减少单批整体失败（网络抖动导致 12 条全降级），每批内分两个子批
     （6 条一组）分别调 LLM；子批失败仅该子批降级，不影响另一半。
     """
+    # Normalize before the LLM attempt so the no-key/error fallback cannot
+    # re-persist the legacy encoded title unchanged.
+    for it in items:
+        it["title"] = decode_html_entities(it.get("title") or "")
+
     SUB = max(1, LLM_BATCH // 2)  # 子批大小（默认 6）
     for start in range(0, len(items), LLM_BATCH):
         batch = items[start:start + LLM_BATCH]
@@ -943,16 +954,17 @@ def enrich_with_llm(items):
 # ---------- 顶层聚合 ----------
 def _to_card(it):
     """事件卡 → 前端维度热词卡（携带中英双 slot，投影在 get_dims 按 lang 取）。"""
+    title = decode_html_entities(it.get("title") or "")
     c = {
-        "title":      it.get("title"),           # 原生标题（HN 排序用 + 向后兼容）
-        "title_zh":   it.get("title_zh", it.get("title", "")),
-        "title_en":   it.get("title_en", it.get("title", "")),
-        "summary_zh": it.get("summary_zh", ""),
-        "summary_en": it.get("summary_en", ""),
+        "title":      title,                      # 原生标题（HN 排序用 + 向后兼容）
+        "title_zh":   decode_html_entities(it.get("title_zh") or title),
+        "title_en":   decode_html_entities(it.get("title_en") or title),
+        "summary_zh": decode_html_entities(it.get("summary_zh") or ""),
+        "summary_en": decode_html_entities(it.get("summary_en") or ""),
         "dimension":  it["dimension"],
-        "official_url": it["url"],            # RSS 原文链接，直指官方
-        "source":     it["source"],
-        "region":     it["region"],
+        "official_url": decode_url_entities(it["url"]),  # RSS 原文链接，直指官方
+        "source":     decode_html_entities(it["source"]),
+        "region":     decode_html_entities(it["region"]),
         "published":  it["published"],
         "hn_points":  it.get("hn_points", 0),
         "reddit_score":    it.get("reddit_score", 0),
@@ -1020,13 +1032,24 @@ def _project_card(c, lang):
 
     前端契约不变（读 t.title / t.summary）；投影在这里做，前端无需重算字段。
     """
+    # Read-side compatibility for old dims.json/news.db rows.  Keep the
+    # normalized fields plain text; templates must continue to escape them.
+    normalized = dict(c)
+    for field in ("title", "title_zh", "title_en", "summary",
+                  "summary_zh", "summary_en", "source", "region",
+                  "official_label"):
+        if field in normalized:
+            normalized[field] = decode_html_entities(normalized[field])
+    if "official_url" in normalized:
+        normalized["official_url"] = decode_url_entities(normalized["official_url"])
+
     if lang == "en":
-        title = c.get("title_en") or c.get("title") or ""
-        summary = c.get("summary_en") or c.get("summary_zh") or ""
+        title = normalized.get("title_en") or normalized.get("title") or ""
+        summary = normalized.get("summary_en") or normalized.get("summary_zh") or ""
     else:  # zh
-        title = c.get("title_zh") or c.get("title") or ""
-        summary = c.get("summary_zh") or c.get("summary_en") or ""
-    return {**c, "title": title, "summary": summary}
+        title = normalized.get("title_zh") or normalized.get("title") or ""
+        summary = normalized.get("summary_zh") or normalized.get("summary_en") or ""
+    return {**normalized, "title": title, "summary": summary}
 
 
 def get_dims(dimension=None, lang="zh"):
