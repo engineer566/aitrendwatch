@@ -878,12 +878,16 @@ def _llm_classify_batch(batch):
         if not m:
             raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
         parsed = json.loads(m.group(0))
-    except _LLMAccountRateLimit:
+    except _LLMAccountRateLimit as e:
         # 账户级限流：跳过当前 provider 剩余档位（同 key 全档受限），
         # 本批降级，下一批直接用下一个 provider。
+        print(f"[dims][llm] 批次失败(账户级限流): {e}", flush=True)
         _llm_skip_provider()
         raise
-    except Exception:
+    except Exception as e:
+        # 记录具体错误（含 provider 错误码/HTTP 状态，如 1302/1305/429），
+        # 供排查「翻译覆盖」问题时核对真实失败原因。
+        print(f"[dims][llm] 批次失败: {type(e).__name__}: {e}", flush=True)
         _llm_failure()
         raise
     _llm_success()
