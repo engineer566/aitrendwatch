@@ -1055,6 +1055,52 @@ def enrich_with_llm(items):
     return items
 
 
+def _translate_terms(chinese_terms):
+    """中文热词 → 英文展示名（供 terms.refresh_words 的 term_translator 回调）。
+
+    批量走当前 LLM 档（含故障转移链）；失败降级返回空映射（英文页回退中文）。
+    只用于词展示名，不影响新闻翻译与维度打标。
+    """
+    if not chinese_terms:
+        return {}
+    out = {}
+    sys_msg = ("你是AI热词翻译器。把中文AI领域热词翻译成简洁英文"
+               "（含常见英文缩写/专名，如 大模型→LLM、并购→M&A）。"
+               "只输出JSON对象，键为原文，值为英文翻译，不要任何解释。")
+    for start in range(0, len(chinese_terms), LLM_BATCH):
+        chunk = chinese_terms[start:start + LLM_BATCH]
+        user_msg = ("翻译以下中文热词为英文，输出JSON对象 "
+                    '{"原文":"英文"}：\n' + "\n".join(f"- {t}" for t in chunk))
+        try:
+            model, url, key, _idx = _active_llm()
+            if not key:
+                raise RuntimeError("LLM key 未配置")
+            payload = {"model": model,
+                       "messages": [{"role": "system", "content": sys_msg},
+                                    {"role": "user", "content": user_msg}],
+                       "max_tokens": 2000, "temperature": 0.1}
+            resp = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {key}",
+                         "Content-Type": "application/json"},
+                json=payload, timeout=(15, 90))
+            resp.raise_for_status()
+            body = resp.json()
+            content = ((body.get("choices") or [{}])[0]
+                       .get("message", {}).get("content") or "")
+            m = re.search(r"\{.*\}", content, re.S)
+            parsed = json.loads(m.group(0)) if m else {}
+            for k, v in parsed.items():
+                if isinstance(v, str) and v.strip():
+                    out[k] = v.strip()[:80]
+            _llm_success()
+        except Exception as e:
+            print(f"[dims][llm] 热词翻译失败: {type(e).__name__}: {e}",
+                  flush=True)
+            _llm_failure()
+    return out
+
+
 # ---------- 顶层聚合 ----------
 def _to_card(it):
     """事件卡 → 前端维度热词卡（携带中英双 slot，投影在 get_dims 按 lang 取）。"""
@@ -1324,7 +1370,8 @@ def _dims_refresh_once():
                             model_cards, _ = tracker.get_model_cards("zh")
                             terms_mod.refresh_words(
                                 all_cards, model_cards,
-                                fetched_at=data["fetched_at"])
+                                fetched_at=data["fetched_at"],
+                                term_translator=_translate_terms)
                         except Exception:
                             pass
                     return True

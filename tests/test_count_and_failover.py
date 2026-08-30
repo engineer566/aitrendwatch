@@ -113,6 +113,25 @@ class CountConsistencyTests(unittest.TestCase):
         self.assertEqual(
             len(self.terms.get_term_news("gpt-5", limit=50)), 1)
 
+    def test_display_en_projection(self):
+        # 中文热词 + term_translator 回调 → 词卡带 display_en，EN 视图用它投影。
+        cards = [
+            {"official_url": "https://z.example/1", "title": "并购浪潮",
+             "title_zh": "并购浪潮", "title_en": "M&A wave",
+             "published": "2026-08-28", "score": 100,
+             "keywords": ["并购"]},
+        ]
+        self.news_store.upsert_cards(cards)
+        self.terms._refresh_words_inner(
+            cards, [], fetched_at=1750000000,
+            term_translator=lambda zh: {zh[0]: "M&A"})
+        zh_words, _ = self.terms.get_word_cards("hot", "zh", limit=60)
+        en_words, _ = self.terms.get_word_cards("hot", "en", limit=60)
+        zh_by = {w.get("term"): w.get("term_display") for w in zh_words}
+        en_by = {w.get("term"): w.get("term_display") for w in en_words}
+        self.assertEqual(zh_by.get("并购"), "并购")
+        self.assertEqual(en_by.get("并购"), "M&A")
+
 
 class LLMFailoverSkipTests(unittest.TestCase):
     """账户级限流（GLM 1302）应整族跳过，而不是逐档烧满失败阈值。"""
