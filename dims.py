@@ -941,6 +941,9 @@ def _llm_classify_batch(batch):
         _llm_failure()
         raise
     _llm_success()
+    # 成功批次日志（含当前档模型名）：GLM-5.3 等不回传 usage 缓存字段，
+    # cache-hit 日志不会打印，必须有这行才能核对「哪个模型处理了哪些批次」。
+    print(f"[dims][llm] 批次成功({model}): {len(batch)} 条", flush=True)
 
     # LLM 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en,kw]），
     # 统一归一成 dict 再回填，两种格式都能吃。
