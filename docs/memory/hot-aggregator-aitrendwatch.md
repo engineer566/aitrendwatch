@@ -28,6 +28,6 @@ metadata:
 
 **How to apply**：调 arXiv 先确保 ≥3s 间隔；检索用族名不加引号；保相关性靠标题词边界 + CS 分类双过滤；详情接口须双榜匹配；HF 相关一律走镜像。
 
-版本状态（2026-08-30 更新）：词维度重构 `e68b232` 已合入 dev 并以 release 1.0.0（`f237b26`）发布；后续 release 1.1.0（glm-switch 提供方切换 + memory-opt 内存优化，`5915705`）与生产 max-requests 修复（`8fd4476`）已上线；i18n 中英文页面分离（`52b3659`）已合入 dev；`codex/fixes-20260829`（流排序/HTML 实体/历史新闻等 5 个修复）待合入 dev。`main` 为生产分支，`dev` 验证后并入。**LLM 纪律**：worktree 严禁设 `DEEPSEEK_API_KEY`，关键词走降级词典匹配（`dimension==default_dim`、`keywords==extract_keywords_dict`）即可断言。
+版本状态（2026-08-30 更新）：词维度重构 `e68b232` 已合入 dev 并以 release 1.0.0（`f237b26`）发布；后续 release 1.1.0（glm-switch 提供方切换 + memory-opt 内存优化，`5915705`）与生产 max-requests 修复（`8fd4476`）已上线；i18n 中英文页面分离（`52b3659`）已合入 dev；`codex/fixes-20260829`（流排序/HTML 实体/历史新闻/View 链接等 5 个修复）已合入 dev 并经测试机验证，随 **release 1.2.0（2026-08-30）** 发布。`main` 为生产分支，`dev` 验证后并入。**LLM 纪律**：worktree 严禁设 `DEEPSEEK_API_KEY`，关键词走降级词典匹配（`dimension==default_dim`、`keywords==extract_keywords_dict`）即可断言。
 
 相关：[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)、[`aitrendwatch-deploy-key`](aitrendwatch-deploy-key.md)、[`aitrendwatch-test-host`](aitrendwatch-test-host.md)
