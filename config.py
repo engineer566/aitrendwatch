@@ -53,15 +53,16 @@ CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
 #
 # LLM_CHAIN：模型故障转移链，按序尝试；每档连续 LLM_FAILOVER_THRESHOLD 次失败后
 # 切下一档（单向熔断式转移，成功只清零计数、不回退首档）。首档即默认模型。
-# 默认链（前四档走智谱 BigModel 需 GLM_API_KEY，末档 deepseek 需 DEEPSEEK_API_KEY）：
-#   glm-4.7-flash → glm-4.6v-flash → glm-4.6v-flashx → glm-4.7-flashx → deepseek-v4-flash
+# 默认链（2026-08-30 用户指定）：
+#   glm-4.7-flash（免费）→ glm-5.3-flash（2026-08 新旗舰，约 DeepSeek 1/3 价）
+#     → deepseek-v4-flash（最贵，仅前两档都失败才用）
 # 覆盖整条链：设 LLM_CHAIN="模型A,模型B,..."（逗号分隔；glm-* 走 GLM、deepseek-* 走 DeepSeek）。
 # LLM_FAILOVER_THRESHOLD：GLM 免费档限流（1302/1305/429）会连续打掉整批翻译；
 # 阈值太高（如 10）会让链在 4 个 GLM 档上烧掉 40 次失败都到不了 deepseek。
 # 默认 3：短暂抖动损失一个档，持续限流则快速逃到下一个 provider，保住翻译覆盖。
 LLM_CHAIN = [m.strip().lower() for m in
              os.environ.get("LLM_CHAIN",
-               "glm-4.7-flash,glm-4.6v-flash,glm-4.6v-flashx,glm-4.7-flashx,deepseek-v4-flash")
+               "glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash")
              .split(",") if m.strip()]
 LLM_FAILOVER_THRESHOLD = max(1, int(os.environ.get("LLM_FAILOVER_THRESHOLD", "3") or 3))
 # LLM_CYCLE_ESCAPE：单次刷新周期内累计失败（不限连续）达到该值，就跳过当前
