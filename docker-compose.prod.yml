@@ -13,6 +13,7 @@ services:
       - ./news_store.py:/app/news_store.py:ro
       - ./terms.py:/app/terms.py:ro
       - ./text_utils.py:/app/text_utils.py:ro
+      - ./stream_utils.py:/app/stream_utils.py:ro
       - ./templates:/app/templates:ro
       - ./vendor:/app/vendor:ro
       - ./cache:/app/cache:rw

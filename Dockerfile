@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制代码
 COPY app.py ./
 COPY text_utils.py ./
+COPY stream_utils.py ./
 COPY templates ./templates
 
 # 暴露端口
