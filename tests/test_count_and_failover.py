@@ -167,6 +167,24 @@ class LLMFailoverSkipTests(unittest.TestCase):
                 dims._llm_classify_batch(self._batch())
         self.assertEqual(dims._LLM_ACTIVE_IDX, 0)
 
+    def test_incomplete_batch_counts_as_failure(self):
+        # GLM 免费档超载会返回缺条目/缺翻译字段的部分数组；缺失翻译必须按
+        # 失败计（触发故障转移换档），不能静默回退成英文原标题。
+        dims = self.dims
+        content = ('[{"idx":0,"dimension":"模型与技术","title_zh":"测试标题",'
+                   '"title_en":"Test title","summary_zh":"","summary_en":"",'
+                   '"keywords":[]}]')
+        body = {"choices": [{"message": {"content": content},
+                             "finish_reason": "stop"}]}
+        dims._LLM_ACTIVE_IDX = 0
+        dims._LLM_FAILS = 0
+        with patch.object(dims.requests, "post", return_value=_FakeResp(body)):
+            with self.assertRaises(RuntimeError):
+                dims._llm_classify_batch([{"title": "T%d" % i, "source": "S",
+                                           "lang": "en"} for i in range(6)])
+        # 6 卡只回 1 条 → 缺 5 条 → 计一次失败（连续 3 次即切档）
+        self.assertEqual(dims._LLM_FAILS, 1)
+
     def test_skip_provider_from_mid_chain(self):
         dims = self.dims
         dims._LLM_ACTIVE_IDX = 2

@@ -878,6 +878,26 @@ def _llm_classify_batch(batch):
         if not m:
             raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
         parsed = json.loads(m.group(0))
+
+        # 批完整性检查：GLM 免费档超载时偶发返回「缺条目/缺翻译字段」的部分数组，
+        # 若静默回退，整批卡会变成英文原标题（中英文混杂的根因之一）。
+        # 缺非母语翻译视为该批失败——计故障转移次数，换档/换 provider 重试。
+        _FIELDS = ("idx", "dimension", "title_zh", "title_en",
+                   "summary_zh", "summary_en", "keywords")
+        _pby = {}
+        for p in parsed:
+            if isinstance(p, dict) and p.get("idx") is not None:
+                _pby[p["idx"]] = p
+            elif isinstance(p, list) and len(p) >= 7:
+                _pby[p[0]] = dict(zip(_FIELDS, p))
+        _missing = sum(
+            1 for i, it in enumerate(batch)
+            if not ((_pby.get(i) or {}).get(
+                "title_zh" if it.get("lang", "en") != "zh" else "title_en")
+                or "").strip())
+        if _missing:
+            raise RuntimeError(
+                f"LLM 返回缺翻译条目 {_missing}/{len(batch)} 个，按失败计")
     except _LLMAccountRateLimit as e:
         # 账户级限流：跳过当前 provider 剩余档位（同 key 全档受限），
         # 本批降级，下一批直接用下一个 provider。
