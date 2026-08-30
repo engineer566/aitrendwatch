@@ -658,6 +658,11 @@ class _LLMTransientError(RuntimeError):
     """LLM API 瞬态错误（免费档过载等，如 GLM-4.7-Flash 的 1305）。进重试，区别于永久错误直接降级。"""
 
 
+class _LLMAccountRateLimit(RuntimeError):
+    """LLM 账户级限流（如智谱 BigModel 1302）：同 key 下该 provider 全部档位都受限，
+    无需逐档烧满失败阈值，直接顺链跳到下一个 provider。"""
+
+
 def _strip_llm_title_suffix(s):
     """剥掉 LLM 翻译标题尾部误带的 ` | 来源` 噪音。
 
@@ -708,6 +713,24 @@ def _llm_failure(permanent=False):
                           else f"连续 {LLM_FAILOVER_THRESHOLD} 次失败")
                 print(f"[dims][llm] {reason} → {LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
             _LLM_FAILS = 0
+
+
+def _llm_skip_provider():
+    """账户级限流（如 GLM 1302，同 key 该 provider 全部档位都受限）：
+    跳过当前 provider 剩余档位，直达链中下一个 provider；末档不再切换。"""
+    global _LLM_ACTIVE_IDX, _LLM_FAILS
+    with _llm_lock:
+        def _provider(model):
+            return "deepseek" if model.startswith("deepseek") else "glm"
+        cur = _provider(LLM_CHAIN[min(_LLM_ACTIVE_IDX, len(LLM_CHAIN) - 1)])
+        while _LLM_ACTIVE_IDX < len(LLM_CHAIN) - 1:
+            nxt = LLM_CHAIN[_LLM_ACTIVE_IDX + 1]
+            _LLM_ACTIVE_IDX += 1
+            if _provider(nxt) != cur:
+                break
+        _LLM_FAILS = 0
+        print(f"[dims][llm] 账户级限流，跳过 {cur} 剩余档 → "
+              f"{LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
 
 
 def _llm_classify_batch(batch):
@@ -796,9 +819,15 @@ def _llm_classify_batch(batch):
                 # 1305 = 免费档访问量过大（瞬态）→ 进重试；其余错误直接抛（调用方降级）。
                 err = body.get("error")
                 if err:
-                    if str(err.get("code", "")) == "1305":
+                    code = str(err.get("code", ""))
+                    if code == "1305":
                         raise _LLMTransientError(
                             f"LLM API 过载: {err.get('message')}")
+                    if code == "1302":
+                        # 账户级速率限制：同 key 下该 provider 所有档位都受限
+                        # （GLM 免费档全档共享账户配额），跳过 provider 剩余档位。
+                        raise _LLMAccountRateLimit(
+                            f"LLM 账户级限流: {err.get('message')}")
                     raise RuntimeError(f"LLM API 错误: {err}")
                 # 缓存命中监控（best-effort，任何异常都忽略，不影响主流程）
                 try:
@@ -849,6 +878,11 @@ def _llm_classify_batch(batch):
         if not m:
             raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
         parsed = json.loads(m.group(0))
+    except _LLMAccountRateLimit:
+        # 账户级限流：跳过当前 provider 剩余档位（同 key 全档受限），
+        # 本批降级，下一批直接用下一个 provider。
+        _llm_skip_provider()
+        raise
     except Exception:
         _llm_failure()
         raise

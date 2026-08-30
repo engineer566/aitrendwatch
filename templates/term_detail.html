@@ -270,7 +270,7 @@
 </div>
 
 {% if word.news %}
-<div class="section-title">🗞 {% if is_en %}Related reports{% else %}相关报道{% endif %}（{{ word.news | length }}）</div>
+<div class="section-title">🗞 {% if is_en %}Related reports{% else %}相关报道{% endif %}（{{ word.term.news_cnt }}）</div>
 <div class="word-card news-list">
   {% for n in word.news %}
   <div class="news-item">
