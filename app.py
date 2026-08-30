@@ -7,6 +7,7 @@
 然后浏览器打开 http://127.0.0.1:5000
 """
 
+import os
 import re
 import json
 import time
@@ -29,6 +30,11 @@ import tracker
 import dims
 import config
 import store
+from stream_utils import (card_identity as _stream_card_identity,
+                          dedupe_cards as _dedupe_stream_cards,
+                          dimension_members as _stream_dimension_members,
+                          dimension_counts as _stream_dimension_counts,
+                          dimension_list as _stream_dimension_list_base)
 
 try:
     import terms as terms_mod  # 词粒度聚合层（词榜/详情/搜索联动）；失败自动降级
@@ -140,8 +146,11 @@ def _word_detail(term_name, lang="zh"):
                 hf = json.loads(row["hf_json"])
             except (json.JSONDecodeError, ValueError):
                 hf = None
+        # Query by the canonical key that was used to find the row.  The
+        # terms layer still accepts aliases for direct callers, while this
+        # avoids letting a display/path spelling affect historical fallback.
         news = [_project(c) for c in
-                terms_mod.get_term_news(term_name, limit=50, lang=lang)]
+                terms_mod.get_term_news(canon, limit=50, lang=lang)]
         term_info = {
             "term": row.get("display") or canon,
             "display_zh": row.get("display_zh") or "",
@@ -191,38 +200,44 @@ def _abs(path):
 def _seo_enabled():
     return bool(config.SEO_ENABLED)
 
+
+# 统一卡片流的展示上限。排序由各数据源在截断前完成，前端只过滤不重排。
+WORD_STREAM_LIMIT = 60
+
+
+def _stream_number(card, field):
+    """读取排序字段，兼容缓存中的字符串/空值且不产生比较异常。"""
+    try:
+        value = float(card.get(field, 0) or 0)
+        return value if math.isfinite(value) else 0.0
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+
+
+def _stream_dimension_list(cards, view):
+    """返回包含实际卡片维度的稳定分类顺序。"""
+    return _stream_dimension_list_base(cards, view, dims.DIMENSIONS)
+
+
 # 首页 SSR 渲染的热词条数（Top-N）。读文件缓存，秒回。
 SSR_INITIAL_LIMIT = 20
 
 
-def _initial_terms_for_ssr(lang="zh"):
-    """首页 SSR 用的首屏词卡：按热度取词卡，每维度配额保证小维度露出。
+def _initial_terms_for_ssr(sort="rise", lang="zh"):
+    """首页 SSR 用的首屏词卡：使用与后续 stream 相同的排序前缀。
 
     词维度重构后，首屏 SSR 注入词卡（kind=word，含 top_news 迷你列表），
     爬虫可见「词 + 代表报道」结构；JS 接管后拉 /api/stream?view=words 全量替换。
-    每维度配额逻辑沿用旧版（避免高分词垄断首屏导致分类条标签缺失）。
+    SSR 只取服务端排序结果的前缀，不再做按维度配额的二次重排，保证替换
+    全量结果时已有卡片的顺序不变。
     任何失败返回 []，模板兜底骨架屏。
     """
     try:
         if not terms_mod:
             return []
-        cards, _ = terms_mod.get_word_cards(sort="hot", lang=lang,
-                                            limit=SSR_INITIAL_LIMIT * 3)
-        if not cards:
-            return []
-        # 按维度分桶，每桶按 hot 降序
-        by_dim = {}
-        for c in cards:
-            by_dim.setdefault(c.get("dimension") or "其他", []).append(c)
-        for d in by_dim:
-            by_dim[d].sort(key=lambda x: x.get("hot", 0), reverse=True)
-        # 每维度至少取 PER_DIM_QUOTA 条，合并后按 hot 降序截断
-        quota = max(2, SSR_INITIAL_LIMIT // max(1, len(by_dim)))
-        pooled = []
-        for d, lst in by_dim.items():
-            pooled.extend(lst[:quota])
-        pooled.sort(key=lambda x: x.get("hot", 0), reverse=True)
-        return pooled[:SSR_INITIAL_LIMIT]
+        cards, _ = terms_mod.get_word_cards(sort=sort, lang=lang,
+                                            limit=SSR_INITIAL_LIMIT)
+        return _dedupe_stream_cards(cards)
     except Exception:
         return []
 
@@ -583,7 +598,14 @@ def index():
     store.record_visit(cip, _client_country(cip))
     for s in sponsors:
         store.record_impression(s.get("slot_id"))
-    initial_terms = _initial_terms_for_ssr(lang=lang) if _seo_enabled() else []
+    requested_view = request.args.get("view", "words")
+    requested_sort = request.args.get("sort", "rise")
+    if requested_sort not in ("rise", "hot", "new"):
+        requested_sort = "rise"
+    initial_terms = (
+        _initial_terms_for_ssr(sort=requested_sort, lang=lang)
+        if _seo_enabled() and requested_view != "news" else []
+    )
     return render_template("index.html", sources=SOURCE_META,
                            sponsors=sponsors, site_name=config.SITE_NAME,
                            site_desc=SITE_DESC_EN if lang == "en" else SITE_DESC,
@@ -715,7 +737,7 @@ def api_stream():
             词卡内嵌 top-3 报道；news 合并 model 卡（tracker）+ news 卡（dims）。
       sort：rise（上升/环比）/ hot（热度）/ new（words 视图=新奇度新词发现，
             news 视图=published 时间序），默认 rise。
-    返回 {ok, view, fetched_at, count, dimension_list, terms}。
+    返回 {ok, view, fetched_at, count, dimension_list, dimension_counts, terms}。
     只读各自文件缓存，秒回，无需并发。
     """
     region = detect_region()
@@ -730,24 +752,29 @@ def api_stream():
         sort = "rise"
 
     if view == "words":
-        cards, fetched_at = (terms_mod.get_word_cards(sort, lang)
+        cards, fetched_at = (terms_mod.get_word_cards(sort, lang,
+                                                       limit=WORD_STREAM_LIMIT)
                              if terms_mod else ([], 0))
+        cards = _dedupe_stream_cards(cards)[:WORD_STREAM_LIMIT]
         return jsonify({
             "ok": True,
             "view": "words",
             "fetched_at": fetched_at,
             "count": len(cards),
-            "dimension_list": dims.DIMENSIONS,
+            "dimension_list": _stream_dimension_list(cards, "words"),
+            "dimension_counts": _stream_dimension_counts(cards, "words"),
             "terms": cards,
         })
 
     model_cards, m_at = tracker.get_model_cards(lang)
     news_cards, n_at = dims.get_news_cards(lang)
-    cards = model_cards + news_cards
+    cards = _dedupe_stream_cards(model_cards + news_cards)
 
     # 排序键：rise→trend, hot→score, new→published（统一字段）
-    sort_key = {"rise": lambda x: x.get("trend", 0),
-                "hot":  lambda x: x.get("score", 0),
+    # 先按身份升序，再按榜单值倒序；稳定排序保证同值卡片每次顺序相同。
+    cards.sort(key=lambda x: _stream_card_identity(x) or ("", ""))
+    sort_key = {"rise": lambda x: _stream_number(x, "trend"),
+                "hot":  lambda x: _stream_number(x, "score"),
                 "new":  lambda x: x.get("published", "") or ""}[sort]
     cards.sort(key=sort_key, reverse=True)
 
@@ -757,7 +784,8 @@ def api_stream():
         "view": "news",
         "fetched_at": fetched_at,
         "count": len(cards),
-        "dimension_list": dims.DIMENSIONS,
+        "dimension_list": _stream_dimension_list(cards, "news"),
+        "dimension_counts": _stream_dimension_counts(cards, "news"),
         "terms": cards,
     })
 

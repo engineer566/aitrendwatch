@@ -84,7 +84,7 @@ class LanguageRouteTest(unittest.TestCase):
         self.assertIn("/term/agent?lang=en", body)
         visible = body.split('<script id="sponsor-data"', 1)[0]
         self.assertNotIn("智能体创业公司融资", visible)
-        ssr.assert_called_once_with(lang="en")
+        ssr.assert_called_once_with(sort="rise", lang="en")
 
     def test_term_detail_keeps_requested_language(self):
         detail = {
