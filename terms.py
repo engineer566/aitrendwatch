@@ -435,6 +435,37 @@ def _title_matches_term(text, surfaces):
     return False
 
 
+def _compile_surface_patterns(surfaces):
+    """预编译表面匹配模式，供词聚合标题关联计数批量复用（避免逐卡逐词 re.compile）。"""
+    pats = []
+    for surface in surfaces:
+        if not surface:
+            continue
+        if any(ord(c) >= 128 for c in surface):
+            pats.append(("cjk", surface.casefold(), None))
+        else:
+            pats.append(("ascii", None,
+                         re.compile(r"(?<![a-z0-9])" + re.escape(surface)
+                                    + r"(?!\.\d)(?![a-z0-9])", re.I)))
+    return pats
+
+
+def _title_matches_patterns(titles, pats):
+    """与 ``_title_matches_term`` 同口径：任一标题字段命中任一表面即 True。"""
+    for t in titles:
+        t = str(t or "")
+        if not t:
+            continue
+        tf = t.casefold()
+        for kind, cjk, pat in pats:
+            if kind == "cjk":
+                if cjk in tf:
+                    return True
+            elif pat.search(t):
+                return True
+    return False
+
+
 def _keyword_canons(value):
     """Decode old/new ``news_cards.keywords`` values to canonical keys."""
     raw = value
@@ -659,7 +690,10 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
         except Exception:
             pass
     for a in agg.values():
+        # top news 与 get_term_news 同序（published 降序 + score 降序），
+        # 保证卡片内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
         a["top"].sort(key=lambda x: -x["score"])
+        a["top"].sort(key=lambda x: x["card"].get("published") or "", reverse=True)
         a["top"] = [t["card"] for t in a["top"][:3]]
 
     # ---- 3. 归并 HF 词（无新闻命中也入池，origin=hf）----
@@ -696,6 +730,37 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at):
                 continue
             new_budget -= 1
         kept[canon] = a
+
+    # ---- 5.5 标题关联计数（与 get_term_news 标题兜底同口径）----
+    # 词卡 news_cnt / 详情页「N 篇相关报道」需与 get_term_news 一致：除关键词命中外，
+    # 标题表面命中（_term_surfaces）也算关联报道。只对 kept 词补算展示计数，
+    # 不影响三榜打分与噪词过滤（词池与榜单保持稳定）。
+    if news_store:
+        try:
+            kept_pats = {canon: _compile_surface_patterns(_term_surfaces(canon))
+                         for canon in kept}
+            conn = _conn()
+            news_columns = {r[1] for r in
+                            conn.execute("PRAGMA table_info(news_cards)")}
+            keyword_expr = ("keywords" if "keywords" in news_columns
+                            else "NULL AS keywords")
+            query = ("SELECT url, title, title_zh, title_en, " + keyword_expr +
+                     " FROM news_cards")
+            for r in conn.execute(query):
+                url = r["url"] or ""
+                if not url:
+                    continue
+                titles = [str(r[f] or "")
+                          for f in ("title", "title_zh", "title_en")]
+                for canon, a in kept.items():
+                    if url in a["urls"]:
+                        continue
+                    if _title_matches_patterns(titles, kept_pats[canon]):
+                        a["urls"].add(url)
+                        a["mentions"] += 1
+            conn.close()
+        except Exception:
+            pass
 
     # ---- 6. 三榜打分 + 写 terms 主表 + 快照 ----
     with _db_lock:
