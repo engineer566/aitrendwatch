@@ -34,7 +34,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-from config import (CACHE_DIR, LLM_CHAIN, LLM_FAILOVER_THRESHOLD, llm_endpoint,
+from config import (CACHE_DIR, LLM_CHAIN, LLM_CYCLE_ESCAPE,
+                    LLM_FAILOVER_THRESHOLD, llm_endpoint,
                     DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
 from text_utils import decode_html_entities, decode_url_entities
 
@@ -682,6 +683,7 @@ def _strip_llm_title_suffix(s):
 _llm_lock = threading.Lock()
 _LLM_ACTIVE_IDX = 0   # 当前档在 LLM_CHAIN 的下标
 _LLM_FAILS = 0        # 当前档连续失败次数
+_LLM_CYCLE_FAILS = 0  # 本刷新周期内累计失败次数（不限连续，_dims_refresh_once 复位）
 
 
 def _active_llm():
@@ -701,10 +703,13 @@ def _llm_success():
 
 def _llm_failure(permanent=False):
     """一次失败调用：连续计数满阈值顺链切下一档。permanent（无 key 等永久条件）
-    视为 1 次即切，不烧 10 次重试；末档不再切换，计数清零待下轮。"""
-    global _LLM_ACTIVE_IDX, _LLM_FAILS
+    视为 1 次即切，不烧 10 次重试；末档不再切换，计数清零待下轮。
+    同时累计本刷新周期失败数（不限连续）：达到 LLM_CYCLE_ESCAPE 跳过当前
+    provider 剩余档位（GLM 429 多为散落单发，连续阈值抓不到）。"""
+    global _LLM_ACTIVE_IDX, _LLM_FAILS, _LLM_CYCLE_FAILS
     with _llm_lock:
         _LLM_FAILS += 1
+        _LLM_CYCLE_FAILS += 1
         need = 1 if permanent else LLM_FAILOVER_THRESHOLD
         if _LLM_FAILS >= need:
             if _LLM_ACTIVE_IDX < len(LLM_CHAIN) - 1:
@@ -713,11 +718,15 @@ def _llm_failure(permanent=False):
                           else f"连续 {LLM_FAILOVER_THRESHOLD} 次失败")
                 print(f"[dims][llm] {reason} → {LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
             _LLM_FAILS = 0
+    if (_LLM_CYCLE_FAILS >= LLM_CYCLE_ESCAPE
+            and LLM_CHAIN[min(_LLM_ACTIVE_IDX, len(LLM_CHAIN) - 1)]
+                .startswith("glm")):
+        _llm_skip_provider(reason=f"周期内累计 {LLM_CYCLE_ESCAPE} 次失败")
 
 
-def _llm_skip_provider():
-    """账户级限流（如 GLM 1302，同 key 该 provider 全部档位都受限）：
-    跳过当前 provider 剩余档位，直达链中下一个 provider；末档不再切换。"""
+def _llm_skip_provider(reason="账户级限流"):
+    """跳过当前 provider 剩余档位（如 GLM 1302 同 key 全档受限，或周期内累计失败
+    过多），直达链中下一个 provider；末档不再切换。"""
     global _LLM_ACTIVE_IDX, _LLM_FAILS
     with _llm_lock:
         def _provider(model):
@@ -729,7 +738,7 @@ def _llm_skip_provider():
             if _provider(nxt) != cur:
                 break
         _LLM_FAILS = 0
-        print(f"[dims][llm] 账户级限流，跳过 {cur} 剩余档 → "
+        print(f"[dims][llm] {reason}，跳过 {cur} 剩余档 → "
               f"{LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
 
 
@@ -1004,6 +1013,7 @@ def enrich_with_llm(items):
         it["title"] = decode_html_entities(it.get("title") or "")
 
     SUB = max(1, LLM_BATCH // 2)  # 子批大小（默认 6）
+    retry_subs = []  # 主循环失败的子批：末尾重试一次（链可能已切到可用档）
     for start in range(0, len(items), LLM_BATCH):
         batch = items[start:start + LLM_BATCH]
         for sub_start in range(0, len(batch), SUB):
@@ -1021,6 +1031,14 @@ def enrich_with_llm(items):
                     it["summary_en"] = it["title"][:30]
                     it["keywords"] = (terms_mod.extract_keywords_dict(it["title"])
                                       if terms_mod else [])
+                retry_subs.append(sub)
+    # 主循环后重试：GLM 429 多为散落单发，主循环内链可能已因累计失败逃到
+    # deepseek——重试能找回这批翻译；仍失败则保持降级（不再逐批计故障转移）。
+    for sub in retry_subs:
+        try:
+            _llm_classify_batch(sub)
+        except Exception:
+            pass
     return items
 
 
@@ -1264,6 +1282,8 @@ def _dims_refresh_once():
     try:
         try:
             with _cross_proc_lock(DIMS_REFRESH_LOCKFILE):
+                global _LLM_CYCLE_FAILS
+                _LLM_CYCLE_FAILS = 0  # 每周期复位：累计失败只在本刷新内生效
                 data = _fetch_dims_raw()
                 if data.get("ok"):
                     # 全量卡（all_cards）只在本刷新管道内用（持久化 + 词聚合），

@@ -64,6 +64,10 @@ LLM_CHAIN = [m.strip().lower() for m in
                "glm-4.7-flash,glm-4.6v-flash,glm-4.6v-flashx,glm-4.7-flashx,deepseek-v4-flash")
              .split(",") if m.strip()]
 LLM_FAILOVER_THRESHOLD = max(1, int(os.environ.get("LLM_FAILOVER_THRESHOLD", "3") or 3))
+# LLM_CYCLE_ESCAPE：单次刷新周期内累计失败（不限连续）达到该值，就跳过当前
+# provider 剩余档位（GLM 429 多为散落单发、从不连续，连续阈值抓不到；累计阈值
+# 保证一个周期内 GLM 明显不稳时快速逃到 deepseek，翻译覆盖优先于免费额度）。
+LLM_CYCLE_ESCAPE = max(1, int(os.environ.get("LLM_CYCLE_ESCAPE", "4") or 4))
 
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
