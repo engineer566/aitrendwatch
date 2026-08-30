@@ -195,7 +195,7 @@ def _seo_enabled():
 SSR_INITIAL_LIMIT = 20
 
 
-def _initial_terms_for_ssr():
+def _initial_terms_for_ssr(lang="zh"):
     """首页 SSR 用的首屏词卡：按热度取词卡，每维度配额保证小维度露出。
 
     词维度重构后，首屏 SSR 注入词卡（kind=word，含 top_news 迷你列表），
@@ -206,7 +206,7 @@ def _initial_terms_for_ssr():
     try:
         if not terms_mod:
             return []
-        cards, _ = terms_mod.get_word_cards(sort="hot", lang="zh",
+        cards, _ = terms_mod.get_word_cards(sort="hot", lang=lang,
                                             limit=SSR_INITIAL_LIMIT * 3)
         if not cards:
             return []
@@ -256,6 +256,7 @@ def _sitemap_terms():
 
 # 站点级元信息（描述等），集中维护。
 SITE_DESC = "AI 热点聚合 · 实时追踪 HuggingFace 模型趋势、arXiv 相关论文与社区讨论。上升最快、最热、最新 AI 模型一页尽览。"
+SITE_DESC_EN = "AI trend aggregation · Track HuggingFace model trends, related arXiv papers, and community discussion. Browse the fastest-rising, hottest, and newest AI models in one place."
 
 # 服务条款最后更新日期（修改条款时同步更新）。
 SITE_TERMS_UPDATED = "2026-08-26"
@@ -486,6 +487,20 @@ def detect_region():
     return "zh" if al.startswith("zh") or ",zh" in al or ";zh" in al else "global"
 
 
+def _request_lang():
+    """解析页面/API 的语言参数，显式 lang 优先，未传时回退 Accept-Language。"""
+    lang = request.args.get("lang")
+    if lang in ("zh", "en"):
+        return lang
+    return "zh" if detect_region() == "zh" else "en"
+
+
+def _lang_url(path, lang):
+    """给站内链接附加明确语言，避免跨页面后丢失当前语言。"""
+    sep = "&" if "?" in path else "?"
+    return f"{path}{sep}lang={lang}"
+
+
 def _client_ip():
     """取真实客户端 IP。信任自建 Nginx 注入的 X-Forwarded-For（取最左一跳）。"""
     xff = request.headers.get("X-Forwarded-For", "")
@@ -559,6 +574,7 @@ def get_source_uncached(source):
 @app.route("/")
 def index():
     region = detect_region()
+    lang = _request_lang()
     sponsors = store.list_slots(region=region, active_only=True)
     # 服务端记曝光 + PV（best-effort，失败静默）
     store.record_pageview()
@@ -567,18 +583,21 @@ def index():
     store.record_visit(cip, _client_country(cip))
     for s in sponsors:
         store.record_impression(s.get("slot_id"))
-    initial_terms = _initial_terms_for_ssr() if _seo_enabled() else []
+    initial_terms = _initial_terms_for_ssr(lang=lang) if _seo_enabled() else []
     return render_template("index.html", sources=SOURCE_META,
                            sponsors=sponsors, site_name=config.SITE_NAME,
-                           site_desc=SITE_DESC,
-                           base_url=_base_url(), canonical=_abs("/"),
+                           site_desc=SITE_DESC_EN if lang == "en" else SITE_DESC,
+                           base_url=_base_url(), canonical=_abs(_lang_url("/", lang)),
                            seo_enabled=_seo_enabled(),
                            initial_terms=initial_terms,
                            adsense_enabled=config.ADSENSE_ENABLED,
                            adsense_client=config.ADSENSE_CLIENT,
                            baidu_ads_enabled=config.BAIDU_ADS_ENABLED,
                            baidu_cpro_id=config.BAIDU_ADS_CPRO_ID,
-                           default_lang="zh" if region == "zh" else "en")
+                           default_lang=lang,
+                           lang_toggle_url=_lang_url(
+                               "/", "en" if lang == "zh" else "zh"),
+                           lang_toggle_label="中" if lang == "en" else "EN")
 
 
 @app.route("/api/sources")
@@ -619,8 +638,7 @@ def term_detail(term_name):
     相关报道聚合 + 词热度信息；HF 模型词额外保留官方/社区/arXiv 区块。
     进程内 TTL 缓存（HF live 区块是慢路径）。未找到 → 404 HTML + noindex。
     """
-    region = detect_region()
-    lang = "zh" if region == "zh" else "en"
+    lang = _request_lang()
     key = f"{lang}:{term_name.lower()}"
     data = _detail_cached(key)
     if data is None:
@@ -632,7 +650,7 @@ def term_detail(term_name):
 
     t = data["term"]
     slug = t.get("term") or term_name
-    canonical = _abs(f"/term/{quote(slug)}")
+    canonical = _abs(_lang_url(f"/term/{quote(slug)}", lang))
     if lang == "zh":
         desc = (f"{slug} 最新动态聚合：{t.get('news_cnt', 0)} 篇相关报道，"
                 f"热度 {t.get('hot', 0)}，追踪 {slug} 的模型、产品与行业进展。")
@@ -642,7 +660,11 @@ def term_detail(term_name):
     return render_template("term_detail.html", word=data, lang=lang,
                            site_name=config.SITE_NAME,
                            site_desc=desc[:160], base_url=_base_url(),
-                           canonical=canonical, seo_enabled=_seo_enabled())
+                           canonical=canonical, seo_enabled=_seo_enabled(),
+                           home_url=_lang_url("/", lang),
+                           lang_toggle_url=_lang_url(
+                               request.path, "en" if lang == "zh" else "zh"),
+                           lang_toggle_label="中文" if lang == "en" else "English")
 
 
 @app.route("/terms")
@@ -747,6 +769,7 @@ def api_word(term_name):
     主页词卡「展开更多」与 /term/<name> 详情页共用数据源。
     读 terms 表 + news_cards LIKE 查询，进程内 TTL 缓存 300s。
     """
+    # API 保持历史默认 zh；前端展开请求会显式传入当前页面的 lang。
     data = _word_detail(term_name, lang=request.args.get("lang", "zh"))
     if not data.get("ok"):
         return jsonify({"ok": False, "error": "term not found"}), 404
@@ -957,10 +980,7 @@ def search_page():
       4) 空结果：带「你可能想搜」补全（基于热门搜索词 + 补全接口）。
     """
     q = (request.args.get("q") or "").strip()
-    region = detect_region()
-    lang = request.args.get("lang", "zh" if region == "zh" else "en")
-    if lang not in ("zh", "en"):
-        lang = "zh" if region == "zh" else "en"
+    lang = _request_lang()
     try:
         limit = int(request.args.get("limit", "50"))
     except ValueError:
@@ -983,6 +1003,11 @@ def search_page():
         q=q, lang=lang, terms=results, word_hits=word_hits,
         count=len(results), history_hits=history_hits,
         suggest=suggest, site_name=config.SITE_NAME,
+        home_url=_lang_url("/", lang),
+        lang_toggle_url=_lang_url(
+            request.path + ("?q=" + quote(q) if q else ""),
+            "en" if lang == "zh" else "zh"),
+        lang_toggle_label="中文" if lang == "en" else "English",
     )
 
 
