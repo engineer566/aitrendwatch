@@ -755,7 +755,15 @@ def _llm_classify_batch(batch):
         if key:
             break
         if idx >= len(LLM_CHAIN) - 1:
-            raise RuntimeError("LLM key 未配置（GLM_API_KEY 或 DEEPSEEK_API_KEY 至少设一个）")
+            # 末档无 key（如测试机只有 GLM 未配 deepseek）：回绕首档重试，
+            # 避免链走到末档后整轮全部静默降级（「key 未配置」在 try 外抛、
+            # 无日志且不触发故障转移）。
+            with _llm_lock:
+                _LLM_ACTIVE_IDX = 0
+                _LLM_FAILS = 0
+            print("[dims][llm] 末档无 key，回绕首档重试", flush=True)
+            raise RuntimeError(
+                "LLM key 未配置（GLM_API_KEY 或 DEEPSEEK_API_KEY 至少设一个）")
         _llm_failure(permanent=True)
 
     # ---- prompt 重组：最大化 LLM 前缀缓存命中 ----
@@ -880,8 +888,9 @@ def _llm_classify_batch(batch):
         parsed = json.loads(m.group(0))
 
         # 批完整性检查：GLM 免费档超载时偶发返回「缺条目/缺翻译字段」的部分数组，
-        # 若静默回退，整批卡会变成英文原标题（中英文混杂的根因之一）。
-        # 缺非母语翻译视为该批失败——计故障转移次数，换档/换 provider 重试。
+        # 甚至把英文原标题原样抄进 title_zh（回显）而摘要留空。静默回退会让整批卡
+        # 变成英文原标题（中英文混杂的根因之一）。非母语标题与摘要任一缺失/为空
+        # 都视为该批失败——计故障转移次数，换档/换 provider 重试。
         _FIELDS = ("idx", "dimension", "title_zh", "title_en",
                    "summary_zh", "summary_en", "keywords")
         _pby = {}
@@ -890,11 +899,17 @@ def _llm_classify_batch(batch):
                 _pby[p["idx"]] = p
             elif isinstance(p, list) and len(p) >= 7:
                 _pby[p[0]] = dict(zip(_FIELDS, p))
-        _missing = sum(
-            1 for i, it in enumerate(batch)
-            if not ((_pby.get(i) or {}).get(
-                "title_zh" if it.get("lang", "en") != "zh" else "title_en")
-                or "").strip())
+        _missing = 0
+        for i, it in enumerate(batch):
+            p = _pby.get(i) or {}
+            if it.get("lang", "en") == "zh":
+                t_ok = bool((p.get("title_en") or "").strip())
+                s_ok = bool((p.get("summary_en") or "").strip())
+            else:
+                t_ok = bool((p.get("title_zh") or "").strip())
+                s_ok = bool((p.get("summary_zh") or "").strip())
+            if not (t_ok and s_ok):
+                _missing += 1
         if _missing:
             raise RuntimeError(
                 f"LLM 返回缺翻译条目 {_missing}/{len(batch)} 个，按失败计")

@@ -185,6 +185,27 @@ class LLMFailoverSkipTests(unittest.TestCase):
         # 6 卡只回 1 条 → 缺 5 条 → 计一次失败（连续 3 次即切档）
         self.assertEqual(dims._LLM_FAILS, 1)
 
+    def test_echoed_title_with_empty_summary_counts_as_failure(self):
+        # GLM 超载时会把英文原标题原样抄进 title_zh 且摘要留空；摘要缺失
+        # 同样必须按失败计，否则中文语境静默出现英文标题。
+        dims = self.dims
+        entries = []
+        for i in range(6):
+            entries.append(
+                '{"idx":%d,"dimension":"模型与技术","title_zh":"English title %d",'
+                '"title_en":"English title %d","summary_zh":"",'
+                '"summary_en":"","keywords":[]}' % (i, i, i))
+        body = {"choices": [{"message": {"content": "[" + ",".join(entries) + "]"},
+                             "finish_reason": "stop"}]}
+        dims._LLM_ACTIVE_IDX = 0
+        dims._LLM_FAILS = 0
+        with patch.object(dims.requests, "post", return_value=_FakeResp(body)):
+            with self.assertRaises(RuntimeError):
+                dims._llm_classify_batch([{"title": "English title %d" % i,
+                                           "source": "S", "lang": "en"}
+                                          for i in range(6)])
+        self.assertEqual(dims._LLM_FAILS, 1)
+
     def test_skip_provider_from_mid_chain(self):
         dims = self.dims
         dims._LLM_ACTIVE_IDX = 2
