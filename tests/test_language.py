@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 import sys
 import types
 import unittest
@@ -172,6 +173,92 @@ class LanguageRouteTest(unittest.TestCase):
         )
         self.assertIn('p.set("lang", LANG);', source)
         self.assertIn("if (!langFromURL &&", source)
+
+    def test_ssr_cards_all_stay_inside_list_container(self):
+        """Regression: every SSR term-card must be nested inside #list.
+
+        The SSR loop previously emitted a stray ``</div>`` after the first
+        card (it sat outside the ``{% if t.kind == 'word' %}/{% else %}``
+        branches), so ``#list`` closed early and cards 2..N were rendered as
+        siblings of ``#list``.  JS ``render()`` then replaced only ``#list``
+        content, leaving the leftover SSR cards visible below the 60-card
+        stream — duplicate cards numbered 2..20 in production.
+        """
+        def make_card(kind, i):
+            base = {
+                "kind": kind,
+                "id": f"card-{kind}-{i}",
+                "dimension": "模型与技术",
+                "hot": 100 - i,
+                "rise": 1.0,
+            }
+            if kind == "word":
+                base.update({
+                    "term": f"Term{i}",
+                    "term_display": f"Term{i}",
+                    "display_zh": f"词{i}",
+                    "news_cnt": 1,
+                    "top_news": [{
+                        "title": f"News {i}",
+                        "title_zh": f"报道{i}",
+                        "official_url": f"https://example.test/{i}",
+                        "hot": 5,
+                    }],
+                })
+            elif kind == "model":
+                base.update({
+                    "term": f"Model{i}",
+                    "full_id": f"org/Model{i}",
+                    "official_url": f"https://huggingface.co/org/Model{i}",
+                    "trending_score": 5,
+                    "likes": 3,
+                    "downloads": 9,
+                    "tags": [],
+                    "community": [],
+                    "papers": [],
+                })
+            else:
+                base.update({
+                    "title": f"News headline {i}",
+                    "official_url": f"https://example.test/news/{i}",
+                    "source": "Example",
+                    "published": "2026-08-30",
+                    "summary": "summary",
+                })
+            return base
+
+        ssr_cards = ([make_card("word", i) for i in range(1, 8)]
+                     + [make_card("model", 1), make_card("news", 2)])
+        with patch.object(app_module, "_seo_enabled", return_value=True), \
+                patch.object(app_module, "_initial_terms_for_ssr",
+                             return_value=ssr_cards):
+            response = self.client.get("/?lang=zh")
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+
+        main = body.split("<main>", 1)[1].split("</main>", 1)[0]
+        list_open = main.find('<div class="list" id="list">')
+        self.assertGreaterEqual(list_open, 0)
+
+        # Walk the <main> block and find where #list's matching </div> is.
+        depth = 0
+        list_close = None
+        for match in re.finditer(r"<div\b|</div>", main):
+            if match.group(0).startswith("</"):
+                depth -= 1
+                if list_close is None and match.start() > list_open and depth == 0:
+                    list_close = match.start()
+                    break
+            elif match.start() >= list_open:
+                depth += 1
+        self.assertIsNotNone(list_close)
+
+        # Every term-card must open before #list closes; nothing may follow it.
+        card_opens = [m.start() for m in re.finditer(r'class="term-card"', main)]
+        self.assertEqual(len(card_opens), len(ssr_cards))
+        self.assertTrue(all(pos < list_close for pos in card_opens),
+                        "all SSR cards must be nested inside #list")
 
     def test_no_llm_keys_are_used_by_language_tests(self):
         self.assertFalse(os.environ.get("DEEPSEEK_API_KEY"))
