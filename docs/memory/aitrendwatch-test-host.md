@@ -24,6 +24,8 @@ metadata:
 
 **2026-08-29（dev 合入 glm-switch + memory-opt 后部署）**：`/opt/aitrendwatch/.env` 已配置 `GLM_API_KEY`（智谱 BigModel，值不记录于此）。应用默认走 `LLM_CHAIN`（`glm-4.7-flash` 首档），**未设 DeepSeek key**。
 
+**2026-08-30（修复中英文混杂）**：测试机更换为**独立 GLM key**（不再与生产共用，避免两机同时刷新互挤免费档配额），`.env` 另设 `DIMS_REFRESH_HOURS=2,8,14,20`（与生产 1,7,13,19 错开）。仍**未设 DeepSeek key**——测试机混杂率上限受 GLM 免费档质量约束（实测独立 key 后 zh 语境混杂 64%→32%，剩余为 GLM 偶发 429/超时且无备用 provider）。
+
 **智谱 GLM 免费档限流现象（实测）**：`glm-4.7-flash` 高峰返 `1305 访问量过大`、账户级返 `1302 速率限制`（同 key 所有 GLM 档都受限）；1-token 直测可成功但批量分类请求被限。属**临时性**——限流时应用按设计走故障转移链 → 优雅降级（`title_zh=原标题`、`dimension=default_dim`），服务不中断、缓存照写。下次测试 GLM 若再遇 1302/1305，等限流窗口重置或改非高峰时段即可，不是 key/代码问题。
 
 相关：[`aitrendwatch-deploy-key`](aitrendwatch-deploy-key.md)、[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)

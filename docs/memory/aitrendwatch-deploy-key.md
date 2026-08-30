@@ -16,7 +16,7 @@ metadata:
 
 迁移代码可用 `rsync -avz --exclude={.git,cache,data,__pycache__,vendor} -e "ssh -i ~/Projects/work.pem" root@47.89.243.229:/opt/aitrendwatch/ ~/Projects/aitrendwatch/`。生产要求 `<2GB` 内存必须 `workers: 2`、有 ≥1GB swap、保留 fcntl 跨进程锁。
 
-**2026-08-29（release 1.1.0 部署）**：生产升级到 1.1.0（glm-switch 故障转移链 + memory-opt）。compose.prod 正式化 `workers 2` + `max-requests 1000/jitter 300`（此前 1.0.0 部署曾覆盖回 workers 4）。`.env` 原有 `DEEPSEEK_API_KEY`，本次按用户要求**追加了 `GLM_API_KEY`**（与测试机同一智谱 key）→ 链从 GLM 起步。VERSION 文件此前停在 0.3.0（1.0.0 部署漏更），本次已更新为 1.1.0。验证方式：`https://aitrendwatch.top/api/stream?view=news` 看 fetched_at（应为重启时刻）与 title_zh 是否真实翻译。
+**2026-08-29（release 1.1.0 部署）**：生产升级到 1.1.0（glm-switch 故障转移链 + memory-opt）。compose.prod 正式化 `workers 2` + `max-requests 1000/jitter 300`（此前 1.0.0 部署曾覆盖回 workers 4）。`.env` 原有 `DEEPSEEK_API_KEY`，本次按用户要求**追加了 `GLM_API_KEY`**（当时与测试机同一智谱 key，2026-08-30 起测试机已换独立 key，避免共用配额互挤）→ 链从 GLM 起步。VERSION 文件此前停在 0.3.0（1.0.0 部署漏更），本次已更新为 1.1.0。验证方式：`https://aitrendwatch.top/api/stream?view=news` 看 fetched_at（应为重启时刻）与 title_zh 是否真实翻译。
 
 **⚠️ max-requests 生产副作用（2026-08-29 发现并已修）**：生产流量约 2000 请求/80 分钟 → 两 worker 各满 1000 同时被 gunicorn 回收（日志 `Booting worker with pid: N` 成对出现）→ 回收触发应用重启 → tracker+dims 双启动刷新，LLM 刷新从每 6h 变成每约 80min（约 4.5 倍）。**已修**：compose.prod + Dockerfile 的 `max-requests 1000 → 50000`（commit `8fd4476`，部署生产验证），回收间隔压到约 33h。**教训**：`--max-requests` 要按生产流量校准——过低会因「回收→启动刷新」反而高频调用 LLM，低流量测试机测不出，须在上生产流量后复验。
 
