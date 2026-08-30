@@ -717,6 +717,9 @@ def _llm_failure(permanent=False):
                 reason = ("无 key 顺链跳过" if permanent
                           else f"连续 {LLM_FAILOVER_THRESHOLD} 次失败")
                 print(f"[dims][llm] {reason} → {LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
+                # 连续阈值切档时同步清零周期累计：新档（如 5.3）应有独立的
+                # LLM_CYCLE_ESCAPE 预算，不能背着上一档（4.7 的 429）的旧账。
+                _LLM_CYCLE_FAILS = 0
             _LLM_FAILS = 0
     if (_LLM_CYCLE_FAILS >= LLM_CYCLE_ESCAPE
             and _LLM_ACTIVE_IDX < len(LLM_CHAIN) - 1):
