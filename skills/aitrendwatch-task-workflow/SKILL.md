@@ -1,16 +1,17 @@
 ---
 name: aitrendwatch-task-workflow
-description: aitrendwatch 需求开发闭环：读取 history/ 需求文件 → 每项任务建独立 worktree 分支并行开发 → 全部完成后合并回 dev 并清理 worktree/分支 → 部署测试机逐项验证，失败在 dev 修复。用户要求「按 history/ 需求文件开发/合并/上线」时使用。
+description: aitrendwatch 需求开发闭环：读取 history/ 需求文件 → 每项任务建独立 worktree 分支并行开发 → 全部完成后合并回 dev 并清理 worktree/分支 → 部署测试机逐项验证，失败在 dev 修复 → 验证通过后推送到远程 dev。用户要求「按 history/ 需求文件开发/合并/上线」时使用。
 ---
 
 # aitrendwatch 需求开发闭环
 
-把 `history/YYYYMMDD.txt` 里的需求清单走完「并行开发 → 合回 dev → 测试机验证」的闭环。流程固定四步：
+把 `history/YYYYMMDD.txt` 里的需求清单走完「并行开发 → 合回 dev → 测试机验证 → 推送远程 dev」的闭环。流程固定五步：
 
 1. 读取需求文件，拆成任务清单
 2. 每项任务一个 worktree + 独立分支，并行开发
 3. 全部完成后在 dev 依次合并，删除 worktree 与分支
 4. dev 部署测试机，逐项验证需求；有问题在 dev 修复并复验
+5. 验证全部通过后把 dev 推送到远程，闭环完成
 
 ## 硬约束（违反会出事）
 
@@ -50,7 +51,14 @@ description: aitrendwatch 需求开发闭环：读取 history/ 需求文件 → 
 - **逐项验证**：按步骤 1 的任务表逐条验证，记录「需求# / 验证方式 / 结果 / 证据」；用公网 `http://47.98.124.167:8080` 页面与 `/api/*` 接口 + 容器日志。测试机 `.env` 只有 GLM key（无 DeepSeek），GLM 限流（1302/1305）是临时现象，等窗口重置，不是代码问题。
 - **失败处理**：任一项不过 → 在主仓库 `dev` 直接修复提交 → 重新部署变更文件 → 复验该项及关联项。
 
+## 步骤 5：推送到远程 dev
+
+- 测试机逐项验证全部通过后，在主仓库把本地 `dev` 推送到远程：`git push origin dev`。
+- 推送前核对：`git status` 干净、当前分支为 `dev`、`git log --oneline origin/dev..dev` 列出的待推提交与本次需求一致（含合并提交与修复提交）。
+- 推送被拒（远程 dev 有新提交）时：`git fetch origin` → `git pull --rebase origin dev` 就地解决冲突 → 重跑步骤 3 的回归（pytest + 冒烟）→ 再次 `git push origin dev`。
+- 推送成功后，远程 `dev` 即成为下一轮 worktree 开发（步骤 2 的 `git pull --ff-only origin dev`）与后续合入 `main` 的基准。
+
 ## 收尾
 
-- 全部通过后按项目先例更新 `docs/memory/` 部署记录（版本/内容/验证结果/注意）。
+- 推送成功后按项目先例更新 `docs/memory/` 部署记录（版本/内容/验证结果/注意）。
 - 是否合入 `main` 上生产由用户决定，本 skill 不自动动 `main`；需要时读 `docs/memory/aitrendwatch-deploy-key.md` 并取得授权。
