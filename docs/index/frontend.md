@@ -11,7 +11,7 @@
 
 ---
 
-## templates/index.html  （1276 行）— 首页主单页（词视图为主）
+## templates/index.html  （1275 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -26,12 +26,12 @@
 | ├ `LANG`/`currentView` 状态 | 501–506 | `currentView=words\|news`，URL/localStorage 记忆 |
 | ├ URL 状态恢复 | 534–558 | `?view=&cat=&sort=&lang=` 可分享 |
 | ├ 视图切换 seg | 790 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
-| ├ 词卡渲染 `renderWordCard` | 887 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + 展开按钮 |
-| ├ 词卡展开 `toggleWordExpand` | 940 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
-| ├ `visibleData` | 1054 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
-| ├ `render` | 1070 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
-| ├ 数据拉取 `fetchAll` | 1142 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
-| ├ AbortController | 1128–1130 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
+| ├ 词卡渲染 `renderWordCard` | 885 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
+| ├ 词卡展开 `toggleWordExpand` | 939 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
+| ├ `visibleData` | 1053 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
+| ├ `render` | 1069 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
+| ├ 数据拉取 `fetchAll` | 1141 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
+| ├ AbortController | 1127–1129 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
 | └ Mock 数据 | 1200 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
