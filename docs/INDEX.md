@@ -23,7 +23,7 @@ aitrendwatch/
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.4.0）
 ├── templates/      # 7 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1276 行：词卡/逐条新闻双视图，JS fetch + i18n）
+│   ├── index.html         # 首页主单页（1309 行：词卡/逐条新闻双视图，JS fetch + i18n）
 │   ├── terms.html         # 服务条款页（363 行）
 │   ├── term_detail.html   # 通用热词聚合页（309 行：相关报道聚合 + HF 区块 + 词解释）
 │   ├── search.html        # 搜索结果页（499 行：含热词命中卡区）
