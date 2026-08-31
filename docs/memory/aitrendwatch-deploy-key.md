@@ -30,4 +30,6 @@ metadata:
 
 **权限提示**：生产主机 SSH 每次读写常被分类器软拦截，需用户 AskUserQuestion 显式授权「生产」目标后才放行；只读日志/文件检查也可能被拦，可用公网 API（`https://aitrendwatch.top/api/*`）替代验证。
 
-相关：[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-test-host`](aitrendwatch-test-host.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)、[`git-merge-doc-line-refs`](git-merge-doc-line-refs.md)
+**⚠️ 上线前必读**：[`aitrendwatch-regression-checklist`](aitrendwatch-regression-checklist.md)——每次生产部署前先过全量核心回归（pytest 全绿 + 测试机逐项验证），再合入 main 部署。
+
+相关：[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-test-host`](aitrendwatch-test-host.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)、[`aitrendwatch-regression-checklist`](aitrendwatch-regression-checklist.md)、[`git-merge-doc-line-refs`](git-merge-doc-line-refs.md)
