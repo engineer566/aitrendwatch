@@ -51,6 +51,28 @@
   document.documentElement.dataset.theme = saved || sys;
 })();
 </script>
+<script>
+// 返回首页场景：首帧绘制前隐藏内容，滚动恢复后再显示——避免「先见顶部 → 跳到原位置」的跳跃断裂感。
+// 判定与底部 restoreScrollPosition 同一口径：scroll_back=1（词条页返回按钮）或 back_forward（浏览器后退/前进）。
+(function () {
+  function isReturnNavigation() {
+    try {
+      if (new URLSearchParams(location.search).get("scroll_back") === "1") return true;
+      const e = performance.getEntriesByType && performance.getEntriesByType("navigation");
+      return !!(e && e.length && e[0].type === "back_forward");
+    } catch (err) { return false; }
+  }
+  try {
+    if (isReturnNavigation() && sessionStorage.getItem("aitw_last_scroll")) {
+      document.documentElement.classList.add("scroll-restoring");
+      // 兜底：即使主脚本异常，也要保证页面可见
+      window.addEventListener("load", function () {
+        document.documentElement.classList.remove("scroll-restoring");
+      });
+    }
+  } catch (err) {}
+})();
+</script>
 <style>
   :root {
     --bg: #0f1117;
@@ -84,6 +106,8 @@
     --shadow: 0 1px 3px rgba(20,25,40,.08);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* 返回首页恢复滚动前隐藏内容（head 脚本判定返回场景后加类），避免顶部闪现 */
+  html.scroll-restoring, html.scroll-restoring body { visibility: hidden; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                  "Microsoft YaHei", sans-serif;
@@ -1240,9 +1264,12 @@ function restoreScrollPosition() {
   let y = null;
   try { y = parseInt(sessionStorage.getItem(SCROLL_KEY), 10); } catch (e) {}
   if (y !== null && isFinite(y) && y > 0) window.scrollTo(0, y);
+  // 恢复后立即显示内容（head 脚本首帧前已隐藏，此刻已就位，不再有顶部闪现）
+  document.documentElement.classList.remove("scroll-restoring");
 }
 // 最后一次校准后调用：消费 key + 清理 URL scroll_back 标记，避免刷新后误触发。
 function finalizeScrollRestore() {
+  document.documentElement.classList.remove("scroll-restoring");
   try { sessionStorage.removeItem(SCROLL_KEY); } catch (e) {}
   const p = new URLSearchParams(location.search);
   if (p.get(SCROLL_BACK_PARAM) === "1") {

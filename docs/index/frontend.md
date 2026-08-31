@@ -11,7 +11,7 @@
 
 ---
 
-## templates/index.html  （1345 行）— 首页主单页（词视图为主）
+## templates/index.html  （1372 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -21,7 +21,7 @@
 | SEO ld+json | 285, 294 | 结构化数据 |
 | AdSense 脚本 | 314 | `adsbygoogle.js`（`adsense_enabled` 时） |
 | SSR 数据注入 | 435, 436 | sponsor-data / initial-terms-data（词卡） |
-| 主 JS `<script>` | 438–1269 | 全部前端逻辑 |
+| 主 JS `<script>` | 455–1291 | 全部前端逻辑 |
 | ├ i18n 定义 | 445 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
 | ├ `t(k)` | 491 | 翻译函数 |
 | ├ `LANG`/`currentView` 状态 | 501–506 | `currentView=words\|news`，URL/localStorage 记忆 |
@@ -33,8 +33,8 @@
 | ├ `render` | 1081 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
 | ├ 数据拉取 `fetchAll` | 1153 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
 | ├ AbortController | 1140–1142 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
-| ├ 返回滚动恢复 | 1210–1258 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；后退/前进（back_forward）或经词条页「返回首页」链接（`scroll_back=1`）回首页时恢复——SSR 首屏立即落位（`restoreScrollPosition`），`/api/stream` 全量渲染后校准并 `finalizeScrollRestore` 消费 key + 清理 URL 标记 |
-| └ Mock 数据 | 1270 | 后端不可用时的内置预览数据 |
+| ├ 返回滚动恢复 | 1237–1286 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；后退/前进（back_forward）或经词条页「返回首页」链接（`scroll_back=1`）回首页时恢复——head 脚本（55，首帧前加 `scroll-restoring` 隐藏内容）→ SSR 首屏立即落位 → `/api/stream` 全量渲染后校准并 `finalizeScrollRestore` 消费 key + 清理 URL 标记，全程无顶部闪现 |
+| └ Mock 数据 | 1297 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
 **渲染路由**：`/`（`app.py:629`）。
