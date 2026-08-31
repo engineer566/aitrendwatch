@@ -43,6 +43,10 @@ _now_iso = lambda: datetime.datetime.now().isoformat(timespec="seconds")
 MAX_NEW_TERMS_PER_CYCLE = 150   # 单轮最多新增的非词典词数（防 LLM 词爆炸）
 WORD_CARDS_LIMIT = 200          # words.json 最多保留的词卡数（展示层再截 60）
 HOT_WINDOW_DAYS = 7             # 热度聚合窗口（天）
+# 每轮解释批次上限（词数）：解释生成在 dims 刷新锁内执行，批次过大 + LLM 不稳会
+# 长时间占锁阻塞 words.json 更新；按热度降序取前 N 个（最热优先），存量无解释词
+# 随后续刷新逐轮回填。默认 60 词 ≈ 5 批，单轮最多约 5-10 分钟。
+EXPLAIN_BATCH_MAX_WORDS = 60
 
 
 def _word_card_identity(card):
@@ -1045,7 +1049,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     if term_explainer and kept:
         try:
             now_dt = datetime.datetime.now()
-            needs = []  # (canon, display, titles, existing_zh, existing_en)
+            needs = []  # (canon, display, titles, existing_zh, existing_en, hot)
             with _db_lock:
                 conn = _conn()
                 for canon in kept:
@@ -1053,7 +1057,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                         continue
                     row = conn.execute(
                         "SELECT display, explain_zh, explain_en, "
-                        "explain_updated_at FROM terms WHERE term=?",
+                        "explain_updated_at, cur_hot FROM terms WHERE term=?",
                         (canon,)).fetchone()
                     if not row:
                         continue
@@ -1072,19 +1076,24 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                               for n in (kept[canon].get("top") or [])[:3]]
                     needs.append((canon, row["display"] or canon,
                                   [t for t in titles if t],
-                                  existing_zh, existing_en))
+                                  existing_zh, existing_en,
+                                  row["cur_hot"] or 0))
                 conn.close()
+            # 每轮解释批次上限：按热度降序取前 N 个（最热优先），
+            # 控制 LLM 批次规模与刷新锁占用时间；存量无解释词后续轮次回填。
+            needs.sort(key=lambda x: x[5], reverse=True)
+            needs = needs[:EXPLAIN_BATCH_MAX_WORDS]
             if needs:
                 results = term_explainer([
                     {"canon": c, "display": d, "titles": ts,
                      "existing_zh": ez, "existing_en": ee}
-                    for c, d, ts, ez, ee in needs
+                    for c, d, ts, ez, ee, _h in needs
                 ]) or {}
                 if results:
                     now_iso = now_dt.isoformat(timespec="seconds")
                     with _db_lock:
                         conn = _conn()
-                        for canon, _d, _ts, ez, ee in needs:
+                        for canon, _d, _ts, ez, ee, _h in needs:
                             res = results.get(canon) or {}
                             new_zh = (res.get("zh") or "").strip()
                             new_en = (res.get("en") or "").strip()

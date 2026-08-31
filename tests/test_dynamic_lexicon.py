@@ -288,6 +288,63 @@ class DynamicLexiconTests(unittest.TestCase):
         self.assertTrue(detail["term"]["explain"])
         self.assertIn("近期 AI 热点词", detail["term"]["explain"])
 
+    def test_explain_batch_capped_by_hot(self):
+        # 超过上限的词：只发最热的 EXPLAIN_BATCH_MAX_WORDS 个（防刷新锁占用过长）
+        old_cap = self.terms.EXPLAIN_BATCH_MAX_WORDS
+        self.terms.EXPLAIN_BATCH_MAX_WORDS = 2
+        try:
+            for i in range(3):
+                kw = f"capword{i}"
+                self._insert_card(f"https://c.example/{i}",
+                                  f"Cap word {i} news", [kw])
+            # 三张卡 score 不同 → cur_hot 不同；hot 最高的两个应被选中
+            seen = []
+
+            def explainer(contexts):
+                seen.extend(c["canon"] for c in contexts)
+                return {}
+
+            self.terms.refresh_words(
+                [self._card(f"https://c.example/{i}", f"Cap word {i} news",
+                            [f"capword{i}"]) for i in range(3)], [],
+                fetched_at=1750000000, term_explainer=explainer)
+            self.assertEqual(len(seen), 2)   # 只发上限 2 个
+            self.assertTrue(set(seen) <= {"capword0", "capword1", "capword2"})
+            # 本轮未发的词留在待解释集合（后续轮次回填），库里无解释
+            for kw in seen:
+                zh, _en, _ts = self._term_row(kw)
+                self.assertEqual(zh, "")
+        finally:
+            self.terms.EXPLAIN_BATCH_MAX_WORDS = old_cap
+
+    def test_explain_terms_consecutive_fail_fast(self):
+        # 连续 EXPLAIN_CONSECUTIVE_FAIL_LIMIT 块失败 → 熔断停止剩余批次
+        import dims as dims_mod
+        old_limit = dims_mod.EXPLAIN_CONSECUTIVE_FAIL_LIMIT
+        dims_mod.EXPLAIN_CONSECUTIVE_FAIL_LIMIT = 2
+        try:
+            calls = {"n": 0}
+            contexts = [{"canon": f"w{i}", "display": f"W{i}",
+                         "titles": [], "existing_zh": "", "existing_en": ""}
+                        for i in range(36)]  # 3 块
+
+            def fake_post(url, headers=None, json=None, timeout=None):
+                calls["n"] += 1
+                raise Exception("simulated 429")
+
+            with patch.object(dims_mod, "_active_llm",
+                              return_value=("glm-5.3-flash",
+                                            "https://llm.example",
+                                            "fake-key", 1)), \
+                    patch.object(dims_mod.requests, "post",
+                                 side_effect=fake_post):
+                out = dims_mod.explain_terms(contexts)
+            # 连续 2 块失败即停：只发 2 次 post，而不是 3 块
+            self.assertEqual(calls["n"], 2)
+            self.assertEqual(out, {})
+        finally:
+            dims_mod.EXPLAIN_CONSECUTIVE_FAIL_LIMIT = old_limit
+
 
 class ExplainPromptTests(unittest.TestCase):
     """提示词契约（fake key + 全 mock，零真实 token）。"""
