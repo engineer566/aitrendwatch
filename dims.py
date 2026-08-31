@@ -812,9 +812,13 @@ def _llm_classify_batch(batch):
         "summary_zh=一句中文<=30字概括，summary_en=该概括的英文翻译<=30词。\n"
         "- title 翻译要忠实于原标题（保留专名/数字/缩写，不要增删或加注释）；"
         "summary 必须是原事件的一句话概括，不是标题的重复，不得为空。\n"
-        "- keywords：从该事件抽取1-3个AI领域关键实体/技术词，JSON数组；"
-        "英文术语用规范写法（如 GPT-5、Llama、MCP、RAG），中文概念用中文"
-        "（如 智能体、多模态）；无合适词给空数组。\n"
+        "- keywords：抽取1-3个高价值AI实体/概念作为热词候选，JSON数组。"
+        "优先：具体模型/产品/公司/组织名（如 GPT-5、Claude、Anthropic、Cursor）、"
+        "核心技术（如 RAG、MoE、KV-Cache、推理模型）、热点事件主体"
+        "（如并购/IPO/政策针对的具体对象）。英文术语用规范拼写，中文概念用中文"
+        "（如 智能体、多模态）。"
+        "禁止抽取泛化词（AI、模型、技术、公司、行业、数据、产品等单独出现时）、"
+        "纯形容词/动词、以及无检索价值的碎片词；无合适词给空数组。\n"
         "- 数组长度必须与输入条数一致，idx 从 0 开始逐条对应；"
         "每条都必须包含全部7个字段，翻译字段禁止空字符串。\n"
         "- 只输出JSON数组本身，不要Markdown代码块、不要任何解释：\n"
@@ -1118,6 +1122,77 @@ def _translate_terms(chinese_terms):
     return out
 
 
+def explain_terms(contexts):
+    """热词 → 双语解释（供 terms.refresh_words 的 term_explainer 回调）。
+
+    动态词典资产维护：为词典外热词生成/优化解释。批量走当前 LLM 档（含故障
+    转移链）；失败降级返回空映射（详情页模板兜底，不阻塞刷新）。
+
+    入参 [{canon, display, titles, existing_zh, existing_en}]：
+    - titles：该词最新代表报道标题（价值上下文，可为空）；
+    - existing_zh/en：现有解释（可为空=新词）。已有解释时只有明显更优才返回
+      新文本，否则原样返回现有文本——调用方比对后不写内容、仅刷新检查时间，
+      保持 ≤1 次/天/词的优化频率。
+    出参 {canon: {"zh": ..., "en": ...}}。
+    """
+    if not contexts:
+        return {}
+    out = {}
+    sys_msg = (
+        "你是AI热词解释专家，面向普通访客。为每个AI领域热词写一句解释，"
+        "包含两部分：①一句话定义（是什么）；②为什么值得关注（结合给出的代表报道"
+        "标题，点出当下热度来源/最新进展）。中文解释用中文，英文解释用英文。"
+        "禁止编造事实，不确定的用模糊但正确的表述。"
+        "已有解释时：只有当你能明显改进（更准确、更有价值、更贴合最新报道）"
+        "时才返回新文本，否则原样返回现有文本。"
+        "只输出JSON对象，键为canon，值为{\"zh\":中文解释,\"en\":英文解释}，"
+        "不要任何解释或前后缀。"
+    )
+    for start in range(0, len(contexts), LLM_BATCH):
+        chunk = contexts[start:start + LLM_BATCH]
+        lines = []
+        for c in chunk:
+            lines.append(json.dumps({
+                "canon": c.get("canon", ""),
+                "display": c.get("display", ""),
+                "titles": "；".join(c.get("titles") or [])[:120],
+                "existing_zh": c.get("existing_zh") or "",
+                "existing_en": c.get("existing_en") or "",
+            }, ensure_ascii=False))
+        user_msg = ("解释以下热词，输出JSON对象 {\"canon\": {\"zh\": \"中文解释\", "
+                    "\"en\": \"英文解释\"}}：\n" + "\n".join(lines))
+        try:
+            model, url, key, _idx = _active_llm()
+            if not key:
+                raise RuntimeError("LLM key 未配置")
+            payload = {"model": model,
+                       "messages": [{"role": "system", "content": sys_msg},
+                                    {"role": "user", "content": user_msg}],
+                       "max_tokens": 2000, "temperature": 0.2}
+            payload.update(llm_reasoning_params(model))
+            resp = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {key}",
+                         "Content-Type": "application/json"},
+                json=payload, timeout=(15, 90))
+            resp.raise_for_status()
+            body = resp.json()
+            content = ((body.get("choices") or [{}])[0]
+                       .get("message", {}).get("content") or "")
+            m = re.search(r"\{.*\}", content, re.S)
+            parsed = json.loads(m.group(0)) if m else {}
+            for k, v in parsed.items():
+                if isinstance(v, dict) and (v.get("zh") or v.get("en")):
+                    out[k] = {"zh": str(v.get("zh") or "")[:200],
+                              "en": str(v.get("en") or "")[:300]}
+            _llm_success()
+        except Exception as e:
+            print(f"[dims][llm] 热词解释失败: {type(e).__name__}: {e}",
+                  flush=True)
+            _llm_failure()
+    return out
+
+
 # ---------- 顶层聚合 ----------
 def _to_card(it):
     """事件卡 → 前端维度热词卡（携带中英双 slot，投影在 get_dims 按 lang 取）。"""
@@ -1391,7 +1466,8 @@ def _dims_refresh_once():
                             terms_mod.refresh_words(
                                 all_cards, model_cards,
                                 fetched_at=data["fetched_at"],
-                                term_translator=_translate_terms)
+                                term_translator=_translate_terms,
+                                term_explainer=explain_terms)
                         except Exception:
                             pass
                     return True
