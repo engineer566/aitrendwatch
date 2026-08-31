@@ -11,7 +11,7 @@
 
 ---
 
-## templates/index.html  （1276 行）— 首页主单页（词视图为主）
+## templates/index.html  （1309 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -20,7 +20,7 @@
 | SEO ld+json | 287, 296 | 结构化数据 |
 | AdSense 脚本 | 310 | `adsbygoogle.js`（`adsense_enabled` 时） |
 | SSR 数据注入 | 436, 437 | sponsor-data / initial-terms-data（词卡） |
-| 主 JS `<script>` | 438–1198 | 全部前端逻辑 |
+| 主 JS `<script>` | 438–1231 | 全部前端逻辑 |
 | ├ i18n 定义 | 445 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
 | ├ `t(k)` | 491 | 翻译函数 |
 | ├ `LANG`/`currentView` 状态 | 501–506 | `currentView=words\|news`，URL/localStorage 记忆 |
@@ -32,7 +32,8 @@
 | ├ `render` | 1070 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
 | ├ 数据拉取 `fetchAll` | 1142 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
 | ├ AbortController | 1128–1130 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
-| └ Mock 数据 | 1200 | 后端不可用时的内置预览数据 |
+| ├ 返回滚动恢复 | 1193–1224 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；仅后退/前进（back_forward）回首页时，在 SSR + `/api/stream` 异步渲染完成后恢复滚动并删除 key |
+| └ Mock 数据 | 1233 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
 **渲染路由**：`/`（`app.py:628`）。
