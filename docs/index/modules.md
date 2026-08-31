@@ -222,7 +222,7 @@
 | `get_word_cards(sort, lang, limit)` | 1206 | `/api/stream?view=words` 数据源（读 words.json，先完整排序再截取再投影） |
 | `get_term_row(term)` | 1252 | 查 terms 主表（canonical 键） |
 | `get_term_explanation(term, lang)` | 1268 | 热词解释三级取词：静态 `_EXPLANATIONS` → terms 表 explain_*（LLM 维护）→ 空串；详情页模板兜底 |
-| `get_term_news(term, limit, lang)` | 1300 | 词 → 关联报道（canonical/别名 + 标题边界兜底；limit 截断前按归一化标题去重，同标题转载只留 score 最高者） |
+| `get_term_news(term, limit, lang)` | 1300 | 词 → 关联报道（canonical/别名 + 标题边界兜底；按归一化标题去重后按 hot 降序，hot 缺失回退 score，同 hot 按 published 降序，排序先于 limit 截断） |
 | `list_terms_for_sitemap(limit)` | 1397 | sitemap 词表（热度降序） |
 | `backfill_history(days, force)` | 1413 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
 
