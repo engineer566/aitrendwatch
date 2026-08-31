@@ -7,7 +7,7 @@
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。
 - **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:445`）+ `t(k)` 翻译函数（`index.html:491`）+ `LANG` 状态（`index.html:506`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
 - **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:436`）+ `<script id="initial-terms-data">`（`index.html:437`）。
-- **SEO**：`term_detail.html` 含两段 `application/ld+json` 结构化数据（`term_detail.html:126,141`）；`index.html` 也有 ld+json（`index.html:281,290`）。
+- **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:152,163,184,199`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:287,296`）。
 
 ---
 
@@ -17,7 +17,7 @@
 |------|------|------|
 | 主题初始化 JS | 28 | 读 localStorage 设 data-theme |
 | 样式 `<style>` | ~40–250 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
-| SEO ld+json | 281, 290 | 结构化数据 |
+| SEO ld+json | 287, 296 | 结构化数据 |
 | AdSense 脚本 | 310 | `adsbygoogle.js`（`adsense_enabled` 时） |
 | SSR 数据注入 | 436, 437 | sponsor-data / initial-terms-data（词卡） |
 | 主 JS `<script>` | 438–1198 | 全部前端逻辑 |
@@ -56,7 +56,7 @@
 
 ---
 
-## templates/term_detail.html  （300 行）— 通用热词聚合页
+## templates/term_detail.html  （299 行）— 通用热词聚合页
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -64,7 +64,7 @@
 | 词头（名称/来源徽标/热度/环比/报道数） | ~180–200 | `word.term` 通用字段 |
 | 相关报道列表（SSR，SEO 主体） | ~210–225 | `word.news` 聚合卡 |
 | HF 区块（官方/社区/论文/标签，条件渲染） | ~185–210 | `{% if word.hf %}`，live 数据 `word.hf_detail` |
-| SEO ld+json | ~135–185 | DefinedTerm + ItemList（通用词）；SoftwareApplication + ScholarlyArticle（HF 词） |
+| SEO ld+json | ~151–210 | DefinedTerm + ItemList（通用词）；SoftwareApplication + ScholarlyArticle（HF 词）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
 
 **引用 API**：无（服务端 `_word_detail`（`app.py:103`）同步装配，进程内 TTL 缓存）。
 **渲染路由**：`/term/<name>`（`app.py:656`）。
