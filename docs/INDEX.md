@@ -23,7 +23,7 @@ aitrendwatch/
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.4.0）
 ├── templates/      # 8 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1331 行：词卡/逐条新闻双视图，JS fetch + i18n，header 含 🤗 HF 入口）
+│   ├── index.html         # 首页主单页（1345 行：词卡/逐条新闻双视图，JS fetch + i18n，header 含 🤗 HF 入口）
 │   ├── hf.html            # HuggingFace 独立排序页（355 行：趋势/点赞/下载排序 + pipeline 标签，开源动向）
 │   ├── terms.html         # 服务条款页（371 行）
 │   ├── term_detail.html   # 通用热词聚合页（309 行：相关报道聚合 + HF 区块 + 词解释）
