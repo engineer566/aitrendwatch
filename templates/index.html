@@ -1202,10 +1202,13 @@ async function fetchAll({ initial = false } = {}) {
 }
 
 // ==================== 返回时恢复滚动位置 ====================
-// 首页是整页重载的非 SPA：点击热词进入 /term/<name> 后再按浏览器返回，首页会重新加载。
-// 跳转前把 window.scrollY 记入 sessionStorage；仅当本次加载来自后退/前进（back_forward）
-// 且存在记录时，在首屏（SSR + /api/stream 异步补全）渲染完成后跳回原位置。
+// 首页是整页重载的非 SPA：点击热词进入 /term/<name> 后返回，首页会重新加载。
+// 跳转前把 window.scrollY 记入 sessionStorage，在首屏（SSR + /api/stream 异步补全）
+// 渲染完成后跳回原位置。两条返回路径都支持：
+//   1. 浏览器后退/前进（navigation.type == back_forward）
+//   2. 词条页「返回首页 / 查看更多 AI 热点」链接（fresh 导航，链接带 scroll_back=1 标记）
 const SCROLL_KEY = "aitw_last_scroll";
+const SCROLL_BACK_PARAM = "scroll_back";
 function saveScrollPosition() {
   try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY || 0)); } catch (e) {}
 }
@@ -1225,12 +1228,20 @@ function isBackForwardNavigation() {
     return entries.length > 0 && entries[0].type === "back_forward";
   } catch (e) { return false; }
 }
-// 消费 key：仅后退/前进进入首页时恢复；位置 > 0 才跳（顶部无需处理），恢复后即删除
+// 消费 key：后退/前进进入首页，或经词条页「返回首页」链接（scroll_back=1）进入时恢复；
+// 位置 > 0 才跳（顶部无需处理），恢复后即删除 key 并清理 URL 标记，避免刷新后误触发。
 function restoreScrollPosition() {
-  if (!isBackForwardNavigation()) return;
+  const p = new URLSearchParams(location.search);
+  const fromTermReturn = p.get(SCROLL_BACK_PARAM) === "1";
+  if (!fromTermReturn && !isBackForwardNavigation()) return;
   let y = null;
   try { y = parseInt(sessionStorage.getItem(SCROLL_KEY), 10); } catch (e) {}
   try { sessionStorage.removeItem(SCROLL_KEY); } catch (e) {}
+  if (fromTermReturn) {
+    p.delete(SCROLL_BACK_PARAM);
+    const qs = p.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+  }
   if (y !== null && isFinite(y) && y > 0) window.scrollTo(0, y);
 }
 

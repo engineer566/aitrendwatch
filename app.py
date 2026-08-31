@@ -726,7 +726,7 @@ def term_detail(term_name):
                            site_name=config.SITE_NAME,
                            site_desc=desc[:160], base_url=_base_url(),
                            canonical=canonical, seo_enabled=_seo_enabled(),
-                           home_url=_lang_url("/", lang),
+                           home_url=_lang_url("/", lang) + "&scroll_back=1",
                            lang_toggle_url=_lang_url(
                                request.path, "en" if lang == "zh" else "zh"),
                            lang_toggle_label="中文" if lang == "en" else "English")
