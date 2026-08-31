@@ -832,10 +832,11 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
         except Exception:
             pass
     for a in agg.values():
-        # top news 与 get_term_news 同序（published 降序 + score 降序），
-        # 保证卡片内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
-        a["top"].sort(key=lambda x: -x["score"])
+        # top news 与 get_term_news 同序（hot 降序，hot 缺失回退 score；
+        # 本路径只投影 score，故按 score 降序 + published 降序），保证卡片
+        # 内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
         a["top"].sort(key=lambda x: x["card"].get("published") or "", reverse=True)
+        a["top"].sort(key=lambda x: -x["score"])
         # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：保留排序后
         # 首条（即 score 最高者），与详情页 get_term_news 同口径，词卡 top_news
         # 不出现同标题两条。title_zh or title_en（title_zh 构造时已回退原始
@@ -1271,7 +1272,9 @@ def get_term_news(term, limit=50, lang="zh"):
     新卡的 ``keywords`` 是 canonical JSON，历史卡可能没有该列、列值为
     ``[]``，或仍保存旧的表面形式。因此 SQL 只负责收集候选行，最终的
     关联判断统一在 Python 中做 canonical/别名归一和版本感知边界匹配。
-    返回与 dims 卡同 schema 的投影卡列表，published 降序 + score 降序。
+    返回与 dims 卡同 schema 的投影卡列表：去重后按 hot 降序（hot 缺失或
+    为 0 回退 score，与 ``_row_to_card`` 兜底同口径），同 hot 按 published
+    降序稳定排序；排序先于 limit 截断。
     """
     if not _DB_OK or not news_store:
         return []
@@ -1339,10 +1342,11 @@ def get_term_news(term, limit=50, lang="zh"):
             title_match = any(_title_matches_term(t, surfaces) for t in titles)
             if keywords_match or title_match:
                 # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：
-                # rows 已按 published DESC, score DESC 排序，保留首条即 score
-                # 最高者；title_zh/title_en/原始 title 取首个非空（先解码再
-                # 归一，与展示卡同口径）。去重在 limit 截断之前做，同标题第二份
-                # 不会挤掉有效卡。空标题不去重（保持原行为）。
+                # rows 已按 published DESC, score DESC 排序，保留首条（同日
+                # 期下即 score 最高者）；title_zh/title_en/原始 title 取首个
+                # 非空（先解码再归一，与展示卡同口径）。去重在排序与 limit
+                # 截断之前做，同标题第二份不会挤掉有效卡。空标题不去重（保持
+                # 原行为）。
                 tkey = None
                 for field in ("title_zh", "title_en", "title"):
                     if field in title_fields:
@@ -1355,9 +1359,20 @@ def get_term_news(term, limit=50, lang="zh"):
                         continue
                     seen_titles.add(tkey)
                 out.append(r)
-                if len(out) >= limit:
-                    break
-        return [news_store._row_to_card(r) for r in out]
+
+        def _card_hot(r):
+            # 与 _row_to_card 的 hot 兜底同口径：hot 缺失/为 0 → score。
+            try:
+                hot = r["hot"]
+            except (KeyError, IndexError):
+                hot = 0
+            return hot or r["score"] or 0
+
+        # 详情页/展开列表按热度排序：hot 降序（hot 缺失回退 score），同 hot
+        # 按 published 降序稳定排序；排序在 limit 截断之前（去重也已先行，
+        # 因此 limit 只统计去重后的有效卡）。
+        out.sort(key=lambda r: (_card_hot(r), r["published"] or ""), reverse=True)
+        return [news_store._row_to_card(r) for r in out[:limit]]
     except Exception:
         return []
 
