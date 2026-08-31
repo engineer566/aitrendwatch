@@ -241,7 +241,7 @@
 
   <!-- 每日趋势柱状图 -->
   <div class="card">
-    <h2>📈 近 30 天趋势 <span class="sub" id="chart-sub"></span></h2>
+    <h2>📈 近 30 天趋势（独立 IP）<span class="sub" id="chart-sub"></span></h2>
     <div class="chart" id="chart"></div>
     <div class="chart-x" id="chart-x"></div>
   </div>
@@ -368,21 +368,21 @@ function renderChart(daily) {
     chartSub.textContent = "";
     return;
   }
-  const maxPv = Math.max(...daily.map(x => x.pv), 1);
+  const maxUv = Math.max(...daily.map(x => x.uv), 1);
   // 横轴最多标 6 个日期，避免拥挤
   const step = Math.ceil(daily.length / 6);
   let bars = "", labels = "";
   daily.forEach((d, i) => {
-    const h = (d.pv / maxPv * 100).toFixed(1);
+    const h = (d.uv / maxUv * 100).toFixed(1);
     bars += `<div class="bar-col">
       <div class="bar" style="height:${h}%"></div>
-      <div class="tip">${escapeHtml(d.date)} · PV ${fmtNum(d.pv)} · UV ${fmtNum(d.uv)}</div>
+      <div class="tip">${escapeHtml(d.date)} · UV ${fmtNum(d.uv)} · PV ${fmtNum(d.pv)}</div>
     </div>`;
     labels += `<span>${i % step === 0 ? d.date.slice(5) : ""}</span>`;
   });
   chartEl.innerHTML = bars;
   chartXEl.innerHTML = labels;
-  chartSub.textContent = `峰值 PV ${fmtNum(maxPv)}`;
+  chartSub.textContent = `峰值 UV ${fmtNum(maxUv)}`;
 }
 
 function renderRegions(regions) {

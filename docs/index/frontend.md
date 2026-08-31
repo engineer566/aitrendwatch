@@ -112,18 +112,18 @@
 
 ---
 
-## templates/monitor.html  （390 行）— 流量监控页
+## templates/monitor.html  （582 行）— 流量监控页
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
-| 主题 JS | 10 | |
-| 样式（含 chart） | 36–130 | `.chart` 柱状图样式 |
-| 主题切换 | 175, 217 | `#theme-btn` |
-| 30 天趋势图 | 193–195 | `#chart` + `#chart-x`（纯 CSS 柱状图） |
-| 主 JS | 215 | `<script>` |
-| ├ 主题切换逻辑 | 221 | |
-| ├ 图表渲染 | 253 | `chartEl`/`chartXEl` |
-| └ 数据拉取 | 367 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
+| 主题 JS | 18–25 | 主题初始化（防闪烁，与首页同 key） |
+| 样式（含 chart） | 118–132 | `.chart` 柱状图样式 |
+| 主题切换 | 299–309 | `#theme-btn` |
+| 30 天趋势图 | 242–247 | `#chart` + `#chart-x`（纯 CSS 柱状图，按 UV 口径） |
+| 主 JS | 297 | `<script>` |
+| ├ 主题切换逻辑 | 299 | |
+| ├ 图表渲染 | 335, 364–386 | `chartEl`/`chartXEl`/`chartSub`；`renderChart`（UV 柱高 + 峰值 UV 副标题） |
+| └ 数据拉取 | 543–579 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
 
 **引用 API**：`/monitor/api?days=N`。
 **渲染路由**：`/monitor`（`app.py:1298`，需 admin）。

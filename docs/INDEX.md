@@ -29,7 +29,7 @@ aitrendwatch/
 │   ├── search.html        # 搜索结果页（498 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（345 行）
 │   ├── admin_login.html   # 管理员登录（60 行）
-│   └── monitor.html       # 流量监控页（390 行）
+│   └── monitor.html       # 流量监控页（582 行）
 ├── data/           # SQLite 库（sponsors.db, news.db）+ GeoLite2（运行产物，.gitkeep 占位）
 ├── cache/          # 文件缓存产物（terms.json, dims.json, words.json + .refresh.lock）
 ├── history/        # 开发任务备忘（非代码）
