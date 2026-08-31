@@ -53,11 +53,11 @@
 - 批量调用：`enrich_with_llm(items)` 分批打标（6 条子批）。
 - 生产定点刷新：`DIMS_REFRESH_HOURS=(1,7,13,19)`，避开高峰段 + 命中硬盘缓存 TTL。
 
-### 关键词词典（`terms.py:218` `_LEXICON`）
+### 关键词词典（`terms.py:239` `_LEXICON`）
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
 - 用途：无 LLM key 降级抽词、历史库零成本回填、常见异形归一、display_zh 来源。
-- 通用热词停用词表（`terms.py:320` `_TERM_STOPWORDS`）：低价值通用词（"AI"/"llm"/"model" 等，canonical 键）在抽词（`extract_keywords_dict`）、聚合（`_keyword_canons`）、HF 词（`_hf_canon` 后）三级被剔除，不作为独立热词。
-- 热词解释：三级取词——① `terms.py:335` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1268`）。
+- 通用热词停用词表（`terms.py:342` `_TERM_STOPWORDS`）：低价值通用词（"AI"/"llm"/"model" 等，canonical 键）在抽词（`extract_keywords_dict`）、聚合（`_keyword_canons`）、HF 词（`_hf_canon` 后）三级被剔除，不作为独立热词。
+- 热词解释：三级取词——① `terms.py:357` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1310`）。
 
 ## SQLite Schema
 
@@ -89,7 +89,7 @@
 - 索引：`idx_visits_date`、`idx_visits_ip_date`。
 - PV = 行数，UV = `COUNT(DISTINCT ip)`。
 
-### news.db（`news_store.py:35` `init_db`，路径 `config.NEWS_DB_PATH`）
+### news.db（`news_store.py:36` `init_db`，路径 `config.NEWS_DB_PATH`）
 
 **`news_cards`** — 事件卡历史库
 | 列 | 类型 | 说明 |
@@ -105,13 +105,13 @@
 | first_seen_at/last_refresh_at | TEXT | 首次入库/最近刷新 |
 | active | INT | 0=历史归档（近期未刷新命中） |
 - 索引：`idx_news_{score,trend,published,dim}`。
-- 迁移 `_migrate`（`news_store.py:88`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
+- 迁移 `_migrate`（`news_store.py:89`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
 
-**`terms`** — 词主表（`terms.py:155` `init_db`）
+**`terms`** — 词主表（`terms.py:176` `init_db`）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | term | TEXT PK | canonical 键（小写归一），如 "gpt-5" |
-| display / display_zh | TEXT | 最佳展示形 / 中文别名 |
+| display / display_zh / display_en | TEXT | 最佳展示形 / 中文别名 / 英文展示名（中文热词的 LLM 翻译；LLM 限流轮次保留旧值） |
 | origin | TEXT | news / hf / both（热词来源归并） |
 | first_seen_at / last_seen_at | TEXT | 首次进入词池 / 最近见 |
 | total_mentions | INT | 累计关联报道数（url 去重） |
@@ -132,7 +132,7 @@ WAL 模式。DB 不可用 → `_DB_OK=False` 全程静默降级返空。
 |------|--------|------|------|
 | `terms.json` | `tracker._refresh_once` | `tracker.get_terms`/`get_model_cards` | HF 热词榜 + model 卡 |
 | `dims.json` | `dims._dims_refresh_once` | `dims.get_dims`/`get_news_cards` | 维度事件卡分组 |
-| `words.json` | `terms.refresh_words`（dims 刷新锁内调） | `terms.get_word_cards` | 词卡榜（热度/上升/新奇度，词维度重构新增） |
+| `words.json` | `terms.refresh_words`（dims 刷新锁内调） | `terms.get_word_cards` | 词卡榜（热度/上升/新奇度，词维度重构新增；hot 按报道新鲜度加权——≤1d ×3 / ≤3d ×1.5，2026-09-02 优化） |
 | `.tracker.refresh.lock` | `tracker._cross_proc_lock` | — | fcntl 跨进程锁 |
 | `.dims.refresh.lock` | `dims._cross_proc_lock` | — | fcntl 跨进程锁 |
 
