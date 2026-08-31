@@ -35,7 +35,8 @@
 ## 项目技能（skills/）
 
 - [`skills/aitrendwatch-task-workflow/`](skills/aitrendwatch-task-workflow/SKILL.md)：需求开发闭环 skill——读取 `history/` 需求文件 → 每项任务独立 worktree 并行开发 → 合并回 `dev` 并清理 → 部署测试机逐项验证。用户要求按需求文件开发/上线时使用。
-- 本机试用安装：把该目录复制到 `~/.codex/skills/`（`CODEX_HOME`，本机 `C:\Users\ferri\.codex`），并在 `~/.codex/config.toml` 的 `[features]` 打开 `skills = true` 后 Codex 才能自动发现；仓库内 `skills/` 为唯一事实源，拉取更新后需重新复制。
+- DSH 发现：`skills/` 不在 DSH 的扫描根里；DSH 默认扫项目根 `.dsh/skills/`（rank 100）与用户根 `~/.dsh/skills/`。本仓库已在 `.dsh/skills/aitrendwatch-task-workflow/` 放了一份副本供 DSH 自动发现（watcher 实时注入会话）。`skills/` 为唯一事实源，改动后需同步复制到 `.dsh/skills/`。
+- 本机 Codex 试用安装：把 `skills/aitrendwatch-task-workflow/` 复制到 `~/.codex/skills/`（`CODEX_HOME`，本机 `C:\Users\ferri\.codex`），并在 `~/.codex/config.toml` 的 `[features]` 打开 `skills = true` 后 Codex 才能自动发现；仓库内 `skills/` 为唯一事实源，拉取更新后需重新复制。
 
 ## 部署提示
 
