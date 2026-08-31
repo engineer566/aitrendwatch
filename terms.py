@@ -444,6 +444,20 @@ def _title_matches_term(text, surfaces):
     return False
 
 
+def _title_key(title):
+    """标题归一化去重键：strip + casefold + 连续空白压缩。
+
+    同标题转载/镜像（不同 URL 同一篇报道，如 Yahoo Finance / The Motley Fool
+    两处镜像）在关联列表里会连续重复展示。归一化标题作为去重键，命中即只保留
+    首条（调用方需保证输入已按 published DESC, score DESC 排序，首条即
+    score 最高者）。空/缺失/纯空白标题返回 None（不去重，保持原行为）。
+    """
+    if title is None:
+        return None
+    norm = re.sub(r"\s+", " ", str(title).strip().casefold())
+    return norm or None
+
+
 def _compile_surface_patterns(surfaces):
     """预编译表面匹配模式，供词聚合标题关联计数批量复用（避免逐卡逐词 re.compile）。"""
     pats = []
@@ -708,7 +722,21 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
         # 保证卡片内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
         a["top"].sort(key=lambda x: -x["score"])
         a["top"].sort(key=lambda x: x["card"].get("published") or "", reverse=True)
-        a["top"] = [t["card"] for t in a["top"][:3]]
+        # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：保留排序后
+        # 首条（即 score 最高者），与详情页 get_term_news 同口径，词卡 top_news
+        # 不出现同标题两条。title_zh or title_en（title_zh 构造时已回退原始
+        # title），空标题不去重。去重须在 [:3] 截断前做，重复项不占展示位。
+        deduped = []
+        seen_titles = set()
+        for t in a["top"]:
+            tkey = (_title_key(t["card"].get("title_zh"))
+                    or _title_key(t["card"].get("title_en")))
+            if tkey is not None:
+                if tkey in seen_titles:
+                    continue
+                seen_titles.add(tkey)
+            deduped.append(t)
+        a["top"] = [t["card"] for t in deduped[:3]]
 
     # ---- 3. 归并 HF 词（无新闻命中也入池，origin=hf）----
     for canon, meta in hf_terms.items():
@@ -1082,6 +1110,7 @@ def get_term_news(term, limit=50, lang="zh"):
         conn.close()
 
         out = []
+        seen_titles = set()
         for r in rows:
             # Known aliases (GPT5, GPT 5, 智能体, …) are handled by
             # _term_surfaces, including the canonical spelling itself.
@@ -1089,10 +1118,26 @@ def get_term_news(term, limit=50, lang="zh"):
             titles = [str(r[f] or "") for f in title_fields]
             title_match = any(_title_matches_term(t, surfaces) for t in titles)
             if keywords_match or title_match:
+                # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：
+                # rows 已按 published DESC, score DESC 排序，保留首条即 score
+                # 最高者；title_zh/title_en/原始 title 取首个非空（先解码再
+                # 归一，与展示卡同口径）。去重在 limit 截断之前做，同标题第二份
+                # 不会挤掉有效卡。空标题不去重（保持原行为）。
+                tkey = None
+                for field in ("title_zh", "title_en", "title"):
+                    if field in title_fields:
+                        k = _title_key(decode_html_entities(r[field]))
+                        if k:
+                            tkey = k
+                            break
+                if tkey is not None:
+                    if tkey in seen_titles:
+                        continue
+                    seen_titles.add(tkey)
                 out.append(r)
                 if len(out) >= limit:
                     break
-        return [news_store._row_to_card(r) for r in out[:limit]]
+        return [news_store._row_to_card(r) for r in out]
     except Exception:
         return []
 
