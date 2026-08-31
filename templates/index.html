@@ -153,6 +153,13 @@
     border: 1px solid color-mix(in srgb, var(--orange) 30%, transparent);
     border-radius: 16px; padding: 4px 12px;
   }
+  .hf-pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
+    padding: 5px 14px; border-radius: 16px; text-decoration: none; white-space: nowrap;
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text-dim);
+    transition: all .15s;
+  }
+  .hf-pill:hover { color: #fff; background: var(--orange); border-color: var(--orange); }
 
   /* ---- 信息流 ---- */
   main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
@@ -343,6 +350,7 @@
       <button class="active" data-view="words">{{ '🔤 Words' if is_en else '🔤 热词' }}</button>
       <button data-view="news">{{ '📰 News feed' if is_en else '📰 逐条新闻' }}</button>
     </div>
+    <a class="hf-pill" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 HF</a>
     <div class="seg" id="sort-seg">
       <button class="active" data-sort="rise">{{ '📈 Trending' if is_en else '📈 上升最快' }}</button>
       <button data-sort="hot">{{ '🔥 Hottest' if is_en else '🔥 最热' }}</button>

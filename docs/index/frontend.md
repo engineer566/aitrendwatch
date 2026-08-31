@@ -1,6 +1,6 @@
 # 前端模板索引
 
-> 6 个 Jinja2 模板，用途 / 区块 / 行号 / API 引用。配合 [INDEX.md](../INDEX.md) 使用。
+> 8 个 Jinja2 模板，用途 / 区块 / 行号 / API 引用。配合 [INDEX.md](../INDEX.md) 使用。
 
 ## 通用机制
 
@@ -11,33 +11,50 @@
 
 ---
 
-## templates/index.html  （1309 行）— 首页主单页（词视图为主）
+## templates/index.html  （1284 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
-| 主题初始化 JS | 28 | 读 localStorage 设 data-theme |
-| 样式 `<style>` | ~40–250 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
-| SEO ld+json | 287, 296 | 结构化数据 |
-| AdSense 脚本 | 310 | `adsbygoogle.js`（`adsense_enabled` 时） |
-| SSR 数据注入 | 436, 437 | sponsor-data / initial-terms-data（词卡） |
-| 主 JS `<script>` | 438–1231 | 全部前端逻辑 |
-| ├ i18n 定义 | 445 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
-| ├ `t(k)` | 491 | 翻译函数 |
-| ├ `LANG`/`currentView` 状态 | 501–506 | `currentView=words\|news`，URL/localStorage 记忆 |
-| ├ URL 状态恢复 | 534–558 | `?view=&cat=&sort=&lang=` 可分享 |
-| ├ 视图切换 seg | 790 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
-| ├ 词卡渲染 `renderWordCard` | 885 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
-| ├ 词卡展开 `toggleWordExpand` | 939 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
-| ├ `visibleData` | 1053 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
-| ├ `render` | 1069 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
-| ├ 数据拉取 `fetchAll` | 1141 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
-| ├ AbortController | 1127–1129 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
-| ├ 返回滚动恢复 | 1193–1224 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；仅后退/前进（back_forward）回首页时，在 SSR + `/api/stream` 异步渲染完成后恢复滚动并删除 key |
-| └ Mock 数据 | 1233 | 后端不可用时的内置预览数据 |
+| 主题初始化 JS | 46 | 读 localStorage 设 data-theme |
+| 样式 `<style>` | ~54–290 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/HF 入口 pill/响应式 |
+| SEO ld+json | 294, 303 | 结构化数据 |
+| AdSense 脚本 | 323 | `adsbygoogle.js`（`adsense_enabled` 时） |
+| SSR 数据注入 | 444, 445 | sponsor-data / initial-terms-data（词卡） |
+| 主 JS `<script>` | 446–1277 | 全部前端逻辑 |
+| ├ i18n 定义 | 453 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
+| ├ `t(k)` | 499 | 翻译函数 |
+| ├ `LANG`/`currentView` 状态 | 509–515 | `currentView=words\|news`，URL/localStorage 记忆 |
+| ├ URL 状态恢复 | 544–566 | `?view=&cat=&sort=&lang=` 可分享 |
+| ├ 视图切换 seg | 800 | 「🔤热词 / 📰逐条新闻」，`#view-seg`，旁有 🤗 HF 入口 pill（355） |
+| ├ 词卡渲染 `renderWordCard` | 895 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + 展开按钮 |
+| ├ 词卡展开 `toggleWordExpand` | 948 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
+| ├ `visibleData` | 1062 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
+| ├ `render` | 1078 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
+| ├ 数据拉取 `fetchAll` | 1150 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
+| ├ AbortController | 1137–1156 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
+| └ Mock 数据 | 1209 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
 **渲染路由**：`/`（`app.py:628`）。
 **SSR 首屏**：`initial_terms` 注入词卡（词名 + top-3 报道，爬虫可见），随后异步拉 `/api/stream?view=words` 全量替换。
+
+---
+
+## templates/hf.html  （355 行）— HuggingFace 独立排序页（开源动向）
+
+| 区块 | 行号 | 说明 |
+|------|------|------|
+| pipeline_tag → 中文标签映射 | 9–31 | `pipe_emoji` / `pipe_zh` + `pipe_label` 宏：主徽标用可读名称（文生图/文本生成…）而非原始 key |
+| 主题初始化 JS | 70 | 读 localStorage 设 data-theme（防闪烁） |
+| 样式 `<style>` | 78–206 | 暗色默认 + light 覆盖 + 排序 pill / 模型卡 / 响应式 |
+| SEO ld+json | 209 | ItemList（模型榜 Top-20，爬虫可见） |
+| 排序切换 pill | 257–262 | `?sort=trending\|likes\|downloads` 普通链接（服务端切换，零 fetch）+ 缓存更新时间 |
+| 模型卡列表 | 266–303 | 排名 / 🤗 开源模型徽标 / pipeline_tag 主徽标 / tags / 趋势分·点赞·下载 / 官方 + 社区链接 / 相关论文 |
+| 主 JS `<script>` | 311–353 | 主题切换 / 搜索跳转 `/search` / 更新时间渲染 |
+
+**引用 API**：无（服务端 `_hf_models_for`（`app.py:852`）装配后 SSR；数据与 `/api/hf` 同一来源）。
+**渲染路由**：`/hf`（`app.py:873`）。
+**数据源**：`tracker.get_model_cards`（trending 文件缓存）→ 冷启动回退 `tracker.get_terms`（自带快速兜底，只抓 HF ~1s）；likes/downloads 在内存重排。
 
 ---
 
@@ -53,7 +70,7 @@
 | 切换 JS | 352 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:735`）。
+**渲染路由**：`/terms`（`app.py:731`）。
 
 ---
 
@@ -87,11 +104,11 @@
 | └ stats | 307 | `fetch("/admin/stats")` |
 
 **引用 API**：`/admin/sponsors`、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/admin`（`app.py:1305`，需 admin）。
+**渲染路由**：`/admin`（`app.py:1389`，需 admin）。
 
 ---
 
-## templates/search.html  （499 行）— 搜索结果页（含热词命中）
+## templates/search.html  （498 行）— 搜索结果页（含热词命中）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -100,7 +117,7 @@
 | 建议补全 | ~300+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1051`）、SSR `word_hits` 由 `_do_search`（`app.py:1022`）返回。
+**渲染路由**：`/search`（`app.py:1135`）、SSR `word_hits` 由 `_do_search`（`app.py:1106`）返回。
 
 ---
 
@@ -111,7 +128,7 @@
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1282`）。
+**渲染路由**：`/admin/login`（`app.py:1366`）。
 
 ---
 
@@ -129,5 +146,5 @@
 | └ 数据拉取 | 543–579 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
 
 **引用 API**：`/monitor/api?days=N`。
-**渲染路由**：`/monitor`（`app.py:1347`，需 admin）。
+**渲染路由**：`/monitor`（`app.py:1431`，需 admin）。
 **数据**：PV/UV/地域分布（来自 `visits` 表，`store.monitor_stats`）。
