@@ -20,6 +20,8 @@ metadata:
 
 **⚠️ max-requests 生产副作用（2026-08-29 发现并已修）**：生产流量约 2000 请求/80 分钟 → 两 worker 各满 1000 同时被 gunicorn 回收（日志 `Booting worker with pid: N` 成对出现）→ 回收触发应用重启 → tracker+dims 双启动刷新，LLM 刷新从每 6h 变成每约 80min（约 4.5 倍）。**已修**：compose.prod + Dockerfile 的 `max-requests 1000 → 50000`（commit `8fd4476`，部署生产验证），回收间隔压到约 33h。**教训**：`--max-requests` 要按生产流量校准——过低会因「回收→启动刷新」反而高频调用 LLM，低流量测试机测不出，须在上生产流量后复验。
 
+**⚠️ 动态词典解释批次锁占用事故（2026-08-31 发现并已修）**：动态词典特性（词池即词典 + LLM 解释）首轮部署后，解释批次对存量 ~455 个词典外词全量生成（38 块 LLM 调用），在 **dims 刷新锁内**执行；GLM 免费档限流不稳时单块最长 90s 读超时，整批可占锁 30-60 分钟，**阻塞 words.json 更新**（热词卡停留旧数据）。且 fcntl 锁被卡住的 worker 持有，后续所有刷新被挡回（`SPY2 ok:True calls:[]` 特征）。**已修**（commit `862c39b`）：① `EXPLAIN_BATCH_MAX_WORDS=60` 每轮解释批次上限（按热度降序，最热优先，存量词后续轮次回填，单轮锁占用约 5 分钟）；② `EXPLAIN_CONSECUTIVE_FAIL_LIMIT=5` 连续失败熔断 + 读超时 90s→60s。**教训**：任何在刷新锁内的 LLM 批量工作都必须有数量上限 + 失败熔断；排障手法——`/proc/locks` 查 flock 持有者、worker 线程 `wchan`（do_select/do_poll=网络等待）、`docker top` 看 CPU 时间。
+
 **权限提示**：生产主机 SSH 每次读写常被分类器软拦截，需用户 AskUserQuestion 显式授权「生产」目标后才放行；只读日志/文件检查也可能被拦，可用公网 API（`https://aitrendwatch.top/api/*`）替代验证。
 
 相关：[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-test-host`](aitrendwatch-test-host.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)、[`git-merge-doc-line-refs`](git-merge-doc-line-refs.md)
