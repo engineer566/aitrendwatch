@@ -4,9 +4,9 @@
 
 ## 外部数据源
 
-### RSS 源（17 个，`dims.py:153` `RSS_SOURCES`）
+### RSS 源（17 个，`dims.py:155` `RSS_SOURCES`）
 
-并发抓取（`fetch_all_rss` `dims.py:327`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条；RSS 标题使用有界双层实体解码，URL 只解一层 XML entity。
+并发抓取（`fetch_all_rss` `dims.py:329`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条；RSS 标题使用有界双层实体解码，URL 只解一层 XML entity。
 
 | 名称 | feed | region | default_dim | lang | 备注 |
 |------|------|--------|-------------|------|------|
@@ -29,7 +29,7 @@
 | 极客公园 | geekpark.net/rss | 国内 | 产品发布 | zh | CDATA 标题 |
 | 少数派 | sspai.com/feed | 国内 | 产品发布 | zh | |
 
-**Google News 源**（`is_gnews=True`）：`<link>` 是中转页，`official_url` 取媒体域名；标题末尾 " - 媒体名" 被剥离（`dims.py:272`）。
+**Google News 源**（`is_gnews=True`）：`<link>` 是中转页，`official_url` 取媒体域名；标题末尾 " - 媒体名" 被剥离（`dims.py:281`）。
 
 ### HuggingFace 模型榜（`tracker.py:111`）
 - 端点：`HF_BASE="https://hf-mirror.com"`（官方 HF 本网络不可达，走镜像）。
@@ -43,13 +43,14 @@
 - 检索式：`_search_query_for(term)` 按模型名逐词 `all:` 全文检索。
 - 只在后台预热 + `get_term_detail` 同步调用（详情页慢根因）。
 
-### LLM（模型故障转移链，`dims.py:713` `_llm_classify_batch`）
-- **故障转移链** `config.LLM_CHAIN`（默认 `glm-4.7-flash → glm-4.6v-flash → glm-4.6v-flashx → glm-4.7-flashx → deepseek-v4-flash`）：首档默认 GLM-4.7-Flash，每档连续 `LLM_FAILOVER_THRESHOLD`（默认 10）次失败顺链切下一档（单向熔断式，成功只清零计数不回退首档）；无 key 的 provider 档不烧重试、直接顺链跳过。当前档端点由 `config.llm_endpoint(model)` 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
+### LLM（模型故障转移链，`dims.py:756` `_llm_classify_batch`）
+- **故障转移链** `config.LLM_CHAIN`（默认 `glm-4.7-flash → glm-5.3-flash → deepseek-v4-flash`）：首档默认 GLM-4.7-Flash，每档连续 `LLM_FAILOVER_THRESHOLD`（默认 3）次失败顺链切下一档（单向熔断式，成功只清零计数不回退首档）；无 key 的 provider 档不烧重试、直接顺链跳过。当前档端点由 `config.llm_endpoint(model)` 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
+- **思考强度控制**（2026-08-31，针对 GLM-5.3-Flash）：GLM-5.2+ 的 thinking 不可关闭（`thinking.type=disabled` 会报错），只能经 `reasoning_effort` 调强度；`config.llm_reasoning_params(model)` 对 glm-5.2+ 返回 `{"reasoning_effort": LLM_REASONING_EFFORT}`（默认 low），glm-4.7/deepseek 返回 {}。low 减少 thinking token 挤占 max_tokens，降低 length 截断导致的 content 空/缺翻译。提示词同步加了防回显（翻译字段不得照抄原标题）、非空（翻译字段禁止空字符串）、数组长度与输入一致、禁 Markdown 代码块等规则。
 - 用途：维度打标（模型与技术/产品与应用/研究与论文/商业与投融资/政策与行业/其他）+ 双语翻译（title_zh/title_en/summary_zh/summary_en）+ **抽取关键词 keywords**（1-3 个 AI 实体/技术词，词维度重构核心）。
 - **降级**（无 LLM key：`GLM_API_KEY` 与 `DEEPSEEK_API_KEY` 均未设）：用 RSS 源 `default_dim` 分类、双 slot 填原标题、summary_zh 取原标题前 30 字；**keywords 走 `terms.extract_keywords_dict` 词典匹配**。零 token 消耗。天然 Mock 机制，无需代码开关。
 - 瞬态容错：`_post` 对连接重置/超时 + HTTP 429/5xx + 错误体 1305（GLM 免费档过载）重试 3 次；永久错误直接抛 → `_llm_failure()` 计一次并顺链。
 - 批量调用：`enrich_with_llm(items)` 分批打标（6 条子批）。
-- 生产定点刷新：`DIMS_REFRESH_HOURS=(13,19,1,7)`，避开高峰段 + 命中硬盘缓存 TTL。
+- 生产定点刷新：`DIMS_REFRESH_HOURS=(1,7,13,19)`，避开高峰段 + 命中硬盘缓存 TTL。
 
 ### 关键词词典（`terms.py:209` `_LEXICON`）
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
@@ -146,11 +147,13 @@ WAL 模式。DB 不可用 → `_DB_OK=False` 全程静默降级返空。
 | `NEWS_DB_PATH` | $DATA_DIR/news.db | 事件库路径 |
 | `GEOIP_DB_PATH` | $DATA_DIR/GeoLite2-Country.mmdb | 离线地域库；缺失 → Unknown |
 | `CACHE_DIR` | /app/cache 或 ./cache | 文件缓存目录 |
-| `LLM_CHAIN` | glm-4.7-flash,glm-4.6v-flash,glm-4.6v-flashx,glm-4.7-flashx,deepseek-v4-flash | 模型故障转移链（逗号分隔，按序尝试；首档即默认） |
-| `LLM_FAILOVER_THRESHOLD` | 10 | 每档连续失败次数达此值 → 顺链切下一档 |
+| `LLM_CHAIN` | glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash | 模型故障转移链（逗号分隔，按序尝试；首档即默认）；单档测试如 `glm-5.3-flash` |
+| `LLM_FAILOVER_THRESHOLD` | 3 | 每档连续失败次数达此值 → 顺链切下一档 |
+| `LLM_CYCLE_ESCAPE` | 4 | 单刷新周期累计失败达此值 → 跳当前 provider 剩余档 |
+| `LLM_REASONING_EFFORT` | low | GLM-5.2+ 思考强度（low/high/max；GLM-5.3-Flash 思考不可关闭只能调强度）；glm-4.7/deepseek 不传 |
 | `DEEPSEEK_API_KEY` | "" | DeepSeek key（末档兜底用）；GLM/DEEPSEEK 两 key 均未设 → 走降级（default_dim+原标题） |
 | `GLM_API_KEY` | "" | GLM（智谱 BigModel）key；⚠️ 免费档并发上限 1，高峰常返 429/1305，dims 已做重试+顺链转移+降级 |
-| `DIMS_REFRESH_HOURS` | 13,19,1,7 | 定点刷新时刻（Asia/Shanghai） |
+| `DIMS_REFRESH_HOURS` | 1,7,13,19 | 定点刷新时刻（Asia/Shanghai） |
 | `ANALYTICS_ENABLED` | true | 分析开关 |
 | `SEO_ENABLED` | true | 关 → 不输出 canonical/OG/JSON-LD，robots 禁止索引 |
 | `SITEMAP_MAX_URLS` | 200 | sitemap 上限 |
