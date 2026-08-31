@@ -11,7 +11,7 @@
 
 ---
 
-## templates/index.html  （1284 行）— 首页主单页（词视图为主）
+## templates/index.html  （1316 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -19,23 +19,24 @@
 | 样式 `<style>` | ~54–290 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/HF 入口 pill/响应式 |
 | SEO ld+json | 294, 303 | 结构化数据 |
 | AdSense 脚本 | 323 | `adsbygoogle.js`（`adsense_enabled` 时） |
-| SSR 数据注入 | 444, 445 | sponsor-data / initial-terms-data（词卡） |
-| 主 JS `<script>` | 446–1277 | 全部前端逻辑 |
-| ├ i18n 定义 | 453 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
-| ├ `t(k)` | 499 | 翻译函数 |
-| ├ `LANG`/`currentView` 状态 | 509–515 | `currentView=words\|news`，URL/localStorage 记忆 |
-| ├ URL 状态恢复 | 544–566 | `?view=&cat=&sort=&lang=` 可分享 |
-| ├ 视图切换 seg | 800 | 「🔤热词 / 📰逐条新闻」，`#view-seg`，旁有 🤗 HF 入口 pill（355） |
-| ├ 词卡渲染 `renderWordCard` | 895 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + 展开按钮 |
-| ├ 词卡展开 `toggleWordExpand` | 948 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
-| ├ `visibleData` | 1062 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
-| ├ `render` | 1078 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
-| ├ 数据拉取 `fetchAll` | 1150 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
-| ├ AbortController | 1137–1156 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
-| └ Mock 数据 | 1209 | 后端不可用时的内置预览数据 |
+| SSR 数据注入 | 436, 437 | sponsor-data / initial-terms-data（词卡） |
+| 主 JS `<script>` | 438–1240 | 全部前端逻辑 |
+| ├ i18n 定义 | 445 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
+| ├ `t(k)` | 491 | 翻译函数 |
+| ├ `LANG`/`currentView` 状态 | 501–506 | `currentView=words\|news`，URL/localStorage 记忆 |
+| ├ URL 状态恢复 | 534–558 | `?view=&cat=&sort=&lang=` 可分享 |
+| ├ 视图切换 seg | 790 | 「🔤热词 / 📰逐条新闻」，`#view-seg`，旁有 🤗 HF 入口 pill（355） |
+| ├ 词卡渲染 `renderWordCard` | 893 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
+| ├ 词卡展开 `toggleWordExpand` | 947 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
+| ├ `visibleData` | 1061 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
+| ├ `render` | 1077 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
+| ├ 数据拉取 `fetchAll` | 1149 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
+| ├ AbortController | 1136–1138 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
+| ├ 返回滚动恢复 | 1202–1236 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；仅后退/前进（back_forward）回首页时，在 SSR + `/api/stream` 异步渲染完成后恢复滚动并删除 key |
+| └ Mock 数据 | 1241 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
-**渲染路由**：`/`（`app.py:628`）。
+**渲染路由**：`/`（`app.py:629`）。
 **SSR 首屏**：`initial_terms` 注入词卡（词名 + top-3 报道，爬虫可见），随后异步拉 `/api/stream?view=words` 全量替换。
 
 ---
@@ -52,13 +53,13 @@
 | 模型卡列表 | 266–303 | 排名 / 🤗 开源模型徽标 / pipeline_tag 主徽标 / tags / 趋势分·点赞·下载 / 官方 + 社区链接 / 相关论文 |
 | 主 JS `<script>` | 311–353 | 主题切换 / 搜索跳转 `/search` / 更新时间渲染 |
 
-**引用 API**：无（服务端 `_hf_models_for`（`app.py:852`）装配后 SSR；数据与 `/api/hf` 同一来源）。
-**渲染路由**：`/hf`（`app.py:873`）。
+**引用 API**：无（服务端 `_hf_models_for`（`app.py:856`）装配后 SSR；数据与 `/api/hf` 同一来源）。
+**渲染路由**：`/hf`（`app.py:878`）。
 **数据源**：`tracker.get_model_cards`（trending 文件缓存）→ 冷启动回退 `tracker.get_terms`（自带快速兜底，只抓 HF ~1s）；likes/downloads 在内存重排。
 
 ---
 
-## templates/terms.html  （363 行）— 服务条款页
+## templates/terms.html  （371 行）— 服务条款页
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -87,12 +88,12 @@
 | SEO ld+json | 159, 170, 191, 206 | 四个块：DefinedTerm（159）/ ItemList（170）/ SoftwareApplication（191）/ ScholarlyArticle（206）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
 
 **引用 API**：无（服务端 `_word_detail`（`app.py:131`）同步装配，进程内 TTL 缓存）。
-**渲染路由**：`/term/<name>`（`app.py:694`）。
+**渲染路由**：`/term/<name>`（`app.py:695`）。
 **数据源**：词池 `terms` 表命中（任何词有页）→ 报道聚合；未命中回退 HF live；再无 → 404。
 
 ---
 
-## templates/admin.html  （345 行）— 赞助位管理后台
+## templates/admin.html  （353 行）— 赞助位管理后台
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -104,7 +105,7 @@
 | └ stats | 307 | `fetch("/admin/stats")` |
 
 **引用 API**：`/admin/sponsors`、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/admin`（`app.py:1389`，需 admin）。
+**渲染路由**：`/admin`（`app.py:1395`，需 admin）。
 
 ---
 
@@ -117,18 +118,18 @@
 | 建议补全 | ~300+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1135`）、SSR `word_hits` 由 `_do_search`（`app.py:1106`）返回。
+**渲染路由**：`/search`（`app.py:1140`）、SSR `word_hits` 由 `_do_search`（`app.py:1110`）返回。
 
 ---
 
-## templates/admin_login.html  （60 行）— 管理员登录
+## templates/admin_login.html  （68 行）— 管理员登录
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1366`）。
+**渲染路由**：`/admin/login`（`app.py:1371`）。
 
 ---
 
@@ -146,5 +147,5 @@
 | └ 数据拉取 | 543–579 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
 
 **引用 API**：`/monitor/api?days=N`。
-**渲染路由**：`/monitor`（`app.py:1431`，需 admin）。
+**渲染路由**：`/monitor`（`app.py:1437`，需 admin）。
 **数据**：PV/UV/地域分布（来自 `visits` 表，`store.monitor_stats`）。

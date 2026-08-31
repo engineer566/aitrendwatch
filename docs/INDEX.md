@@ -11,25 +11,25 @@ AI 热点聚合单页应用：Flask 后端聚合 17 个 RSS 源 + HuggingFace �
 
 ```
 aitrendwatch/
-├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1488 行）
+├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1492 行）
 ├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度（158 行）
-├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1538 行）
+├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1551 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
-├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1459 行，新增）
-├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（474 行）
-├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列）（350 行）
+├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1528 行，新增）
+├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（665 行）
+├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列，落库前 canonical 归一）（381 行）
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
 ├── text_utils.py   # RSS 文本/URL HTML entity 解码（78 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.4.0）
 ├── templates/      # 8 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1284 行：词卡/逐条新闻双视图，JS fetch + i18n，含 🤗 HF 入口）
+│   ├── index.html         # 首页主单页（1316 行：词卡/逐条新闻双视图，JS fetch + i18n，含 🤗 HF 入口）
 │   ├── hf.html            # HuggingFace 独立排序页（355 行：趋势/点赞/下载排序 + pipeline 标签，开源动向）
-│   ├── terms.html         # 服务条款页（363 行）
+│   ├── terms.html         # 服务条款页（371 行）
 │   ├── term_detail.html   # 通用热词聚合页（309 行：相关报道聚合 + HF 区块 + 词解释）
-│   ├── search.html        # 搜索结果页（498 行：含热词命中卡区）
-│   ├── admin.html         # 赞助位管理后台（345 行）
-│   ├── admin_login.html   # 管理员登录（60 行）
+│   ├── search.html        # 搜索结果页（499 行：含热词命中卡区）
+│   ├── admin.html         # 赞助位管理后台（353 行）
+│   ├── admin_login.html   # 管理员登录（68 行）
 │   └── monitor.html       # 流量监控页（582 行）
 ├── data/           # SQLite 库（sponsors.db, news.db）+ GeoLite2（运行产物，.gitkeep 占位）
 ├── cache/          # 文件缓存产物（terms.json, dims.json, words.json + .refresh.lock）
