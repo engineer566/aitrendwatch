@@ -241,7 +241,10 @@ def _seo_enabled():
 
 
 # 统一卡片流的展示上限。排序由各数据源在截断前完成，前端只过滤不重排。
-WORD_STREAM_LIMIT = 60
+# 60 → 100（2026-09-02）：词池 words.json 保留 200 词，60 的展示窗口让今日热词
+# （如 Openclaw，按热窗新鲜度加权后仍 ~60-90 名）长期被挤出首屏；放宽到 100，
+# 配合 terms 的热度新鲜度加权，让近期热词稳定可见。
+WORD_STREAM_LIMIT = 100
 
 
 def _stream_number(card, field):

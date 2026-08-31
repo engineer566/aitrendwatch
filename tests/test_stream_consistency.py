@@ -163,11 +163,11 @@ class StreamApiTests(unittest.TestCase):
 
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(get_cards.call_args.kwargs, {"limit": 60})
+        self.assertEqual(get_cards.call_args.kwargs, {"limit": 100})
         self.assertEqual(body["count"], len(body["terms"]))
         self.assertEqual(len({card["id"] for card in body["terms"]}), body["count"])
-        self.assertEqual(body["count"], 60)
-        self.assertEqual(body["dimension_counts"]["模型与技术"], 59)
+        self.assertEqual(body["count"], 75)
+        self.assertEqual(body["dimension_counts"]["模型与技术"], 74)
         self.assertEqual(body["dimension_counts"]["研究与论文"], 2)
         self.assertIn("研究与论文", body["dimension_list"])
 
