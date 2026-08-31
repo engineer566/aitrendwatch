@@ -1028,8 +1028,13 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                       ("hf" if is_hf else "news"))
             hot = a["hot_score"] + int(hf_meta.get("likes", 0) or 0)
 
-            # rise：活动量环比
-            m_cur = a["cur_cnt"] + a["cur_score"] / 2000.0
+            # rise：活动量环比（报道数口径，不掺分数）
+            # score 自身含时效衰减（每轮刷新重算时越老的报道分数越低），若用
+            # news_cnt + score_sum/2000 做环比，稳态词（每轮同样报道）会因分数
+            # 自然衰减被误判为「热度下降」——上升榜长期被 -0.05 左右的衰减噪音
+            # 占据，今日仍活跃的词（如 Openclaw）排不上榜。改用报道数 news_cnt：
+            # 报道数不衰减，环比反映真实活动量增减；冷启动 ln(1+m) 不变。
+            m_cur = a["cur_cnt"]
             try:
                 prev = conn.execute(
                     "SELECT news_cnt, score_sum FROM term_snapshots "
@@ -1038,7 +1043,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
             except Exception:
                 prev = None
             if prev:
-                m_prev = prev["news_cnt"] + prev["score_sum"] / 2000.0
+                m_prev = prev["news_cnt"]
                 rise = (m_cur - m_prev) / max(m_prev, 0.5)
             else:
                 rise = math.log(1 + m_cur) if m_cur > 0 else 0.0
