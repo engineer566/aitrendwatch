@@ -34,6 +34,7 @@ aitrendwatch/
 ├── data/           # SQLite 库（sponsors.db, news.db）+ GeoLite2（运行产物，.gitkeep 占位）
 ├── cache/          # 文件缓存产物（terms.json, dims.json, words.json + .refresh.lock）
 ├── history/        # 开发任务备忘（非代码）
+├── skills/         # 项目技能（aitrendwatch-task-workflow：需求开发闭环 SKILL.md + 合并清理脚本）
 ├── docs/           # 代码索引 + Codex 项目记忆
 │   ├── PROJECT_MEMORY.md # 迁移来的项目记忆索引
 │   └── memory/           # 5 条按主题拆分的记忆条目

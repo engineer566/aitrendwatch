@@ -32,6 +32,11 @@
 - 特性完成后合并到 `dev`，在 `dev` 上做完整回归；`main` 只接收验证通过的 `dev`。
 - 多分支合并后，不要只检查文本冲突：必须用合并后的真实源码重新核对受影响的 `docs/` 行号索引。详见 [`git-merge-doc-line-refs`](docs/memory/git-merge-doc-line-refs.md)。
 
+## 项目技能（skills/）
+
+- [`skills/aitrendwatch-task-workflow/`](skills/aitrendwatch-task-workflow/SKILL.md)：需求开发闭环 skill——读取 `history/` 需求文件 → 每项任务独立 worktree 并行开发 → 合并回 `dev` 并清理 → 部署测试机逐项验证。用户要求按需求文件开发/上线时使用。
+- 本机试用安装：把该目录复制到 `~/.codex/skills/`（`CODEX_HOME`，本机 `C:\Users\ferri\.codex`），并在 `~/.codex/config.toml` 的 `[features]` 打开 `skills = true` 后 Codex 才能自动发现；仓库内 `skills/` 为唯一事实源，拉取更新后需重新复制。
+
 ## 部署提示
 
 生产和测试主机、SSH key、容器编排及小内存约束记录在 [`docs/memory/aitrendwatch-deploy-key.md`](docs/memory/aitrendwatch-deploy-key.md) 和 [`docs/memory/aitrendwatch-test-host.md`](docs/memory/aitrendwatch-test-host.md)。涉及远程环境时先读取对应条目，严格区分两台主机；不要把密钥写入仓库。
