@@ -5,6 +5,7 @@ import sys
 import tempfile
 import types
 import unittest
+import importlib
 from unittest import mock
 
 
@@ -56,6 +57,37 @@ from text_utils import decode_html_entities, decode_url_entities  # noqa: E402
 
 
 class HtmlEntityBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # 其它套件（test_dup_related_news / test_term_news / test_jsonld /
+        # test_term_explanation 等）在 setUpClass 里 importlib.reload(config)
+        # 并把 NEWS_DB_PATH 指向各自的临时库，tearDown 后不再 reload，导致本
+        # 文件在它们之后运行时 news_store/config 仍指向已删除的临时目录
+        # （sqlite3.OperationalError: unable to open database file）。
+        # 这里把自己的 env 重新加载回模块，保证本套件无论跑在哪个套件之后都
+        # 指向自己的临时库（与其它套件的 setUpClass 模式一致）。
+        cls._old_env = {k: os.environ.get(k)
+                        for k in ("DATA_DIR", "NEWS_DB_PATH", "CACHE_DIR",
+                                  "DEEPSEEK_API_KEY", "GLM_API_KEY")}
+        os.environ["DATA_DIR"] = os.path.join(_TEST_DIR, "data")
+        os.environ["NEWS_DB_PATH"] = os.path.join(_TEST_DIR, "data", "news.db")
+        os.environ["CACHE_DIR"] = os.path.join(_TEST_DIR, "cache")
+        os.environ.pop("GLM_API_KEY", None)
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        import config
+        importlib.reload(config)
+        importlib.reload(news_store)   # 底部 init_db() 会在本套件库建表
+        importlib.reload(terms)
+        importlib.reload(dims)
+
+    @classmethod
+    def tearDownClass(cls):
+        for key, value in cls._old_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
     def test_text_decoder_repairs_double_encoded_common_entities(self):
         self.assertEqual(
             decode_html_entities("OpenAI&amp;#8217;s executive exodus"),

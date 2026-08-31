@@ -7,7 +7,7 @@
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。
 - **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:445`）+ `t(k)` 翻译函数（`index.html:491`）+ `LANG` 状态（`index.html:506`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
 - **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:436`）+ `<script id="initial-terms-data">`（`index.html:437`）。
-- **SEO**：`term_detail.html` 含两段 `application/ld+json` 结构化数据（`term_detail.html:126,141`）；`index.html` 也有 ld+json（`index.html:281,290`）。
+- **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:159,170,191,206`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:287,296`）。
 
 ---
 
@@ -17,7 +17,7 @@
 |------|------|------|
 | 主题初始化 JS | 28 | 读 localStorage 设 data-theme |
 | 样式 `<style>` | ~40–250 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
-| SEO ld+json | 281, 290 | 结构化数据 |
+| SEO ld+json | 287, 296 | 结构化数据 |
 | AdSense 脚本 | 310 | `adsbygoogle.js`（`adsense_enabled` 时） |
 | SSR 数据注入 | 436, 437 | sponsor-data / initial-terms-data（词卡） |
 | 主 JS `<script>` | 438–1198 | 全部前端逻辑 |
@@ -35,7 +35,7 @@
 | └ Mock 数据 | 1200 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
-**渲染路由**：`/`（`app.py:590`）。
+**渲染路由**：`/`（`app.py:592`）。
 **SSR 首屏**：`initial_terms` 注入词卡（词名 + top-3 报道，爬虫可见），随后异步拉 `/api/stream?view=words` 全量替换。
 
 ---
@@ -52,22 +52,24 @@
 | 切换 JS | 352 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:693`）。
+**渲染路由**：`/terms`（`app.py:695`）。
 
 ---
 
-## templates/term_detail.html  （300 行）— 通用热词聚合页
+## templates/term_detail.html  （309 行）— 通用热词聚合页
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
-| 主题 JS | 28 | |
-| 词头（名称/来源徽标/热度/环比/报道数） | ~180–200 | `word.term` 通用字段 |
-| 相关报道列表（SSR，SEO 主体） | ~210–225 | `word.news` 聚合卡 |
-| HF 区块（官方/社区/论文/标签，条件渲染） | ~185–210 | `{% if word.hf %}`，live 数据 `word.hf_detail` |
-| SEO ld+json | ~135–185 | DefinedTerm + ItemList（通用词）；SoftwareApplication + ScholarlyArticle（HF 词） |
+| 主题初始化 JS | 39 | 读 localStorage 设 data-theme |
+| 词头（名称/来源徽标/热度/环比/报道数） | ~232–239 | `word.term` 通用字段 |
+| 词解释块（💡 双语） | ~240–243 | `{% if word.term.explain %}` 条件渲染，样式 `.term-explain`（109），未收录词不显示 |
+| 词元信息行 term-meta | ~244–251 | hot/rise/报道数/首次出现 |
+| HF 区块（官方/社区/论文/标签，条件渲染） | ~252–279 | `{% if word.hf %}`，live 数据 `word.hf_detail` |
+| 相关报道列表（SSR，SEO 主体） | ~281–297 | `word.news` 聚合卡 |
+| SEO ld+json | 159, 170, 191, 206 | 四个块：DefinedTerm（159）/ ItemList（170）/ SoftwareApplication（191）/ ScholarlyArticle（206）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
 
 **引用 API**：无（服务端 `_word_detail`（`app.py:103`）同步装配，进程内 TTL 缓存）。
-**渲染路由**：`/term/<name>`（`app.py:656`）。
+**渲染路由**：`/term/<name>`（`app.py:658`）。
 **数据源**：词池 `terms` 表命中（任何词有页）→ 报道聚合；未命中回退 HF live；再无 → 404。
 
 ---
@@ -84,7 +86,7 @@
 | └ stats | 307 | `fetch("/admin/stats")` |
 
 **引用 API**：`/admin/sponsors`、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/admin`（`app.py:1256`，需 admin）。
+**渲染路由**：`/admin`（`app.py:1265`，需 admin）。
 
 ---
 
@@ -97,7 +99,7 @@
 | 建议补全 | ~300+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1001`）、SSR `word_hits` 由 `_do_search`（`app.py:971`）返回。
+**渲染路由**：`/search`（`app.py:1011`）、SSR `word_hits` 由 `_do_search`（`app.py:982`）返回。
 
 ---
 
@@ -108,23 +110,23 @@
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1232`）。
+**渲染路由**：`/admin/login`（`app.py:1242`）。
 
 ---
 
-## templates/monitor.html  （390 行）— 流量监控页
+## templates/monitor.html  （582 行）— 流量监控页
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
-| 主题 JS | 10 | |
-| 样式（含 chart） | 36–130 | `.chart` 柱状图样式 |
-| 主题切换 | 175, 217 | `#theme-btn` |
-| 30 天趋势图 | 193–195 | `#chart` + `#chart-x`（纯 CSS 柱状图） |
-| 主 JS | 215 | `<script>` |
-| ├ 主题切换逻辑 | 221 | |
-| ├ 图表渲染 | 253 | `chartEl`/`chartXEl` |
-| └ 数据拉取 | 367 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
+| 主题 JS | 18–25 | 主题初始化（防闪烁，与首页同 key） |
+| 样式（含 chart） | 118–132 | `.chart` 柱状图样式 |
+| 主题切换 | 299–309 | `#theme-btn` |
+| 30 天趋势图 | 242–247 | `#chart` + `#chart-x`（纯 CSS 柱状图，按 UV 口径） |
+| 主 JS | 297 | `<script>` |
+| ├ 主题切换逻辑 | 299 | |
+| ├ 图表渲染 | 335, 364–386 | `chartEl`/`chartXEl`/`chartSub`；`renderChart`（UV 柱高 + 峰值 UV 副标题） |
+| └ 数据拉取 | 543–579 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
 
 **引用 API**：`/monitor/api?days=N`。
-**渲染路由**：`/monitor`（`app.py:1298`，需 admin）。
+**渲染路由**：`/monitor`（`app.py:1307`，需 admin）。
 **数据**：PV/UV/地域分布（来自 `visits` 表，`store.monitor_stats`）。

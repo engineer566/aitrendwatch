@@ -8,6 +8,7 @@
 """
 
 import os
+import re
 
 # ---------- Flask 会话签名 ----------
 # 生产必须显式设置，否则每次进程重启 session 失效。
@@ -70,6 +71,16 @@ LLM_FAILOVER_THRESHOLD = max(1, int(os.environ.get("LLM_FAILOVER_THRESHOLD", "3"
 # 保证一个周期内 GLM 明显不稳时快速逃到 deepseek，翻译覆盖优先于免费额度）。
 LLM_CYCLE_ESCAPE = max(1, int(os.environ.get("LLM_CYCLE_ESCAPE", "4") or 4))
 
+# LLM_REASONING_EFFORT：GLM-5.2+ 推理模型的思考强度（thinking 不可关闭，只能调强度）。
+# GLM-5.3-Flash 的 thinking.type 传 disabled 会直接报错，只能通过 reasoning_effort
+# 控制：low=轻度推理（结构化翻译/分类足够，最快最省）、high=增强推理、max=深度推理。
+# 默认 low：翻译/打标是确定性结构化任务，浅思考即可，还能少烧 thinking token、
+# 减小 max_tokens 被 reasoning_content 挤占导致 content 截断（length）的概率。
+# 仅对支持该参数的 glm-5.2+ 档生效（glm-4.7 / deepseek 不传，未知参数会报错）。
+LLM_REASONING_EFFORT = os.environ.get("LLM_REASONING_EFFORT", "low").strip().lower()
+if LLM_REASONING_EFFORT not in ("low", "high", "max"):
+    LLM_REASONING_EFFORT = "low"
+
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
@@ -85,6 +96,19 @@ def llm_endpoint(model):
     if model.startswith("deepseek"):
         return DEEPSEEK_URL, DEEPSEEK_API_KEY
     return GLM_URL, GLM_API_KEY
+
+
+def llm_reasoning_params(model):
+    """模型 ID → 思考强度控制参数（dict，可为空）。
+
+    GLM-5.2+ 支持 `reasoning_effort`（GLM-5.3-Flash 思考不可关闭，只能调强度）；
+    glm-4.7 与 deepseek-* 不支持该参数，不传以免未知参数报错。
+    返回空 dict 时调用方不应附加任何 thinking 相关字段。
+    """
+    m = re.match(r"^glm-5\.(\d+)", model)
+    if m and int(m.group(1)) >= 2:
+        return {"reasoning_effort": LLM_REASONING_EFFORT}
+    return {}
 
 # ---------- dims 生产定点预热（Asia/Shanghai 24h 制）----------
 # 一天 4 次：13/19/01/07，6 小时一档。

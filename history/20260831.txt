@@ -1,0 +1,23 @@
+1. 优化提示词提高GLM-5.3-Flash的翻译成功率，同时减少GLM-5.3-Flash的思考强度（通过配置或者提示词），可以单独使用GLM-5.3-Flash测试
+2. 每个热词的点开页面添加对本热词的解释
+3. 监控页面，近 30 天趋势条形图，选择UV而非PV
+4. BUG：出现了同一来源的连续两条相关报道，如：
+Mark Zuckerberg's Meta Just Open-Sourced Its Most Powerful AI Model to Take on OpenAI and Anthropic. Should Investors Watch Meta's AI Spending Closely?
+🔥 104042
+Yahoo Finance
+2026-08-29
+Meta opensources its most powerful AI model to compete with OpenAI and Anthropic
+Mark Zuckerberg's Meta Just Open-Sourced Its Most Powerful AI Model to Take on OpenAI and Anthropic. Should Investors Watch Meta's AI Spending Closely?
+🔥 102370
+The Motley Fool
+2026-08-29
+Meta opensources its most powerful AI model to compete with OpenAI and Anthropic
+请先检索确认问题
+5. “查看聚合页”改成“查看热词”
+6. GSC配置的报错：
+评分超出了指定范围或默认范围
+存在此问题的内容无效。无效内容无法在 Google 搜索中显示为富媒体搜索结果
+"aggregateRating": { "@type": "AggregateRating", "ratingValue": 1568, "ratingCount": 1568 },
+
+解析错误：缺少“,”或“}”
+"name": "Reports about "GLM-5.3-Flash"",

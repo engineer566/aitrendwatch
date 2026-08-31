@@ -304,6 +304,108 @@ _LEXICON = {
     "sandbox":      ["sandbox", "沙盒"],
 }
 
+# ---------- 热词解释词典（canonical → 中/英解释）----------
+# 供热词详情页展示「这是什么」的静态文案；canonical 键与 _LEXICON 对齐。
+# 覆盖词典主要词条（头部模型/产品全量 + 技术概念尽量全），未收录词解释为空串。
+# 文案要求客观、准确，不确定的事实用模糊但正确的表述，避免编造。
+_EXPLANATIONS = {
+    # —— 头部模型/产品 ——
+    "gpt-5": {"zh": "OpenAI 于 2025 年发布的旗舰多模态大模型，GPT-4o 的下一代，原生支持文本、图像、语音与代码生成。", "en": "OpenAI's flagship multimodal model released in 2025, the successor to GPT-4o, natively supporting text, image, voice and code generation."},
+    "gpt-4o": {"zh": "OpenAI 于 2024 年发布的「全模态」（omni）旗舰模型，原生融合文本、图像与语音处理。", "en": "OpenAI's omni flagship model released in 2024, natively combining text, image and voice processing."},
+    "chatgpt": {"zh": "OpenAI 的消费级 AI 助手产品，基于 GPT 系列大模型，提供对话、写作与编程等能力。", "en": "OpenAI's consumer AI assistant built on the GPT models, offering conversation, writing and coding."},
+    "openai": {"zh": "美国人工智能研究公司，GPT 系列模型与 ChatGPT 的开发商。", "en": "The American AI research company behind the GPT model family and ChatGPT."},
+    "claude": {"zh": "Anthropic 开发的对话式 AI 模型与助手系列，以安全对齐与长上下文能力见长。", "en": "Anthropic's family of conversational AI models and assistants, known for safety alignment and long context."},
+    "anthropic": {"zh": "美国 AI 安全公司，Claude 系列模型的开发商。", "en": "The American AI safety company that develops the Claude model family."},
+    "gemini": {"zh": "Google DeepMind 开发的多模态 AI 模型系列，横跨文本、图像、音频与视频。", "en": "Google DeepMind's multimodal AI model family spanning text, image, audio and video."},
+    "google-deepmind": {"zh": "Google 旗下 AI 研究机构，由 DeepMind 与 Google Brain 合并而成，Gemini 模型的开发者。", "en": "Google's AI research lab formed from the DeepMind and Google Brain merger; developer of the Gemini models."},
+    "llama": {"zh": "Meta 发布的开源大语言模型系列，是开源模型生态的重要推动力量。", "en": "Meta's open-source large language model family, a major driver of the open model ecosystem."},
+    "qwen": {"zh": "阿里巴巴（通义）开发的开源大语言模型系列，覆盖多种参数规模与多模态能力。", "en": "Alibaba's open-source large language model family, available in multiple sizes with multimodal abilities."},
+    "deepseek": {"zh": "中国 AI 公司深度求索开发的高性能大模型系列，以开源权重与低成本推理著称。", "en": "The high-performance model family by Chinese AI company DeepSeek, known for open weights and cost-efficient inference."},
+    "kimi": {"zh": "月之暗面（Moonshot AI）开发的 AI 助手与大模型系列，主打长文本处理能力。", "en": "The AI assistant and model family by Moonshot AI, focused on long-context processing."},
+    "doubao": {"zh": "字节跳动旗下的 AI 助手产品，基于其自研大模型。", "en": "ByteDance's AI assistant product built on its in-house large models."},
+    "wenxin": {"zh": "百度的大模型与 AI 助手品牌（文心一言），提供对话与内容生成能力。", "en": "Baidu's large model and AI assistant brand (ERNIE Bot) offering dialogue and content generation."},
+    "glm": {"zh": "智谱 AI 开发的开源大模型系列（GLM/ChatGLM），提供对话与多模态能力。", "en": "Zhipu AI's open-source GLM/ChatGLM model family with conversational and multimodal abilities."},
+    "hunyuan": {"zh": "腾讯的大模型系列（混元），支撑其多款 AI 应用。", "en": "Tencent's Hunyuan large model family powering its AI applications."},
+    "mistral": {"zh": "法国公司 Mistral AI 的开源大模型系列，以高效架构著称。", "en": "The open-weight model family by French company Mistral AI, known for efficient architectures."},
+    "grok": {"zh": "xAI 开发的 AI 对话助手，整合 X 平台的实时信息。", "en": "xAI's AI conversation assistant, integrated with real-time X (Twitter) data."},
+    "copilot": {"zh": "微软推出的 AI 助手品牌，覆盖代码补全（GitHub Copilot）与办公（Microsoft 365 Copilot）等场景。", "en": "Microsoft's AI assistant brand spanning code completion (GitHub Copilot) and productivity (Microsoft 365 Copilot)."},
+    "sora": {"zh": "OpenAI 的文生视频模型，可根据文本提示生成连贯视频片段。", "en": "OpenAI's text-to-video model that generates coherent video clips from text prompts."},
+    "midjourney": {"zh": "知名的 AI 文生图工具，以高质量艺术风格图像著称。", "en": "A leading AI text-to-image tool known for high-quality artistic images."},
+    "stable-diffusion": {"zh": "由 Stability AI 与社区推动的开源文生图扩散模型系列。", "en": "The open-source text-to-image diffusion model family driven by Stability AI and the community."},
+    "flux": {"zh": "Black Forest Labs 开发的开源图像生成模型系列。", "en": "The open-source image generation model family by Black Forest Labs."},
+    "veo": {"zh": "Google 的文生视频模型系列（Veo），支持高分辨率视频生成。", "en": "Google's Veo text-to-video model family supporting high-resolution video generation."},
+    "suno": {"zh": "AI 音乐生成平台，可依据文本提示生成带人声的歌曲。", "en": "An AI music generation platform that creates songs with vocals from text prompts."},
+    "cursor": {"zh": "AI 代码编辑器，深度集成大模型辅助编程。", "en": "An AI-powered code editor with deeply integrated large-model assistance."},
+    "devin": {"zh": "Cognition 推出的 AI 软件工程师（编码代理）产品，可自主完成编程任务。", "en": "Cognition's autonomous AI software engineer (coding agent) product."},
+    "manus": {"zh": "中国团队推出的通用 AI 代理产品，可自主完成多步骤任务。", "en": "A general-purpose AI agent product by a Chinese team that autonomously completes multi-step tasks."},
+    "perplexity": {"zh": "AI 搜索产品，用大模型对检索结果进行摘要式回答。", "en": "An AI search product that summarizes retrieved results with large language models."},
+    "huggingface": {"zh": "机器学习社区与模型托管平台，是开源模型生态的中心。", "en": "The machine-learning community and model-hosting platform at the center of the open model ecosystem."},
+    "ollama": {"zh": "本地运行开源大模型的工具，一条命令即可拉取并运行模型。", "en": "A tool for running open-source large models locally with one-command pulls."},
+    "vllm": {"zh": "高性能大模型推理引擎，广泛用于模型服务部署。", "en": "A high-performance large-model inference engine widely used for model serving."},
+    "nvidia": {"zh": "美国芯片公司，GPU 与 AI 加速卡市场的领导者。", "en": "The American chip company that leads the GPU and AI accelerator market."},
+    "cuda": {"zh": "NVIDIA 的并行计算平台与编程模型，是 AI 训练与推理的事实标准之一。", "en": "NVIDIA's parallel computing platform and programming model, a de facto standard for AI compute."},
+    "amd": {"zh": "美国芯片公司，NVIDIA 在 GPU 与加速卡市场的主要竞争对手。", "en": "The American chip company, NVIDIA's main rival in the GPU and accelerator market."},
+    "apple-intelligence": {"zh": "苹果推出的 AI 能力体系，覆盖系统级智能与端侧模型。", "en": "Apple's AI feature stack spanning system-wide intelligence and on-device models."},
+    "siri": {"zh": "苹果的语音助手，正逐步接入 Apple Intelligence 能力。", "en": "Apple's voice assistant, increasingly powered by Apple Intelligence."},
+    "meta-ai": {"zh": "Meta 的 AI 助手，整合进 Facebook、WhatsApp、Instagram 等应用。", "en": "Meta's AI assistant integrated across Facebook, WhatsApp and Instagram."},
+    "xai": {"zh": "埃隆·马斯克创立、Grok 模型的开发商。", "en": "The AI company founded by Elon Musk; developer of the Grok models."},
+    "microsoft": {"zh": "美国科技公司，OpenAI 的主要投资方，深度整合 Copilot 生态。", "en": "The American tech company, OpenAI's major investor, deeply integrating the Copilot ecosystem."},
+    "google": {"zh": "美国科技公司，Google DeepMind 与 Gemini 模型的所有者。", "en": "The American tech company that owns Google DeepMind and the Gemini models."},
+    "bytedance": {"zh": "中国科技公司（字节跳动），抖音/TikTok 与豆包大模型的母公司。", "en": "The Chinese tech company behind TikTok/Douyin and the Doubao large models."},
+    "alibaba": {"zh": "中国科技公司，通义千问（Qwen）开源模型系列的开发者。", "en": "The Chinese tech company that develops the open-source Qwen (Tongyi Qianwen) model family."},
+    "tencent": {"zh": "中国科技公司，混元大模型的开发者。", "en": "The Chinese tech company that develops the Hunyuan large model family."},
+    "baidu": {"zh": "中国科技公司，文心一言（ERNIE）大模型的开发者。", "en": "The Chinese tech company that develops the ERNIE (Wenxin Yiyan) large model."},
+    "huawei": {"zh": "中国科技公司，自研昇腾 AI 芯片与盘古大模型。", "en": "The Chinese tech company developing the Ascend AI chips and the Pangu large models."},
+    "tsinghua": {"zh": "清华大学，GLM（智谱）等国产大模型的重要学术源头。", "en": "Tsinghua University, an important academic origin of Chinese large models such as GLM (Zhipu)."},
+    # —— 技术概念 ——
+    "llm": {"zh": "大语言模型，在海量文本上预训练、可理解和生成自然语言的深度学习模型。", "en": "Large language models: deep-learning models pretrained on massive text to understand and generate natural language."},
+    "agent": {"zh": "智能体，能感知环境、自主规划并调用工具完成多步骤任务的 AI 系统。", "en": "AI systems that perceive their environment, plan autonomously and use tools to complete multi-step tasks."},
+    "rag": {"zh": "检索增强生成，先从外部知识库检索相关内容再交给大模型生成，用于减少幻觉。", "en": "Retrieval-augmented generation: retrieving relevant content from an external knowledge base before generation to reduce hallucination."},
+    "mcp": {"zh": "Model Context Protocol，Anthropic 提出的开放协议，标准化 AI 应用与外部数据/工具的连接。", "en": "Model Context Protocol: an open protocol by Anthropic standardizing how AI applications connect to external data and tools."},
+    "multimodal": {"zh": "多模态，模型同时处理文本、图像、音频、视频等多种数据类型的能力。", "en": "The ability of models to process multiple data types such as text, image, audio and video."},
+    "diffusion": {"zh": "扩散模型，通过逐步去噪从随机噪声生成图像的生成式模型。", "en": "Generative models that produce images by progressively denoising random noise."},
+    "transformer": {"zh": "Transformer 架构，现代大模型的基石，通过自注意力机制处理序列数据。", "en": "The Transformer architecture, the foundation of modern large models, which processes sequences via self-attention."},
+    "fine-tuning": {"zh": "微调，在预训练模型基础上用特定数据继续训练，使其适配下游任务。", "en": "Continuing to train a pretrained model on task-specific data to adapt it for downstream use."},
+    "rlhf": {"zh": "基于人类反馈的强化学习，用人类偏好训练奖励模型来对齐模型行为。", "en": "Reinforcement learning from human feedback: aligning model behavior using a reward model trained on human preferences."},
+    "reinforcement-learning": {"zh": "强化学习，智能体通过与环境的试错交互来学习最优策略。", "en": "Machine learning in which an agent learns optimal behavior through trial-and-error interaction with an environment."},
+    "reasoning": {"zh": "推理能力，模型在回答前进行多步逻辑思考，常见实现为思维链（Chain-of-Thought）。", "en": "A model's ability to perform multi-step logical thinking before answering, often implemented via chain-of-thought."},
+    "embedding": {"zh": "嵌入/向量化，把文本等数据映射为稠密数值向量，便于计算相似度。", "en": "Mapping data such as text into dense numeric vectors for similarity computation."},
+    "vector-db": {"zh": "向量数据库，专为存储与检索高维向量（如文本嵌入）而设计的数据库。", "en": "Databases designed to store and retrieve high-dimensional vectors such as text embeddings."},
+    "prompt": {"zh": "提示词/提示工程，通过设计输入指令引导大模型输出的技术。", "en": "The practice of crafting input instructions to steer large-model outputs."},
+    "context-window": {"zh": "上下文窗口，模型单次可处理的输入 token 数量上限。", "en": "The maximum number of input tokens a model can process at once."},
+    "kv-cache": {"zh": "键值缓存，推理时为避免重复计算而缓存注意力键值的技术。", "en": "A technique that caches attention keys and values during inference to avoid redundant computation."},
+    "quantization": {"zh": "量化，压缩模型权重的数值精度，以减少内存占用并加速推理。", "en": "Compressing model weight precision to reduce memory usage and speed up inference."},
+    "distillation": {"zh": "知识蒸馏，用大模型（教师）的输出训练小模型（学生）的技术。", "en": "Training a smaller student model on the outputs of a larger teacher model."},
+    "lora": {"zh": "低秩适配，一种参数高效微调方法，只训练少量新增参数。", "en": "Low-Rank Adaptation: a parameter-efficient fine-tuning method that trains only a small set of new parameters."},
+    "moe": {"zh": "混合专家，把模型拆成多个专家子网络、按输入动态激活，以提升规模与效率。", "en": "Mixture of Experts: routing inputs through subsets of expert sub-networks to scale capacity efficiently."},
+    "benchmark": {"zh": "基准测试/评测，用标准化数据集衡量并比较模型能力的方式。", "en": "Standardized datasets and tasks used to measure and compare model capabilities."},
+    "agi": {"zh": "通用人工智能，能在所有认知任务上达到或超越人类水平的假设性 AI。", "en": "Artificial general intelligence: hypothetical AI matching or exceeding human ability across all cognitive tasks."},
+    "alignment": {"zh": "对齐，让模型行为符合人类意图与价值观的技术方向。", "en": "Techniques for making model behavior match human intentions and values."},
+    "hallucination": {"zh": "幻觉，模型生成看似合理但事实错误或凭空捏造的内容。", "en": "Model outputs that sound plausible but are factually wrong or fabricated."},
+    "token": {"zh": "token，模型处理文本的基本单元，约为子词或字符块。", "en": "The basic unit of text that models process, roughly a sub-word chunk."},
+    "inference": {"zh": "推理（执行），模型部署后对输入产生输出的过程；也指推理加速相关技术。", "en": "The process of a deployed model producing outputs from inputs; also refers to inference acceleration techniques."},
+    "training": {"zh": "预训练，在海量数据上从头训练模型参数的阶段。", "en": "The stage of training a model from scratch on massive data."},
+    "open-source": {"zh": "开源，模型权重公开、可自由使用与二次开发的发布方式。", "en": "Publishing model weights openly for free use and further development."},
+    "robotics": {"zh": "机器人/具身智能，结合 AI 与物理实体完成现实世界任务的研究方向。", "en": "Robotics/embodied AI: research combining AI with physical bodies to perform real-world tasks."},
+    "autonomous-driving": {"zh": "自动驾驶/智能驾驶，让车辆自主感知环境并做出行驶决策的技术。", "en": "Technology enabling vehicles to perceive their surroundings and make driving decisions autonomously."},
+    "text-to-video": {"zh": "文生视频，根据文本描述生成视频片段的生成式 AI 技术。", "en": "Generative AI that creates video clips from text descriptions."},
+    "text-to-image": {"zh": "文生图，根据文本描述生成图像的生成式 AI 技术。", "en": "Generative AI that creates images from text descriptions."},
+    "voice": {"zh": "语音 AI，涵盖语音合成、语音识别与语音克隆等技术。", "en": "Voice AI covering speech synthesis, recognition and voice cloning."},
+    "coding": {"zh": "AI 编程，用大模型辅助写代码、补全与代码生成的产品与技术。", "en": "Products and techniques using large models to assist writing, completing and generating code."},
+    "search": {"zh": "AI 搜索，用大模型理解查询并综合答案的新型搜索引擎。", "en": "Search engines that use large models to understand queries and synthesize answers."},
+    "wearable": {"zh": "智能眼镜等可穿戴 AI 设备，提供第一视角的语音交互体验。", "en": "Wearable AI devices such as smart glasses offering hands-free first-person voice interaction."},
+    "chip": {"zh": "AI 芯片/算力，为训练与推理专门设计的处理器（GPU、TPU、NPU 等）。", "en": "AI chips/compute: processors specialized for AI training and inference, such as GPUs, TPUs and NPUs."},
+    "regulation": {"zh": "AI 监管，各国对 AI 开发与使用的法律与政策框架（如欧盟 AI 法案）。", "en": "Laws and policy frameworks governing AI development and use, such as the EU AI Act."},
+    "safety": {"zh": "AI 安全，防止模型滥用、失控与有害输出的研究与工程实践。", "en": "Research and engineering to prevent misuse, loss of control and harmful model outputs."},
+    "copyright": {"zh": "版权/侵权，围绕训练数据来源与生成内容归属的版权争议。", "en": "Copyright disputes around training data sources and the ownership of generated content."},
+    "funding": {"zh": "融资/投融资，AI 公司的资金募集与估值动向。", "en": "Fundraising rounds and valuations of AI companies."},
+    "workflow": {"zh": "工作流，把多步骤 AI 任务编排成可复用流程，智能体场景中常用。", "en": "Orchestrating multi-step AI tasks into reusable pipelines, common in agent scenarios."},
+    "edge-ai": {"zh": "端侧 AI，在手机、PC 等设备本地运行模型，兼顾隐私与低延迟。", "en": "Running models locally on devices such as phones and PCs for privacy and low latency."},
+    "world-model": {"zh": "世界模型，在内部模拟环境动态、用于规划与预测的模型。", "en": "Models that internally simulate environment dynamics for planning and prediction."},
+    "memory": {"zh": "长期记忆，让 AI 跨会话记住用户偏好与上下文的能力。", "en": "Enabling AI to retain user preferences and context across sessions."},
+    "sandbox": {"zh": "沙盒，隔离运行不可信代码或代理的安全机制。", "en": "An isolation mechanism for safely running untrusted code or agents."},
+}
+
 # 由 _LEXICON 反查构建：表面形式（小写）→ canonical
 _ALIAS = {}
 for _canon, _forms in _LEXICON.items():
@@ -442,6 +544,20 @@ def _title_matches_term(text, surfaces):
         if pat.search(text):
             return True
     return False
+
+
+def _title_key(title):
+    """标题归一化去重键：strip + casefold + 连续空白压缩。
+
+    同标题转载/镜像（不同 URL 同一篇报道，如 Yahoo Finance / The Motley Fool
+    两处镜像）在关联列表里会连续重复展示。归一化标题作为去重键，命中即只保留
+    首条（调用方需保证输入已按 published DESC, score DESC 排序，首条即
+    score 最高者）。空/缺失/纯空白标题返回 None（不去重，保持原行为）。
+    """
+    if title is None:
+        return None
+    norm = re.sub(r"\s+", " ", str(title).strip().casefold())
+    return norm or None
 
 
 def _compile_surface_patterns(surfaces):
@@ -708,7 +824,21 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
         # 保证卡片内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
         a["top"].sort(key=lambda x: -x["score"])
         a["top"].sort(key=lambda x: x["card"].get("published") or "", reverse=True)
-        a["top"] = [t["card"] for t in a["top"][:3]]
+        # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：保留排序后
+        # 首条（即 score 最高者），与详情页 get_term_news 同口径，词卡 top_news
+        # 不出现同标题两条。title_zh or title_en（title_zh 构造时已回退原始
+        # title），空标题不去重。去重须在 [:3] 截断前做，重复项不占展示位。
+        deduped = []
+        seen_titles = set()
+        for t in a["top"]:
+            tkey = (_title_key(t["card"].get("title_zh"))
+                    or _title_key(t["card"].get("title_en")))
+            if tkey is not None:
+                if tkey in seen_titles:
+                    continue
+                seen_titles.add(tkey)
+            deduped.append(t)
+        a["top"] = [t["card"] for t in deduped[:3]]
 
     # ---- 3. 归并 HF 词（无新闻命中也入池，origin=hf）----
     for canon, meta in hf_terms.items():
@@ -1017,6 +1147,20 @@ def get_term_row(term):
         return None
 
 
+def get_term_explanation(term, lang="zh"):
+    """按 canonical 键返回热词解释（_EXPLANATIONS 词典），详情页「这是什么」。
+
+    lang 为 "zh"/"en"，其他取值回退 zh；词形会先归一（别名/大小写均可命中）；
+    未收录返回空串，不抛异常。
+    """
+    lang = lang if lang in ("zh", "en") else "zh"
+    canon = normalize_term(term)
+    if not canon:
+        return ""
+    entry = _EXPLANATIONS.get(canon) or {}
+    return entry.get(lang) or entry.get("zh") or ""
+
+
 def get_term_news(term, limit=50, lang="zh"):
     """词 → 关联报道（canonical keywords + 标题命中兜底）。
 
@@ -1082,6 +1226,7 @@ def get_term_news(term, limit=50, lang="zh"):
         conn.close()
 
         out = []
+        seen_titles = set()
         for r in rows:
             # Known aliases (GPT5, GPT 5, 智能体, …) are handled by
             # _term_surfaces, including the canonical spelling itself.
@@ -1089,10 +1234,26 @@ def get_term_news(term, limit=50, lang="zh"):
             titles = [str(r[f] or "") for f in title_fields]
             title_match = any(_title_matches_term(t, surfaces) for t in titles)
             if keywords_match or title_match:
+                # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：
+                # rows 已按 published DESC, score DESC 排序，保留首条即 score
+                # 最高者；title_zh/title_en/原始 title 取首个非空（先解码再
+                # 归一，与展示卡同口径）。去重在 limit 截断之前做，同标题第二份
+                # 不会挤掉有效卡。空标题不去重（保持原行为）。
+                tkey = None
+                for field in ("title_zh", "title_en", "title"):
+                    if field in title_fields:
+                        k = _title_key(decode_html_entities(r[field]))
+                        if k:
+                            tkey = k
+                            break
+                if tkey is not None:
+                    if tkey in seen_titles:
+                        continue
+                    seen_titles.add(tkey)
                 out.append(r)
                 if len(out) >= limit:
                     break
-        return [news_store._row_to_card(r) for r in out[:limit]]
+        return [news_store._row_to_card(r) for r in out]
     except Exception:
         return []
 

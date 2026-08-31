@@ -162,6 +162,7 @@ def _word_detail(term_name, lang="zh"):
             "novelty": row.get("cur_novelty", 0),
             "first_seen_at": row.get("first_seen_at") or "",
             "last_seen_at": row.get("last_seen_at") or "",
+            "explain": terms_mod.get_term_explanation(canon, lang),
         }
         return {"ok": True, "term": term_info, "news": news, "hf": hf,
                 "hf_detail": _hf_live((hf or {}).get("full_id")),
@@ -174,7 +175,8 @@ def _word_detail(term_name, lang="zh"):
                 "term": {"term": hf_detail.get("term") or term_name,
                          "display_zh": "", "origin": "hf",
                          "news_cnt": 0, "hot": 0, "rise": 0, "novelty": 0,
-                         "first_seen_at": "", "last_seen_at": ""},
+                         "first_seen_at": "", "last_seen_at": "",
+                         "explain": ""},
                 "news": [],
                 "hf": {"full_id": hf_detail.get("full_id", ""),
                        "likes": hf_detail.get("likes", 0),
