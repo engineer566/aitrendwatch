@@ -172,7 +172,7 @@
     color: var(--cat-color); background: color-mix(in srgb, var(--cat-color) 14%, transparent);
     white-space: nowrap;
   }
-  .term-name { font-size: 16px; font-weight: 700; word-break: break-all; }
+  .term-name { font-size: 16px; font-weight: 700; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .term-name a { color: var(--text); text-decoration: none; }
   .term-name a:hover { color: var(--accent); }
   .term-name .author { color: var(--text-dim); font-weight: 500; font-size: 13px; }
@@ -205,13 +205,13 @@
   .papers { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
   .papers-title { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
   .paper { font-size: 13px; padding: 3px 0; }
-  .paper a { color: var(--purple); text-decoration: none; }
+  .paper a { color: var(--purple); text-decoration: none; overflow-wrap: break-word; }
   .paper a:hover { text-decoration: underline; }
   .paper .pm { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
 
   /* ===== 词卡（词维度重构） ===== */
   .word-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-  .word-name { font-size: 18px; font-weight: 800; word-break: break-all; }
+  .word-name { font-size: 18px; font-weight: 800; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .word-name a { color: var(--accent); text-decoration: none; }
   .word-name a:hover { text-decoration: underline; }
   .word-name .zh { color: var(--text); }
@@ -219,7 +219,7 @@
   .word-count { font-size: 12px; color: var(--text-dim); }
   .word-top { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
   .word-top-item { font-size: 13px; padding: 3px 0; display: flex; gap: 6px; align-items: baseline; }
-  .word-top-item a { color: var(--text); text-decoration: none; word-break: break-all; }
+  .word-top-item a { color: var(--text); text-decoration: none; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .word-top-item a:hover { color: var(--accent); }
   .word-top-item .src { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   .word-top-item .hd { color: var(--orange); font-size: 11px; white-space: nowrap; }
@@ -257,7 +257,7 @@
   }
   .sponsor-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .sponsor-name { font-size: 15px; font-weight: 700; color: var(--text); }
-  .sponsor-text { font-size: 14px; color: var(--text); flex: 1; min-width: 0; }
+  .sponsor-text { font-size: 14px; color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; }
   .sponsor-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
   .sponsor-cta {
     display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
