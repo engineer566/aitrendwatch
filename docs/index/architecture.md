@@ -48,7 +48,7 @@
 
 ## 请求生命周期（三条主链路）
 
-### 1. 首页 `/`  （`app.py:590`）
+### 1. 首页 `/`  （`app.py:592`）
 ```
 浏览器 GET /
   → detect_region()              # Accept-Language → zh/global
@@ -61,7 +61,7 @@
 ```
 首页本身**不抓上游**——数据靠前端 JS 异步拉 `/api/stream`，后端只读缓存。
 
-### 2. 统一卡片流 `/api/stream`  （`app.py:731`）  ← 前端主数据源
+### 2. 统一卡片流 `/api/stream`  （`app.py:733`）  ← 前端主数据源
 ```
 GET /api/stream?lang=zh&sort=rise&view=words
   → detect_region() 决定默认 lang
@@ -72,7 +72,7 @@ GET /api/stream?lang=zh&sort=rise&view=words
 ```
 **核心特征：请求路径零上游 IO**。词卡/新闻卡都来自后台预热线程写好的文件缓存。
 
-### 3. 单词聚合 `/api/word/<term>`  （`app.py:794`）  ← 词卡展开「更多」+ 详情页共用
+### 3. 单词聚合 `/api/word/<term>`  （`app.py:804`）  ← 词卡展开「更多」+ 详情页共用
 ```
 GET /api/word/<term>
   → _word_detail(term)  # terms 词池命中 → 报道 LIKE 聚合 + HF 元数据
@@ -80,7 +80,7 @@ GET /api/word/<term>
   → 进程内 TTL 缓存
 ```
 
-### 4. 热词详情 `/term/<name>`  （`app.py:656`）  ← SEO 长尾 + 慢路径
+### 4. 热词详情 `/term/<name>`  （`app.py:658`）  ← SEO 长尾 + 慢路径
 ```
 GET /term/<name>
   → _detail_cached(key)            # 进程内 TTL 缓存（默认 1800s）
@@ -113,7 +113,7 @@ GET /term/<name>
 | 层级 | 介质 | 作用域 | TTL | 典型键 | 代码位置 |
 |------|------|--------|-----|--------|----------|
 | L1 内存 | 进程内 `dict` | 单 worker 进程 | 300s（单源）/ 1800s（详情） | `{source: (ts,data)}` | `app.py:61` `_cache` |
-| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:74` / `terms.py:38` |
+| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:76` / `terms.py:91` |
 | L3 SQLite | `data/*.db` | 跨 worker 共享，持久 | 永久（历史库）/ 按周期聚合 | sponsors.db, news.db | `store.py` / `news_store.py` / `terms.py` |
 
 跨进程锁文件：`cache/.tracker.refresh.lock`、`cache/.dims.refresh.lock`（`fcntl.flock`）。
@@ -124,4 +124,4 @@ GET /term/<name>
 
 - 生产：gunicorn 多 worker（`docker-compose.prod.yml`），每 worker 一个 Python 进程，各起后台线程。
 - 锁策略：`threading.Lock` 只进程内有效，故跨 worker 用 `fcntl.flock` 文件锁（历史教训：曾因多 worker × threading.Lock 导致内存耗尽，见 memory `aitrendwatch-server-stability`）。
-- 本地：`python app.py` 单进程 debug 模式，`app.py:1353` `app.run(port=5000, debug=True)`。
+- 本地：`python app.py` 单进程 debug 模式，`app.py:1364` `app.run(port=5000, debug=True)`。

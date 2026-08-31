@@ -41,7 +41,7 @@
 | 37 个 view 函数 | 见 [api_routes.md](api_routes.md) | 路由处理 |
 
 ### 模块级常量
-`SOURCES`（source→fetcher 映射，`app.py:476`）、`SOURCE_META`（8 源元信息，`app.py:487`）、`WORD_STREAM_LIMIT=60`、`SSR_INITIAL_LIMIT=20`、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
+`SOURCES`（source→fetcher 映射，`app.py:479`）、`SOURCE_META`（8 源元信息，`app.py:490`）、`WORD_STREAM_LIMIT=60`、`SSR_INITIAL_LIMIT=20`、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
 
 ---
 
