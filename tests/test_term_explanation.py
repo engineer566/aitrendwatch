@@ -188,10 +188,16 @@ class TermExplanationTests(unittest.TestCase):
         self.assertTrue(en["term"]["explain"])
         self.assertNotEqual(zh["term"]["explain"], en["term"]["explain"])
 
-        # A term in the DB without an explanation entry gets an empty string.
+        # A term in the DB without any curated/LLM explanation still gets the
+        # data-driven template fallback, so every word page has an explanation.
         custom = self.app._word_detail("zzz-custom-term", lang="zh")
         self.assertTrue(custom["ok"])
-        self.assertEqual(custom["term"]["explain"], "")
+        self.assertTrue(custom["term"]["explain"])
+        self.assertIn("近期 AI 热点词", custom["term"]["explain"])
+        custom_en = self.app._word_detail("zzz-custom-term", lang="en")
+        self.assertIn("trending AI term", custom_en["term"]["explain"])
+        self.assertNotEqual(custom["term"]["explain"],
+                            custom_en["term"]["explain"])
         self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "")
         self.assertEqual(os.environ["GLM_API_KEY"], "")
 
@@ -213,15 +219,18 @@ class TermExplanationTests(unittest.TestCase):
         # substring that contains no special characters.
         self.assertIn("flagship multimodal model released in 2025", en_html)
 
-    def test_term_page_without_explanation_stays_clean(self):
+    def test_term_page_without_explanation_renders_fallback(self):
+        # Words without curated/LLM explanations must still render an
+        # explanation block (data-driven template fallback), so every hot word
+        # page has an explanation.
         self._insert_term("zzz-custom-term")
         client = self.app.app.test_client()
         resp = client.get("/term/zzz-custom-term?lang=zh")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        # The CSS rule for .term-explain is always present; the rendered
-        # explanation block itself must be absent.
-        self.assertNotIn('class="term-explain"', html)
+        self.assertIn('class="term-explain"', html)
+        self.assertIn("近期 AI 热点词", html)
+        self.assertIn("1 篇相关报道", html)
 
 
 if __name__ == "__main__":

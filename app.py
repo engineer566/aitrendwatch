@@ -100,6 +100,34 @@ def _detail_set_cache(name, data):
         _detail_cache[name] = (time.time(), data)
 
 
+def _explain_fallback(term, lang, news_cnt=0, hot=0, rise=0, origin="news"):
+    """热词解释三级取词的兜底：数据化模板（保证每个热词页都有解释块）。
+
+    静态词典 / terms 表 LLM 解释都未命中时使用，内容来自词元信息本身，
+    诚实且零 LLM 成本。
+    """
+    lang = lang if lang in ("zh", "en") else "zh"
+    if origin == "hf":
+        if lang == "en":
+            return (f"\"{term}\" is a trending AI model on the "
+                    f"HuggingFace community.")
+        return f"「{term}」是 HuggingFace 社区热推的 AI 模型。"
+    if lang == "en":
+        parts = [f"\"{term}\" is a trending AI term, linked to "
+                 f"{news_cnt} related reports."]
+        if hot:
+            parts.append(f"Hotness {hot}.")
+        if rise:
+            parts.append(f"Rise {rise:.2f}.")
+        return " ".join(parts)
+    parts = [f"「{term}」是近期 AI 热点词，与 {news_cnt} 篇相关报道关联。"]
+    if hot:
+        parts.append(f"热度 {hot}。")
+    if rise:
+        parts.append(f"环比上升 {rise:.2f}。")
+    return " ".join(parts)
+
+
 def _word_detail(term_name, lang="zh"):
     """通用词聚合数据装配（/api/word 与 /term/<name> 详情页共用）。
 
@@ -162,8 +190,14 @@ def _word_detail(term_name, lang="zh"):
             "novelty": row.get("cur_novelty", 0),
             "first_seen_at": row.get("first_seen_at") or "",
             "last_seen_at": row.get("last_seen_at") or "",
-            "explain": terms_mod.get_term_explanation(canon, lang),
+            "explain": "",
         }
+        # 三级取词：静态词典 → terms 表 LLM 解释 → 数据化模板兜底（恒非空）
+        term_info["explain"] = (
+            terms_mod.get_term_explanation(canon, lang)
+            or _explain_fallback(term_info["term"], lang,
+                                 term_info["news_cnt"], term_info["hot"],
+                                 term_info["rise"], term_info["origin"]))
         return {"ok": True, "term": term_info, "news": news, "hf": hf,
                 "hf_detail": _hf_live((hf or {}).get("full_id")),
                 "legacy_hf": False}
@@ -176,7 +210,9 @@ def _word_detail(term_name, lang="zh"):
                          "display_zh": "", "origin": "hf",
                          "news_cnt": 0, "hot": 0, "rise": 0, "novelty": 0,
                          "first_seen_at": "", "last_seen_at": "",
-                         "explain": ""},
+                         "explain": _explain_fallback(
+                             hf_detail.get("term") or term_name,
+                             lang, 0, 0, 0, "hf")},
                 "news": [],
                 "hf": {"full_id": hf_detail.get("full_id", ""),
                        "likes": hf_detail.get("likes", 0),
