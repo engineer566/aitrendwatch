@@ -248,4 +248,4 @@
 
 ## version.py  （23 行）— 版本号
 - `_read_version()` (10) 读 `VERSION` 文件；`__version__` (22) / `version` 别名。
-- 单一真相源：同目录 `VERSION` 文件（当前 `1.5.0`）。
+- 单一真相源：同目录 `VERSION` 文件（当前 `1.6.0`）。
