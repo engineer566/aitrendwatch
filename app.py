@@ -117,13 +117,14 @@ def _explain_fallback(term, lang, news_cnt=0, hot=0, rise=0, origin="news"):
                  f"{news_cnt} related reports."]
         if hot:
             parts.append(f"Hotness {hot}.")
-        if rise:
+        # rise == -1.0 是本周期无活跃报道的占位（非真实下跌），解释文案不展示
+        if rise and rise > -0.999:
             parts.append(f"Rise {rise:.2f}.")
         return " ".join(parts)
     parts = [f"「{term}」是近期 AI 热点词，与 {news_cnt} 篇相关报道关联。"]
     if hot:
         parts.append(f"热度 {hot}。")
-    if rise:
+    if rise and rise > -0.999:
         parts.append(f"环比上升 {rise:.2f}。")
     return " ".join(parts)
 
