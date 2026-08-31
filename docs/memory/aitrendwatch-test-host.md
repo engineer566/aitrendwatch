@@ -28,4 +28,6 @@ metadata:
 
 **智谱 GLM 免费档限流现象（实测）**：`glm-4.7-flash` 高峰返 `1305 访问量过大`、账户级返 `1302 速率限制`（同 key 所有 GLM 档都受限）；1-token 直测可成功但批量分类请求被限。属**临时性**——限流时应用按设计走故障转移链 → 优雅降级（`title_zh=原标题`、`dimension=default_dim`），服务不中断、缓存照写。下次测试 GLM 若再遇 1302/1305，等限流窗口重置或改非高峰时段即可，不是 key/代码问题。
 
-相关：[`aitrendwatch-deploy-key`](aitrendwatch-deploy-key.md)、[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)
+**2026-09-02（history/20260902 四需求部署验证）**：Windows 本机 `git -c core.autocrlf=false archive dev` 导出 LF 干净树 → scp 变更文件（app.py/terms.py/news_store.py/templates 2 个 html）→ `docker compose -f docker-compose.test.yml up -d --force-recreate`。验证结果：① 回归清单记忆（仓库文档）；② Openclaw 收录词池（最热榜 #72、上升榜 #93 均在 100 词窗口，`/term/openclaw` 有词典解释）；③ 英文页点击链路词名全英文（display_en 保留修复）；④ `/term/gemini`、`/term/huggingface` 不再显示 `-1.00`（真实下跌仍显示）。**实测注意**：容器重启后启动预热刷新约 15-25 分钟（17+ 源 RSS → HN/Reddit enrich → GLM 批量打标 ~40s/批 → 词聚合 → 解释批次），期间 `cache/` 三个 json 逐个更新（terms.json → dims.json → words.json），以 words.json 更新为刷新完成标志；GLM-4.7 慢/限流时自动切 glm-5.3-flash（批速 ~15s）。`.env` 现为 `DIMS_REFRESH_HOURS=1,7,13,19`（与生产相同；此前记录 2,8,14,20 已改）。
+
+相关：[`aitrendwatch-deploy-key`](aitrendwatch-deploy-key.md)、[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)、[`aitrendwatch-regression-checklist`](aitrendwatch-regression-checklist.md)
