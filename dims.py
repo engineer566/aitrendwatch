@@ -654,6 +654,10 @@ def enrich_with_signals(items):
 # ---------- LLM 批量打标 ----------
 # 批量大小：一次让 LLM 分类 N 条，平衡 token 与单次延迟。
 LLM_BATCH = 12
+# 解释批次连续失败熔断阈值：连续 EXPLAIN_CONSECUTIVE_FAIL_LIMIT 块失败
+# （GLM 限流/超时/JSON 解析错）即停止剩余批次，返回已生成的部分结果。
+# 解释是增益资产，不允许长时间占住 dims 刷新锁拖垮 words.json 更新。
+EXPLAIN_CONSECUTIVE_FAIL_LIMIT = 5
 
 
 class _LLMTransientError(RuntimeError):
@@ -1134,6 +1138,8 @@ def explain_terms(contexts):
       新文本，否则原样返回现有文本——调用方比对后不写内容、仅刷新检查时间，
       保持 ≤1 次/天/词的优化频率。
     出参 {canon: {"zh": ..., "en": ...}}。
+    连续失败熔断：EXPLAIN_CONSECUTIVE_FAIL_LIMIT 块连续失败（429/超时/解析错）
+    即停止剩余批次返回部分结果——解释是增益资产，不允许长时间占住刷新锁。
     """
     if not contexts:
         return {}
@@ -1148,6 +1154,7 @@ def explain_terms(contexts):
         "只输出JSON对象，键为canon，值为{\"zh\":中文解释,\"en\":英文解释}，"
         "不要任何解释或前后缀。"
     )
+    consec_fails = 0
     for start in range(0, len(contexts), LLM_BATCH):
         chunk = contexts[start:start + LLM_BATCH]
         lines = []
@@ -1174,7 +1181,7 @@ def explain_terms(contexts):
                 url,
                 headers={"Authorization": f"Bearer {key}",
                          "Content-Type": "application/json"},
-                json=payload, timeout=(15, 90))
+                json=payload, timeout=(15, 60))
             resp.raise_for_status()
             body = resp.json()
             content = ((body.get("choices") or [{}])[0]
@@ -1186,10 +1193,16 @@ def explain_terms(contexts):
                     out[k] = {"zh": str(v.get("zh") or "")[:200],
                               "en": str(v.get("en") or "")[:300]}
             _llm_success()
+            consec_fails = 0
         except Exception as e:
             print(f"[dims][llm] 热词解释失败: {type(e).__name__}: {e}",
                   flush=True)
             _llm_failure()
+            consec_fails += 1
+            if consec_fails >= EXPLAIN_CONSECUTIVE_FAIL_LIMIT:
+                print(f"[dims][llm] 热词解释连续 {consec_fails} 块失败，"
+                      f"熔断停止剩余批次", flush=True)
+                break
     return out
 
 
