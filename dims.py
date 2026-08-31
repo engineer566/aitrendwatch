@@ -36,6 +36,7 @@ import requests
 
 from config import (CACHE_DIR, LLM_CHAIN, LLM_CYCLE_ESCAPE,
                     LLM_FAILOVER_THRESHOLD, llm_endpoint,
+                    llm_reasoning_params,
                     DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
 from text_utils import decode_html_entities, decode_url_entities
 
@@ -791,21 +792,32 @@ def _llm_classify_batch(batch):
     # 变化的事件条目放 user 末尾。同一规则文本跨多次调用复用，后续调用可命中缓存。
     sys_msg = (
         "你是AI热点分类器+双语翻译器。对输入的AI事件做维度分类并产出中英双标题+双摘要。"
-        "只输出JSON数组，不要任何解释或前后缀。"
+        "只输出JSON数组本身，不要任何解释、前后缀、Markdown代码块或思考过程。"
     )
     # user 前缀：逐字稳定（规则全在这），构成缓存前缀单元。
+    # 2026-08-31 优化（针对 GLM-5.3-Flash）：① 显式反回显——title_zh/title_en 必须是
+    # 翻译而非照抄原标题（GLM 超载时会把原标题原样抄进翻译槽）；② 所有字段必须有值，
+    # 翻译字段禁止空字符串（缺翻译按失败计会触发换档，直接堵住源头）；
+    # ③ 数组长度与输入一致、idx 逐条对应，杜绝缺条目；④ 禁止 Markdown 代码块，
+    # 避免 ```json 包裹干扰提取。
     _USER_PREFIX = (
         "对以下AI事件分类并产出中英双标题+双摘要，输出JSON数组，每项"
         '{"idx","dimension","title_zh","title_en","summary_zh","summary_en","keywords"}。规则：\n'
         "- dimension 从 " + json.dumps(DIMENSIONS, ensure_ascii=False) + " 选。\n"
-        "- 标注 (en) 的条目：title_en=原标题照抄，title_zh=中文翻译；"
+        "- 标注 (en) 的条目：title_en=原标题逐字照抄，title_zh=中文翻译"
+        "（必须翻译，不得照抄英文原标题）；"
         "summary_en=一句英文<=30词概括，summary_zh=该概括的中文翻译<=30字。\n"
-        "- 标注 (zh) 的条目：title_zh=原标题照抄，title_en=英文翻译；"
+        "- 标注 (zh) 的条目：title_zh=原标题逐字照抄，title_en=英文翻译"
+        "（必须翻译，不得照抄中文原标题）；"
         "summary_zh=一句中文<=30字概括，summary_en=该概括的英文翻译<=30词。\n"
+        "- title 翻译要忠实于原标题（保留专名/数字/缩写，不要增删或加注释）；"
+        "summary 必须是原事件的一句话概括，不是标题的重复，不得为空。\n"
         "- keywords：从该事件抽取1-3个AI领域关键实体/技术词，JSON数组；"
         "英文术语用规范写法（如 GPT-5、Llama、MCP、RAG），中文概念用中文"
         "（如 智能体、多模态）；无合适词给空数组。\n"
-        "- 只输出JSON数组，不要解释：\n"
+        "- 数组长度必须与输入条数一致，idx 从 0 开始逐条对应；"
+        "每条都必须包含全部7个字段，翻译字段禁止空字符串。\n"
+        "- 只输出JSON数组本身，不要Markdown代码块、不要任何解释：\n"
     )
     # 变化部分：事件条目放尾部，不影响前缀缓存。
     lines = []
@@ -833,6 +845,10 @@ def _llm_classify_batch(batch):
             "max_tokens": max_tokens,
             "temperature": 0.3,
         }
+        # GLM-5.2+（含 5.3-Flash）附加思考强度控制：thinking 不可关闭，只能调低
+        # reasoning_effort——减少 thinking token 挤占 max_tokens，降低 length 截断
+        # 导致的 content 为空/缺翻译（翻译成功率的直接损失点）。glm-4.7/deepseek 不传。
+        payload.update(llm_reasoning_params(model))
         hdrs = {"Authorization": f"Bearer {key}",
                 "Content-Type": "application/json"}
         last_err = None
@@ -1079,6 +1095,7 @@ def _translate_terms(chinese_terms):
                        "messages": [{"role": "system", "content": sys_msg},
                                     {"role": "user", "content": user_msg}],
                        "max_tokens": 2000, "temperature": 0.1}
+            payload.update(llm_reasoning_params(model))
             resp = requests.post(
                 url,
                 headers={"Authorization": f"Bearer {key}",

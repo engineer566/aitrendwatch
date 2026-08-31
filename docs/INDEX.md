@@ -12,8 +12,8 @@ AI 热点聚合单页应用：Flask 后端聚合 17 个 RSS 源 + HuggingFace �
 ```
 aitrendwatch/
 ├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源（1353 行）
-├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链（126 行）
-├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词（1289 行）
+├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度（158 行）
+├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词（1462 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
 ├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填（1096 行，新增）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（474 行）
@@ -58,8 +58,8 @@ aitrendwatch/
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
 | `app.py` | 1353 | Flask 入口、路由、8 直连源抓取、词详情装配 | 37 个路由 view 函数 + `_word_detail` | tracker, dims, terms, config, store, stream_utils |
-| `config.py` | 126 | 配置集中地 + LLM 故障转移链 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint` | os |
-| `dims.py` | 1289 | RSS 事件层 + LLM 故障转移链打标/抽词 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch` | config, requests, terms, text_utils |
+| `config.py` | 158 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
+| `dims.py` | 1462 | RSS 事件层 + LLM 故障转移链打标/抽词 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
 | `terms.py` | 1096 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
 | `store.py` | 474 | 赞助位/统计/GeoIP SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country` | config, sqlite3 |
