@@ -52,7 +52,7 @@
 | 切换 JS | 352 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:731`）。
+**渲染路由**：`/terms`（`app.py:735`）。
 
 ---
 
@@ -86,7 +86,7 @@
 | └ stats | 307 | `fetch("/admin/stats")` |
 
 **引用 API**：`/admin/sponsors`、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/admin`（`app.py:1301`，需 admin）。
+**渲染路由**：`/admin`（`app.py:1305`，需 admin）。
 
 ---
 
@@ -99,7 +99,7 @@
 | 建议补全 | ~300+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1047`）、SSR `word_hits` 由 `_do_search`（`app.py:1018`）返回。
+**渲染路由**：`/search`（`app.py:1051`）、SSR `word_hits` 由 `_do_search`（`app.py:1022`）返回。
 
 ---
 
@@ -110,7 +110,7 @@
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1278`）。
+**渲染路由**：`/admin/login`（`app.py:1282`）。
 
 ---
 
@@ -128,5 +128,5 @@
 | └ 数据拉取 | 543–579 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
 
 **引用 API**：`/monitor/api?days=N`。
-**渲染路由**：`/monitor`（`app.py:1343`，需 admin）。
+**渲染路由**：`/monitor`（`app.py:1347`，需 admin）。
 **数据**：PV/UV/地域分布（来自 `visits` 表，`store.monitor_stats`）。
