@@ -191,7 +191,6 @@
   "author": { "@type": "Organization", "name": {{ (word.hf.author or '') | tojson }} },
   "url": {{ (word.hf.official_url or '') | tojson }},
   {% if word.hf.downloads %}"downloadCount": {{ word.hf.downloads }},{% endif %}
-  {% if word.hf.likes %}"aggregateRating": { "@type": "AggregateRating", "ratingValue": {{ word.hf.likes }}, "ratingCount": {{ word.hf.likes }} },{% endif %}
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
