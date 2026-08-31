@@ -22,6 +22,10 @@ metadata:
 
 **2026-08-31（release 1.3.0 部署）**：dev 验证通过后合入 main 部署生产（VERSION 1.2.1→1.3.0：热词详情页词条解释 `_EXPLANATIONS` / 监控页趋势图改 UV / 相关报道按标题去重 / 「查看聚合页」改「查看热词」/ GSC JSON-LD 移除越界 aggregateRating / GLM-5.3-Flash 提示词优化 + `reasoning_effort=low`）。部署方式：`rsync --checksum`（**注意**：rsync 默认 size+mtime 快速检查会跳过内容已变但尺寸巧合相同的文件——本次 monitor.html 就被跳过，须用 `--checksum` 强制内容比对）+ `docker compose -f docker-compose.prod.yml up -d --force-recreate`（单文件 bind mount 换 inode 后必须 recreate 才生效）。`.env` 未动（DeepSeek + GLM 双 key，默认链 `glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash`）。生产验证：重启后立即刷新，glm-4.7 遇 429 → 连续 3 次失败自动切 glm-5.3-flash → 27 批全部成功；新鲜 dims.json 中 30 条英文新闻句 100% 真实翻译、0 回显；历史库旧卡（部署前回显数据）随刷新轮换自然淘汰。
 
+**2026-08-31（release 1.4.0 动态词典部署）**：VERSION 1.3.0→1.4.0，词池即词典 + LLM 解释资产化（`terms` 表 explain_zh/en/updated_at 列；`refresh_words` 6.5 解释批次；`dims.explain_terms`；详情页三级取词 + 模板兜底，每词必有解释块）。生产验证：刷新后前 60 个最热词获高质量解释（如 GLM-5.3-Flash →「智谱 320B/激活18B 原生多模态 MoE…」定义+时效价值），未回填词显示模板兜底解释；剩余 ~395 词按每轮 60 个随刷新回填。抽词提示词同步优化（禁泛化词）。**部署注意**：VERSION 文件同步后需重启才生效（version.py 启动时读取）。
+
+**⚠️ 动态词典解释批次锁占用事故（2026-08-31 发现并已修）**：动态词典特性首轮部署后，解释批次对存量 ~455 个词典外词全量生成（38 块 LLM 调用），在 **dims 刷新锁内**执行；GLM 免费档限流不稳时单块最长 90s 读超时，整批可占锁 30-60 分钟，**阻塞 words.json 更新**（热词卡停留旧数据）。且 fcntl 锁被卡住的 worker 持有，后续所有刷新被挡回（`SPY2 ok:True calls:[]` 特征）。**已修**（commit `862c39b`）：① `EXPLAIN_BATCH_MAX_WORDS=60` 每轮解释批次上限（按热度降序，最热优先，存量词后续轮次回填，单轮锁占用约 5 分钟）；② `EXPLAIN_CONSECUTIVE_FAIL_LIMIT=5` 连续失败熔断 + 读超时 90s→60s。**教训**：任何在刷新锁内的 LLM 批量工作都必须有数量上限 + 失败熔断；排障手法——`/proc/locks` 查 flock 持有者、worker 线程 `wchan`（do_select/do_poll=网络等待）、`docker top` 看 CPU 时间。
+
 **权限提示**：生产主机 SSH 每次读写常被分类器软拦截，需用户 AskUserQuestion 显式授权「生产」目标后才放行；只读日志/文件检查也可能被拦，可用公网 API（`https://aitrendwatch.top/api/*`）替代验证。
 
 相关：[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-test-host`](aitrendwatch-test-host.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)、[`git-merge-doc-line-refs`](git-merge-doc-line-refs.md)

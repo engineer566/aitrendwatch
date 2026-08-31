@@ -43,6 +43,10 @@ _now_iso = lambda: datetime.datetime.now().isoformat(timespec="seconds")
 MAX_NEW_TERMS_PER_CYCLE = 150   # 单轮最多新增的非词典词数（防 LLM 词爆炸）
 WORD_CARDS_LIMIT = 200          # words.json 最多保留的词卡数（展示层再截 60）
 HOT_WINDOW_DAYS = 7             # 热度聚合窗口（天）
+# 每轮解释批次上限（词数）：解释生成在 dims 刷新锁内执行，批次过大 + LLM 不稳会
+# 长时间占锁阻塞 words.json 更新；按热度降序取前 N 个（最热优先），存量无解释词
+# 随后续刷新逐轮回填。默认 60 词 ≈ 5 批，单轮最多约 5-10 分钟。
+EXPLAIN_BATCH_MAX_WORDS = 60
 
 
 def _word_card_identity(card):
@@ -180,12 +184,17 @@ def init_db():
                 PRIMARY KEY (term, cycle)
             );
         """)
-        # 老库补列（幂等）：display_en 列缺失时 ALTER 加上
+        # 老库补列（幂等）：display_en 缺失时 ALTER 加上；动态词典（词池即词典）
+        # 的解释列 explain_zh/explain_en + 新鲜度 explain_updated_at 同模式补列。
         try:
             cols = {r[1] for r in conn.execute("PRAGMA table_info(terms)")}
-            if "display_en" not in cols:
-                conn.execute(
-                    "ALTER TABLE terms ADD COLUMN display_en TEXT DEFAULT ''")
+            for col, ddl in (("display_en", "TEXT DEFAULT ''"),
+                             ("explain_zh", "TEXT DEFAULT ''"),
+                             ("explain_en", "TEXT DEFAULT ''"),
+                             ("explain_updated_at", "TEXT DEFAULT ''")):
+                if col not in cols:
+                    conn.execute(
+                        f"ALTER TABLE terms ADD COLUMN {col} {ddl}")
         except Exception:
             pass
         conn.commit()
@@ -678,13 +687,16 @@ def _hf_canon(mc):
 
 
 def refresh_words(all_cards, model_cards, fetched_at=None,
-                  term_translator=None):
+                  term_translator=None, term_explainer=None):
     """一轮刷新的词聚合：关联 → 归并 → 打分 → 快照 → 写 words.json。
 
     输入：all_cards（dims 当轮全量新闻卡，含 keywords）、
           model_cards（tracker 当轮 HF 模型卡）、
           term_translator（可选：中文热词 → 英文展示名 的批量翻译回调，
-          入参为中文展示名列表，返回 {原文: 英文} 字典；无则英文页回退中文）。
+          入参为中文展示名列表，返回 {原文: 英文} 字典；无则英文页回退中文）、
+          term_explainer（可选：热词 → 双语解释 的批量生成/优化回调，动态词典
+          资产维护用。入参为 [{canon, display, titles, existing_zh, existing_en}]，
+          返回 {canon: {"zh":..., "en":...}}；无则解释列不写，详情页模板兜底）。
     数据源：新闻关联以**历史库全量扫描**为准（跨周期累积 total_mentions /
     7 天热窗），当轮 all_cards 只用于本周期快照 news_cnt/score_sum。
     失败静默，绝不阻塞 dims 刷新主流程。
@@ -694,13 +706,13 @@ def refresh_words(all_cards, model_cards, fetched_at=None,
     try:
         _refresh_words_inner(all_cards or [], model_cards or [],
                              fetched_at or int(datetime.datetime.now().timestamp()),
-                             term_translator)
+                             term_translator, term_explainer)
     except Exception:
         pass
 
 
 def _refresh_words_inner(all_cards, model_cards, fetched_at,
-                         term_translator=None):
+                         term_translator=None, term_explainer=None):
     now = _now_iso()
     today = datetime.date.today()
     hot_cutoff = (today - datetime.timedelta(days=HOT_WINDOW_DAYS)).isoformat()
@@ -1029,6 +1041,80 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
         conn.close()
         old = None  # 第 6 步结束即释放旧表，避免与 final_rows 双份驻留内存
 
+    # ---- 6.5 解释批次（动态词典资产：新词生成 + 存量解释 >24h 低频优化）----
+    # 静态 _EXPLANATIONS 词不进批次（人工精编，存量不改）；无 term_explainer
+    # （无 LLM key）或任一步失败静默跳过，详情页由模板兜底解释保证有内容。
+    # 已有解释 >24h 才进优化批次（附现有解释 + 最新代表报道标题作上下文）；
+    # 返回文本未变化 → 仅刷新 explain_updated_at（标记已检查，≤1 次/天/词）。
+    if term_explainer and kept:
+        try:
+            now_dt = datetime.datetime.now()
+            needs = []  # (canon, display, titles, existing_zh, existing_en, hot)
+            with _db_lock:
+                conn = _conn()
+                for canon in kept:
+                    if canon in _EXPLANATIONS:
+                        continue
+                    row = conn.execute(
+                        "SELECT display, explain_zh, explain_en, "
+                        "explain_updated_at, cur_hot FROM terms WHERE term=?",
+                        (canon,)).fetchone()
+                    if not row:
+                        continue
+                    existing_zh = row["explain_zh"] or ""
+                    existing_en = row["explain_en"] or ""
+                    if existing_zh and existing_en:
+                        updated_at = row["explain_updated_at"] or ""
+                        try:
+                            ts = datetime.datetime.fromisoformat(
+                                updated_at[:19])
+                            if (now_dt - ts).total_seconds() <= 24 * 3600:
+                                continue  # 24h 内刚检查/生成过，不重复
+                        except (ValueError, TypeError):
+                            pass  # 时间异常视为待检查
+                    titles = [n.get("title_zh") or n.get("title_en") or ""
+                              for n in (kept[canon].get("top") or [])[:3]]
+                    needs.append((canon, row["display"] or canon,
+                                  [t for t in titles if t],
+                                  existing_zh, existing_en,
+                                  row["cur_hot"] or 0))
+                conn.close()
+            # 每轮解释批次上限：按热度降序取前 N 个（最热优先），
+            # 控制 LLM 批次规模与刷新锁占用时间；存量无解释词后续轮次回填。
+            needs.sort(key=lambda x: x[5], reverse=True)
+            needs = needs[:EXPLAIN_BATCH_MAX_WORDS]
+            if needs:
+                results = term_explainer([
+                    {"canon": c, "display": d, "titles": ts,
+                     "existing_zh": ez, "existing_en": ee}
+                    for c, d, ts, ez, ee, _h in needs
+                ]) or {}
+                if results:
+                    now_iso = now_dt.isoformat(timespec="seconds")
+                    with _db_lock:
+                        conn = _conn()
+                        for canon, _d, _ts, ez, ee, _h in needs:
+                            res = results.get(canon) or {}
+                            new_zh = (res.get("zh") or "").strip()
+                            new_en = (res.get("en") or "").strip()
+                            if not (new_zh and new_en):
+                                continue
+                            if new_zh != ez or new_en != ee:
+                                # 内容有改进才写文本；原样返回仅刷新检查时间
+                                conn.execute(
+                                    "UPDATE terms SET explain_zh=?, explain_en=?, "
+                                    "explain_updated_at=? WHERE term=?",
+                                    (new_zh[:200], new_en[:300], now_iso, canon))
+                            else:
+                                conn.execute(
+                                    "UPDATE terms SET explain_updated_at=? "
+                                    "WHERE term=?", (now_iso, canon))
+                        conn.commit()
+                        conn.close()
+        except Exception as e:
+            print(f"[terms][explain] 解释批次失败: {type(e).__name__}: {e}",
+                  flush=True)
+
     # ---- 7. 组装词卡写 words.json（只读回 kept 词，避免整表物化）----
     try:
         conn = _conn()
@@ -1148,17 +1234,35 @@ def get_term_row(term):
 
 
 def get_term_explanation(term, lang="zh"):
-    """按 canonical 键返回热词解释（_EXPLANATIONS 词典），详情页「这是什么」。
+    """按 canonical 键返回热词解释，详情页「这是什么」。三级取词：
+
+    1. 静态 `_EXPLANATIONS` 词典（人工精编，优先，LLM 不覆盖）；
+    2. `terms` 表 `explain_zh/explain_en`（动态词典资产，LLM 每轮刷新生成/优化）；
+    3. 都未命中返回空串（调用方模板兜底，保证每个热词页都有解释块）。
 
     lang 为 "zh"/"en"，其他取值回退 zh；词形会先归一（别名/大小写均可命中）；
-    未收录返回空串，不抛异常。
+    不抛异常。
     """
     lang = lang if lang in ("zh", "en") else "zh"
     canon = normalize_term(term)
     if not canon:
         return ""
-    entry = _EXPLANATIONS.get(canon) or {}
-    return entry.get(lang) or entry.get("zh") or ""
+    entry = _EXPLANATIONS.get(canon)
+    if entry:
+        return entry.get(lang) or entry.get("zh") or ""
+    if _DB_OK:
+        try:
+            conn = _conn()
+            r = conn.execute(
+                "SELECT explain_zh, explain_en FROM terms WHERE term=?",
+                (canon,)).fetchone()
+            conn.close()
+            if r:
+                return ((r["explain_zh"] if lang == "zh" else r["explain_en"])
+                        or r["explain_zh"] or r["explain_en"] or "")
+        except Exception:
+            pass
+    return ""
 
 
 def get_term_news(term, limit=50, lang="zh"):

@@ -46,16 +46,17 @@
 ### LLM（模型故障转移链，`dims.py:756` `_llm_classify_batch`）
 - **故障转移链** `config.LLM_CHAIN`（默认 `glm-4.7-flash → glm-5.3-flash → deepseek-v4-flash`）：首档默认 GLM-4.7-Flash，每档连续 `LLM_FAILOVER_THRESHOLD`（默认 3）次失败顺链切下一档（单向熔断式，成功只清零计数不回退首档）；无 key 的 provider 档不烧重试、直接顺链跳过。当前档端点由 `config.llm_endpoint(model)` 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
 - **思考强度控制**（2026-08-31，针对 GLM-5.3-Flash）：GLM-5.2+ 的 thinking 不可关闭（`thinking.type=disabled` 会报错），只能经 `reasoning_effort` 调强度；`config.llm_reasoning_params(model)` 对 glm-5.2+ 返回 `{"reasoning_effort": LLM_REASONING_EFFORT}`（默认 low），glm-4.7/deepseek 返回 {}。low 减少 thinking token 挤占 max_tokens，降低 length 截断导致的 content 空/缺翻译。提示词同步加了防回显（翻译字段不得照抄原标题）、非空（翻译字段禁止空字符串）、数组长度与输入一致、禁 Markdown 代码块等规则。
-- 用途：维度打标（模型与技术/产品与应用/研究与论文/商业与投融资/政策与行业/其他）+ 双语翻译（title_zh/title_en/summary_zh/summary_en）+ **抽取关键词 keywords**（1-3 个 AI 实体/技术词，词维度重构核心）。
+- 用途：维度打标（模型与技术/产品与应用/研究与论文/商业与投融资/政策与行业/其他）+ 双语翻译（title_zh/title_en/summary_zh/summary_en）+ **抽取关键词 keywords**（1-3 个高价值 AI 实体/技术词——具体模型/产品/公司名、核心技术、事件主体；禁止泛化词/纯形容词，词维度重构核心）。
+- **热词解释生成**（动态词典资产，`dims.py:1125` `explain_terms`）：供 `terms.refresh_words` 的 `term_explainer` 回调；面向普通访客的「定义 + 为什么值得关注」双语解释，携带代表报道标题作上下文；已有解释仅明显更优才返回新文本。失败降级返回空映射（详情页模板兜底）。
 - **降级**（无 LLM key：`GLM_API_KEY` 与 `DEEPSEEK_API_KEY` 均未设）：用 RSS 源 `default_dim` 分类、双 slot 填原标题、summary_zh 取原标题前 30 字；**keywords 走 `terms.extract_keywords_dict` 词典匹配**。零 token 消耗。天然 Mock 机制，无需代码开关。
 - 瞬态容错：`_post` 对连接重置/超时 + HTTP 429/5xx + 错误体 1305（GLM 免费档过载）重试 3 次；永久错误直接抛 → `_llm_failure()` 计一次并顺链。
 - 批量调用：`enrich_with_llm(items)` 分批打标（6 条子批）。
 - 生产定点刷新：`DIMS_REFRESH_HOURS=(1,7,13,19)`，避开高峰段 + 命中硬盘缓存 TTL。
 
-### 关键词词典（`terms.py:209` `_LEXICON`）
+### 关键词词典（`terms.py:214` `_LEXICON`）
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
 - 用途：无 LLM key 降级抽词、历史库零成本回填、常见异形归一、display_zh 来源。
-- 热词解释：`terms.py:311` `_EXPLANATIONS`（canonical → zh/en 解释），`terms.get_term_explanation`（`terms.py:1150`）供详情页「这是什么」块，未收录词空串。
+- 热词解释：三级取词——① `terms.py:316` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1227`）。
 
 ## SQLite Schema
 
@@ -115,6 +116,8 @@
 | total_mentions | INT | 累计关联报道数（url 去重） |
 | hf_json | TEXT | HF 模型词元数据 JSON 快照 |
 | cur_hot / cur_rise / cur_novelty | INT/REAL/REAL | 本周期热度/环比增速/新奇度 |
+| explain_zh / explain_en | TEXT | 动态词典解释（LLM 生成/优化；静态 `_EXPLANATIONS` 词不写，取词时静态优先） |
+| explain_updated_at | TEXT | 解释新鲜度（>24h 才进优化批次，≤1 次/天/词） |
 
 **`term_snapshots`** — 词周期快照（支撑环比）
 - `(term, cycle)` 复合主键；`cycle` 形如 `2026-08-28-13`（Asia/Shanghai 定点小时）。

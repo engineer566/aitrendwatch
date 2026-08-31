@@ -5,43 +5,42 @@
 
 ---
 
-## app.py  （1364 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （1400 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
 |----------|------------------------------|
-| 54–80 | 通用配置（UA/HEADERS/TIMEOUT/CACHE_TTL/`_cache`） |
-| 85–245 | SEO 辅助 + 首页 SSR 词卡装配 |
-| 281–472 | 各数据源抓取函数（8 个 `fetch_*`） |
-| 473–649 | 路由公共配置（`SOURCES`/`SOURCE_META`/region/ip 辅助） |
-| 650–811 | 页面 + 词流路由（含语言参数、稳定分类计数） |
-| 812–1110 | 全站搜索 v2 |
-| 1112–1200 | SEO 路由（robots/sitemap/favicon） |
-| 1201–1210 | 赞助位点击跳转 |
-| 1211–1294 | 管理后台 |
-| 1295–1347 | 流量监控页 |
-| 1348–1353 | `__main__` 入口 |
+| 54–84 | 通用配置（UA/HEADERS/TIMEOUT/CACHE_TTL/`_cache`） |
+| 85–319 | SEO 辅助 + 词详情装配（`_explain_fallback`@103 解释模板兜底 / `_word_detail`@131） |
+| 320–511 | 各数据源抓取函数（8 个 `fetch_*`） |
+| 512–688 | 路由公共配置（`SOURCES`@515/`SOURCE_META`@526/region/ip 辅助） |
+| 689–858 | 页面 + 词流路由（含语言参数、稳定分类计数） |
+| 859–1158 | 全站搜索 v2 |
+| 1159–1247 | SEO 路由（robots/sitemap/favicon） |
+| 1248–1257 | 赞助位点击跳转 |
+| 1258–1341 | 管理后台 |
+| 1342–1400 | 流量监控页 + `__main__` 入口（1395） |
 
 ### 公开函数（被路由/外部调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `fetch_baidu()` | 282 | 百度热搜官方接口 |
-| `fetch_bilibili()` | 304 | B站热门官方接口 |
-| `fetch_toutiao()` | 324 | 今日头条热榜 |
-| `fetch_hackernews()` | 341 | HN Firebase API（逐条拉取，慢） |
-| `fetch_github()` | 369 | GitHub Trending HTML 抓取 |
-| `fetch_zhihu()` | 399 | 知乎热榜（直连） |
-| `fetch_douyin()` | 423 | 抖音热搜（直连） |
-| `fetch_weibo()` | 445 | 微博热搜（需登录态，常失败） |
-| `detect_region()` | 499 | Accept-Language → zh/global |
-| `_client_ip()` | 519 | 取真实 IP（信任 X-Forwarded-For） |
-| `_client_country(ip)` | 527 | 反代头优先 + GeoLite2 兜底 |
-| `get_source(source)` | 541 | 带缓存单源抓取 |
-| `get_source_timeout(source)` | 556 | 带硬性截止时间单源抓取 |
+| `fetch_baidu()` | 321 | 百度热搜官方接口 |
+| `fetch_bilibili()` | 343 | B站热门官方接口 |
+| `fetch_toutiao()` | 363 | 今日头条热榜 |
+| `fetch_hackernews()` | 380 | HN Firebase API（逐条拉取，慢） |
+| `fetch_github()` | 408 | GitHub Trending HTML 抓取 |
+| `fetch_zhihu()` | 438 | 知乎热榜（直连） |
+| `fetch_douyin()` | 462 | 抖音热搜（直连） |
+| `fetch_weibo()` | 484 | 微博热搜（需登录态，常失败） |
+| `detect_region()` | 538 | Accept-Language → zh/global |
+| `_client_ip()` | 558 | 取真实 IP（信任 X-Forwarded-For） |
+| `_client_country(ip)` | 566 | 反代头优先 + GeoLite2 兜底 |
+| `get_source(source)` | 580 | 带缓存单源抓取 |
+| `get_source_timeout(source)` | 595 | 带硬性截止时间单源抓取 |
 | 37 个 view 函数 | 见 [api_routes.md](api_routes.md) | 路由处理 |
 
 ### 模块级常量
-`SOURCES`（source→fetcher 映射，`app.py:479`）、`SOURCE_META`（8 源元信息，`app.py:490`）、`WORD_STREAM_LIMIT=60`、`SSR_INITIAL_LIMIT=20`、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
+`SOURCES`（source→fetcher 映射，`app.py:515`）、`SOURCE_META`（8 源元信息，`app.py:526`）、`WORD_STREAM_LIMIT=60`、`SSR_INITIAL_LIMIT=20`、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
 
 ---
 
@@ -75,7 +74,7 @@
 
 ---
 
-## dims.py  （1462 行）— 维度事件层（RSS + 热度 + LLM）
+## dims.py  （1538 行）— 维度事件层（RSS + 热度 + LLM）
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -84,23 +83,23 @@
 | 76–146 | 文件缓存（`cache/dims.json`） |
 | 147–343 | RSS 源定义 `RSS_SOURCES`（17 源）+ RSS 解析 + 抓取 |
 | 344–653 | 社区热度增强（HN/Reddit/复合分/趋势分） |
-| 654–1120 | LLM 批量打标（679–755 故障转移状态；756–1032 `_llm_classify_batch`；1033–1073 `enrich_with_llm`；1074–1120 `_translate_terms`） |
-| 1121–1308 | 顶层聚合（`get_dims`/`get_news_cards`） |
-| 1309–1462 | 后台预热线程 + 跨进程锁 + 定点刷新 |
+| 654–1195 | LLM 批量打标（679–755 故障转移状态；756–1035 `_llm_classify_batch`；1037–1076 `enrich_with_llm`；1078–1123 `_translate_terms`；1125–1188 `explain_terms` 热词解释生成/优化） |
+| 1196–1383 | 顶层聚合（`get_dims`/`get_news_cards`/`_fetch_dims_raw`） |
+| 1384–1538 | 后台预热线程 + 跨进程锁 + 定点刷新 |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `get_dims(dimension=None, lang="zh")` | 1222 | 维度热词分组（只读缓存）；`/api/dims` |
-| `get_news_cards(lang="zh")` | 1256 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
+| `get_dims(dimension=None, lang="zh")` | 1297 | 维度热词分组（只读缓存）；`/api/dims` |
+| `get_news_cards(lang="zh")` | 1331 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
 | `enrich_with_signals(items)` | 623 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
-| `start_background_dims_refresher()` | 1454 | 启动后台预热线程（app.py 启动时调） |
+| `start_background_dims_refresher()` | 1530 | 启动后台预热线程（app.py 启动时调） |
 
 ### 内部函数（按分区归组）
 - 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
 - RSS：`_norm_date`/`_strip_cdata`/`_parse_rss`/`fetch_one_rss`/`fetch_all_rss`
 - 热度：`_has_cjk`/`_clean_title`/`_hn_points`/`_reddit_points`/`_buzz`/`_age_hours`/`_time_decay`/`_composite_score`/`_trend_score`
-- LLM：`_active_llm`/`_llm_success`/`_llm_failure`（故障转移状态机）/`_llm_classify_batch`/`enrich_with_llm`/`_translate_terms`/`_LLMTransientError`（瞬态错误类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）；`_llm_classify_batch` 的 payload 会经 `config.llm_reasoning_params` 给 GLM-5.2+ 附 `reasoning_effort`（默认 low 降思考强度），提示词已加防回显/非空/JSON-only 规则
+- LLM：`_active_llm`/`_llm_success`/`_llm_failure`（故障转移状态机）/`_llm_classify_batch`/`enrich_with_llm`/`_translate_terms`/`explain_terms`（热词双语解释生成/优化，供 terms.refresh_words 的 term_explainer 回调）/`_LLMTransientError`（瞬态错误类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）；`_llm_classify_batch` 的 payload 会经 `config.llm_reasoning_params` 给 GLM-5.2+ 附 `reasoning_effort`（默认 low 降思考强度），提示词已加防回显/非空/JSON-only 规则，keywords 抽取限高价值实体/概念（禁泛化词）
 - 聚合：`_to_card`/`_fetch_dims_raw`/`_project_card`
 - 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
 
@@ -199,35 +198,35 @@
 
 ---
 
-## terms.py  （1364 行）— 词粒度聚合层（词维度重构，新增）
+## terms.py  （1459 行）— 词粒度聚合层（词维度重构，新增）
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
 | 42–148 | 词池规模控制 + words.json 文件缓存（复刻 dims.py） |
-| 150–202 | SQLite `init_db`（151）/ `_conn`（198）：`terms` / `term_snapshots` 表 + WAL |
-| 204–438 | 关键词词典 `_LEXICON`（209）/ 热词解释 `_EXPLANATIONS`（311）/ `_ALIAS`（410）/ `_ASCII_PATTERNS`（426，版本感知词边界） |
-| 440–678 | `normalize_term`（440）/ `extract_keywords_dict`（464）/ 标题关联匹配辅助（含 `_title_key` 549 标题归一化去重键） |
-| 680–1086 | 词聚合 + 三榜打分 + 快照（`refresh_words` 680 / `_refresh_words_inner` 702，dims 刷新锁内调；top news 排序截断前按标题去重） |
-| 1088–1259 | 读：`get_word_cards`（1088）/ `get_term_row`（1134）/ `get_term_explanation`（1150）/ `get_term_news`（1164，limit 截断前按标题去重，同标题转载只留 score 最高者） |
-| 1261–1364 | `list_terms_for_sitemap`（1261）+ 历史回填 `backfill_history`（1277）+ CLI |
+| 150–207 | SQLite `init_db`（151）/ `_conn`（203）：`terms` / `term_snapshots` 表 + WAL（幂等补列含 explain_zh/en/updated_at） |
+| 209–443 | 关键词词典 `_LEXICON`（214）/ 热词解释 `_EXPLANATIONS`（316）/ `_ALIAS`（415）/ `_ASCII_PATTERNS`（431，版本感知词边界） |
+| 445–683 | `normalize_term`（445）/ `extract_keywords_dict`（469）/ 标题关联匹配辅助（含 `_title_key` 554 标题归一化去重键） |
+| 685–1163 | 词聚合 + 三榜打分 + 快照（`refresh_words` 685 / `_refresh_words_inner` 710，dims 刷新锁内调；top news 排序截断前按标题去重；**6.5 解释批次**（1040）：词池即词典——非静态词新词生成解释、存量解释 >24h 低频优化，`term_explainer` 回调驱动） |
+| 1165–1354 | 读：`get_word_cards`（1165）/ `get_term_row`（1211）/ `get_term_explanation`（1227，静态词典 → terms 表 explain_* → 空串三级取词）/ `get_term_news`（1259，limit 截断前按标题去重，同标题转载只留 score 最高者） |
+| 1356–1459 | `list_terms_for_sitemap`（1356）+ 历史回填 `backfill_history`（1372）+ CLI |
 
 ### 公开函数（被 app.py / dims.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
 | `init_db()` | 151 | 建 `terms`/`term_snapshots` 表 + WAL（失败 `_DB_OK=False`） |
-| `normalize_term(s)` | 440 | 任意词形 → canonical 键（小写/别名/去复数） |
-| `extract_keywords_dict(title)` | 464 | 词典匹配抽词（无 LLM key 降级 + 回填） |
-| `refresh_words(all_cards, model_cards)` | 680 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json |
-| `get_word_cards(sort, lang, limit)` | 1088 | `/api/stream?view=words` 数据源（读 words.json，先完整排序再截取再投影） |
-| `get_term_row(term)` | 1134 | 查 terms 主表（canonical 键） |
-| `get_term_explanation(term, lang)` | 1150 | 热词解释（`_EXPLANATIONS` 词典，zh/en 投影，未收录空串） |
-| `get_term_news(term, limit, lang)` | 1164 | 词 → 关联报道（canonical/别名 + 标题边界兜底；limit 截断前按归一化标题去重，同标题转载只留 score 最高者） |
-| `list_terms_for_sitemap(limit)` | 1261 | sitemap 词表（热度降序） |
-| `backfill_history(days, force)` | 1277 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
+| `normalize_term(s)` | 445 | 任意词形 → canonical 键（小写/别名/去复数） |
+| `extract_keywords_dict(title)` | 469 | 词典匹配抽词（无 LLM key 降级 + 回填） |
+| `refresh_words(all_cards, model_cards, term_translator, term_explainer)` | 685 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json + 动态解释维护 |
+| `get_word_cards(sort, lang, limit)` | 1165 | `/api/stream?view=words` 数据源（读 words.json，先完整排序再截取再投影） |
+| `get_term_row(term)` | 1211 | 查 terms 主表（canonical 键） |
+| `get_term_explanation(term, lang)` | 1227 | 热词解释三级取词：静态 `_EXPLANATIONS` → terms 表 explain_*（LLM 维护）→ 空串；详情页模板兜底 |
+| `get_term_news(term, limit, lang)` | 1259 | 词 → 关联报道（canonical/别名 + 标题边界兜底；limit 截断前按归一化标题去重，同标题转载只留 score 最高者） |
+| `list_terms_for_sitemap(limit)` | 1356 | sitemap 词表（热度降序） |
+| `backfill_history(days, force)` | 1372 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
 
 ### SQLite 表
-`terms`（词主表：term/display/display_zh/origin/first_seen_at/total_mentions/hf_json/cur_hot/cur_rise/cur_novelty）、`term_snapshots`（(term,cycle) 周期快照支撑环比）。
+`terms`（词主表：term/display/display_zh/origin/first_seen_at/total_mentions/hf_json/cur_hot/cur_rise/cur_novelty + 动态解释列 explain_zh/explain_en/explain_updated_at——词池即词典资产）、`term_snapshots`（(term,cycle) 周期快照支撑环比）。
 
 ---
 
