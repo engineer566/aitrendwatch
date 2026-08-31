@@ -153,13 +153,6 @@
     border: 1px solid color-mix(in srgb, var(--orange) 30%, transparent);
     border-radius: 16px; padding: 4px 12px;
   }
-  .hf-pill {
-    display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
-    padding: 5px 14px; border-radius: 16px; text-decoration: none; white-space: nowrap;
-    background: var(--bg-card); border: 1px solid var(--border); color: var(--text-dim);
-    transition: all .15s;
-  }
-  .hf-pill:hover { color: #fff; background: var(--orange); border-color: var(--orange); }
 
   /* ---- 信息流 ---- */
   main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
@@ -331,6 +324,7 @@
       <kbd>/</kbd>
     </div>
     <div class="header-right">
+      <a id="hf-link" class="btn" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 HF</a>
       <span id="last-update">—</span>
       <button class="btn" id="lang-btn" title="{{ 'Switch language' if is_en else '切换语言' }}">{{ lang_toggle_label }}</button>
       <button class="btn" id="theme-btn" title="{{ 'Toggle theme' if is_en else '切换深浅色' }}">🌙</button>
@@ -350,7 +344,6 @@
       <button class="active" data-view="words">{{ '🔤 Words' if is_en else '🔤 热词' }}</button>
       <button data-view="news">{{ '📰 News feed' if is_en else '📰 逐条新闻' }}</button>
     </div>
-    <a class="hf-pill" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 HF</a>
     <div class="seg" id="sort-seg">
       <button class="active" data-sort="rise">{{ '📈 Trending' if is_en else '📈 上升最快' }}</button>
       <button data-sort="hot">{{ '🔥 Hottest' if is_en else '🔥 最热' }}</button>
@@ -566,6 +559,16 @@ function syncURL() {
 
 // ==================== 语言切换 ====================
 const langBtn = document.getElementById("lang-btn");
+const hfLink = document.getElementById("hf-link");
+function updateHfLink() {
+  if (!hfLink) return;
+  // 跟随前端 LANG（URL ?lang= / localStorage 覆盖后的实际显示语言），
+  // 避免链接停留在 SSR 默认语言导致点击跳到错误的语言页面。
+  hfLink.href = "/hf?lang=" + LANG;
+  hfLink.title = LANG === "en"
+    ? "HuggingFace open-source model leaderboard"
+    : "HuggingFace 开源模型榜";
+}
 function localizeStatic() {
   document.title = `{{ site_name }} · ${t("site_subtitle")}`;
   langBtn.title = LANG === "en" ? "Switch language" : "切换语言";
@@ -590,6 +593,7 @@ function applyLang(renderData = true) {
   document.documentElement.lang = LANG === "en" ? "en" : "zh-CN";
   langBtn.textContent = LANG === "en" ? "中" : "EN";
   localizeStatic();
+  updateHfLink();
   if (renderData) render();
 }
 langBtn.addEventListener("click", () => {

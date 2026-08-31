@@ -11,29 +11,30 @@
 
 ---
 
-## templates/index.html  （1316 行）— 首页主单页（词视图为主）
+## templates/index.html  （1320 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
 | 主题初始化 JS | 46 | 读 localStorage 设 data-theme |
-| 样式 `<style>` | ~54–290 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/HF 入口 pill/响应式 |
-| SEO ld+json | 294, 303 | 结构化数据 |
-| AdSense 脚本 | 323 | `adsbygoogle.js`（`adsense_enabled` 时） |
-| SSR 数据注入 | 436, 437 | sponsor-data / initial-terms-data（词卡） |
-| 主 JS `<script>` | 438–1240 | 全部前端逻辑 |
+| 🤗 HF 入口（header 右侧 `#hf-link`） | 327 | 与语言/主题按钮同排的 `.btn` 链接；href/title 由前端 `updateHfLink()`（563）跟随 `LANG` 动态生成，语言切换即时同步 |
+| 样式 `<style>` | ~54–286 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
+| SEO ld+json | 285, 294 | 结构化数据 |
+| AdSense 脚本 | 314 | `adsbygoogle.js`（`adsense_enabled` 时） |
+| SSR 数据注入 | 435, 436 | sponsor-data / initial-terms-data（词卡） |
+| 主 JS `<script>` | 438–1244 | 全部前端逻辑 |
 | ├ i18n 定义 | 445 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
 | ├ `t(k)` | 491 | 翻译函数 |
 | ├ `LANG`/`currentView` 状态 | 501–506 | `currentView=words\|news`，URL/localStorage 记忆 |
 | ├ URL 状态恢复 | 534–558 | `?view=&cat=&sort=&lang=` 可分享 |
-| ├ 视图切换 seg | 790 | 「🔤热词 / 📰逐条新闻」，`#view-seg`，旁有 🤗 HF 入口 pill（355） |
-| ├ 词卡渲染 `renderWordCard` | 893 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
-| ├ 词卡展开 `toggleWordExpand` | 947 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
-| ├ `visibleData` | 1061 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
-| ├ `render` | 1077 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
-| ├ 数据拉取 `fetchAll` | 1149 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
-| ├ AbortController | 1136–1138 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
-| ├ 返回滚动恢复 | 1202–1236 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；仅后退/前进（back_forward）回首页时，在 SSR + `/api/stream` 异步渲染完成后恢复滚动并删除 key |
-| └ Mock 数据 | 1241 | 后端不可用时的内置预览数据 |
+| ├ 视图切换 seg | 790 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
+| ├ 词卡渲染 `renderWordCard` | 897 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
+| ├ 词卡展开 `toggleWordExpand` | 951 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
+| ├ `visibleData` | 1065 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
+| ├ `render` | 1081 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
+| ├ 数据拉取 `fetchAll` | 1153 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
+| ├ AbortController | 1140–1142 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
+| ├ 返回滚动恢复 | 1206–1240 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；仅后退/前进（back_forward）回首页时，在 SSR + `/api/stream` 异步渲染完成后恢复滚动并删除 key |
+| └ Mock 数据 | 1245 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
 **渲染路由**：`/`（`app.py:629`）。
