@@ -1046,7 +1046,10 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                        or o.get("display") or _display_of(canon, []))
             display_zh = o.get("display_zh") or _display_zh_of(canon)
 
-            display_en = kept[canon].get("display_en") or ""
+            # display_en：本轮翻译有结果才覆盖；翻译失败/未命中时保留旧值，
+            # 否则英文页热词会因某轮 LLM 限流（429/1305）集体回退中文（churn）。
+            display_en = (kept[canon].get("display_en")
+                          or o.get("display_en") or "")
 
             conn.execute(
                 """INSERT INTO terms (term, display, display_zh, display_en, origin,
