@@ -255,8 +255,12 @@ class TermNewsLookupTests(unittest.TestCase):
         )
 
         # A hand-migrated plain keyword value is also a candidate, then gets
-        # canonicalized and verified in Python.
-        self._insert_card("old-plain-keyword", "OpenAI update", keywords="GPT5")
+        # canonicalized and verified in Python.  The title must differ from
+        # "old-keyword" above: same-title rows are deduplicated by title
+        # (mirrored-article fix), so this card only matches via the plain
+        # keyword storage form.
+        self._insert_card("old-plain-keyword", "OpenAI update roundup",
+                          keywords="GPT5")
         self.assertEqual(
             {card["official_url"]
              for card in self.terms.get_term_news("GPT-5")},
