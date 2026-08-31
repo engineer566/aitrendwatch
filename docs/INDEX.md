@@ -21,7 +21,7 @@ aitrendwatch/
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
 ├── text_utils.py   # RSS 文本/URL HTML entity 解码（78 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
-├── VERSION         # 版本号单一真相源（1.2.1）
+├── VERSION         # 版本号单一真相源（1.3.0）
 ├── templates/      # 7 个 Jinja2 模板
 │   ├── index.html         # 首页主单页（1276 行：词卡/逐条新闻双视图，JS fetch + i18n）
 │   ├── terms.html         # 服务条款页（363 行）
