@@ -11,22 +11,22 @@ AI 热点聚合单页应用：Flask 后端聚合 17 个 RSS 源 + HuggingFace �
 
 ```
 aitrendwatch/
-├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1492 行）
+├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1496 行）
 ├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度（158 行）
 ├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1551 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
-├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1528 行，新增）
+├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1561 行，新增）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（665 行）
-├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列，落库前 canonical 归一）（381 行）
+├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列，落库前 canonical 归一 + churn 防护）（433 行）
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
 ├── text_utils.py   # RSS 文本/URL HTML entity 解码（78 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
-├── VERSION         # 版本号单一真相源（1.4.0）
+├── VERSION         # 版本号单一真相源（1.5.0）
 ├── templates/      # 8 个 Jinja2 模板
 │   ├── index.html         # 首页主单页（1372 行：词卡/逐条新闻双视图，JS fetch + i18n，header 含 🤗 HF 入口）
 │   ├── hf.html            # HuggingFace 独立排序页（355 行：趋势/点赞/下载排序 + pipeline 标签，开源动向）
 │   ├── terms.html         # 服务条款页（371 行）
-│   ├── term_detail.html   # 通用热词聚合页（309 行：相关报道聚合 + HF 区块 + 词解释）
+│   ├── term_detail.html   # 通用热词聚合页（310 行：相关报道聚合 + HF 区块 + 词解释）
 │   ├── search.html        # 搜索结果页（499 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（353 行）
 │   ├── admin_login.html   # 管理员登录（68 行）
@@ -37,7 +37,7 @@ aitrendwatch/
 ├── skills/         # 项目技能（aitrendwatch-task-workflow：需求开发闭环 SKILL.md + 合并清理脚本）
 ├── docs/           # 代码索引 + Codex 项目记忆
 │   ├── PROJECT_MEMORY.md # 迁移来的项目记忆索引
-│   └── memory/           # 5 条按主题拆分的记忆条目
+│   └── memory/           # 6 条按主题拆分的记忆条目（含上线前回归清单）
 ├── vendor/         # ⚠️ vendored 依赖（flask/gunicorn/requests…），勿索引勿读
 ├── requirements.txt
 ├── Dockerfile / docker-compose.yml / docker-compose.prod.yml
@@ -59,13 +59,13 @@ aitrendwatch/
 
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
-| `app.py` | 1488 | Flask 入口、路由、8 直连源抓取、词详情装配 | 39 个路由 view 函数 + `_word_detail` + `_explain_fallback` + `_hf_models_for` | tracker, dims, terms, config, store, stream_utils |
+| `app.py` | 1496 | Flask 入口、路由、8 直连源抓取、词详情装配 | 39 个路由 view 函数 + `_word_detail` + `_explain_fallback` + `_hf_models_for` | tracker, dims, terms, config, store, stream_utils |
 | `config.py` | 158 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
 | `dims.py` | 1538 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
-| `terms.py` | 1459 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典） | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
+| `terms.py` | 1561 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典）+ 热窗新鲜度加权 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
 | `store.py` | 474 | 赞助位/统计/GeoIP SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country` | config, sqlite3 |
-| `news_store.py` | 350 | 事件卡历史库 SQLite（含 keywords 列） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
+| `news_store.py` | 433 | 事件卡历史库 SQLite（含 keywords 列 + churn 防护） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
 | `stream_utils.py` | 70 | 统一信息流卡片身份、去重、维度成员与计数 | `card_identity`, `dedupe_cards`, `dimension_members`, `dimension_counts`, `dimension_list` | — |
 | `text_utils.py` | 78 | 文本有界双层解码、URL 单层解码与危险 scheme 拦截 | `decode_html_entities`, `decode_url_entities` | — |
 | `version.py` | 23 | 版本号 | `__version__` | pathlib |

@@ -49,6 +49,27 @@ HOT_WINDOW_DAYS = 7             # 热度聚合窗口（天）
 EXPLAIN_BATCH_MAX_WORDS = 60
 
 
+def _hot_recency_weight(pub, today):
+    """近 7 天热窗内的报道分按发布新鲜度加权——让「今日热词」不被存量累计分埋没。
+
+    报道越新权重越高（≤1 天 ×3，≤3 天 ×1.5，更早 ×1.0）。与 score 自身的时间
+    衰减正交：score 是发布时刻的绝对热度衰减，这里是热窗内的相对新鲜度加权。
+    权重作用在单篇报道的 score 上（热窗聚合入口），越靠近今天的热点词排名越高；
+    旧高分报道仍保留 ×1.0 基数，不彻底出局。
+    """
+    try:
+        age_days = (today - datetime.date.fromisoformat(pub[:10])).days
+    except (ValueError, TypeError):
+        return 1.0
+    if age_days < 0:
+        age_days = 0
+    if age_days <= 1:
+        return 3.0
+    if age_days <= 3:
+        return 1.5
+    return 1.0
+
+
 def _word_card_identity(card):
     """返回词卡的稳定身份；同一 canonical 词只能出现在榜单一次。"""
     if not isinstance(card, dict):
@@ -245,6 +266,7 @@ _LEXICON = {
     "cursor":       ["cursor"],
     "devin":        ["devin"],
     "manus":        ["manus"],
+    "openclaw":     ["openclaw", "open claw"],
     "perplexity":   ["perplexity"],
     "huggingface":  ["huggingface", "hugging face", "抱抱脸"],
     "ollama":       ["ollama"],
@@ -362,6 +384,7 @@ _EXPLANATIONS = {
     "cursor": {"zh": "AI 代码编辑器，深度集成大模型辅助编程。", "en": "An AI-powered code editor with deeply integrated large-model assistance."},
     "devin": {"zh": "Cognition 推出的 AI 软件工程师（编码代理）产品，可自主完成编程任务。", "en": "Cognition's autonomous AI software engineer (coding agent) product."},
     "manus": {"zh": "中国团队推出的通用 AI 代理产品，可自主完成多步骤任务。", "en": "A general-purpose AI agent product by a Chinese team that autonomously completes multi-step tasks."},
+    "openclaw": {"zh": "开源的自主 AI 智能体项目，可自主操控电脑完成浏览、操作等多步骤任务；曾在开发者社区意外走红，引发广泛讨论。", "en": "An open-source autonomous AI agent project that can operate a computer to complete multi-step tasks; it went unexpectedly viral in the developer community."},
     "perplexity": {"zh": "AI 搜索产品，用大模型对检索结果进行摘要式回答。", "en": "An AI search product that summarizes retrieved results with large language models."},
     "huggingface": {"zh": "机器学习社区与模型托管平台，是开源模型生态的中心。", "en": "The machine-learning community and model-hosting platform at the center of the open model ecosystem."},
     "ollama": {"zh": "本地运行开源大模型的工具，一条命令即可拉取并运行模型。", "en": "A tool for running open-source large models locally with one-command pulls."},
@@ -842,7 +865,9 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                     if pub:
                         a["pubs"].add(pub)
                     if pub >= hot_cutoff:
-                        a["hot_score"] += int(r["score"] or 0)
+                        # 热窗内按报道新鲜度加权：今日热词（最近 1-3 天）不被
+                        # 存量累计分埋没（hot 展示与排序同口径，见 _hot_recency_weight）
+                        a["hot_score"] += int(r["score"] or 0) * _hot_recency_weight(pub, today)
                     d = r["dimension"] or "其他"
                     a["dims"][d] = a["dims"].get(d, 0) + 1
                     if pub > a["latest_pub"]:
@@ -1003,8 +1028,13 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                       ("hf" if is_hf else "news"))
             hot = a["hot_score"] + int(hf_meta.get("likes", 0) or 0)
 
-            # rise：活动量环比
-            m_cur = a["cur_cnt"] + a["cur_score"] / 2000.0
+            # rise：活动量环比（报道数口径，不掺分数）
+            # score 自身含时效衰减（每轮刷新重算时越老的报道分数越低），若用
+            # news_cnt + score_sum/2000 做环比，稳态词（每轮同样报道）会因分数
+            # 自然衰减被误判为「热度下降」——上升榜长期被 -0.05 左右的衰减噪音
+            # 占据，今日仍活跃的词（如 Openclaw）排不上榜。改用报道数 news_cnt：
+            # 报道数不衰减，环比反映真实活动量增减；冷启动 ln(1+m) 不变。
+            m_cur = a["cur_cnt"]
             try:
                 prev = conn.execute(
                     "SELECT news_cnt, score_sum FROM term_snapshots "
@@ -1013,7 +1043,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
             except Exception:
                 prev = None
             if prev:
-                m_prev = prev["news_cnt"] + prev["score_sum"] / 2000.0
+                m_prev = prev["news_cnt"]
                 rise = (m_cur - m_prev) / max(m_prev, 0.5)
             else:
                 rise = math.log(1 + m_cur) if m_cur > 0 else 0.0
@@ -1046,7 +1076,10 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                        or o.get("display") or _display_of(canon, []))
             display_zh = o.get("display_zh") or _display_zh_of(canon)
 
-            display_en = kept[canon].get("display_en") or ""
+            # display_en：本轮翻译有结果才覆盖；翻译失败/未命中时保留旧值，
+            # 否则英文页热词会因某轮 LLM 限流（429/1305）集体回退中文（churn）。
+            display_en = (kept[canon].get("display_en")
+                          or o.get("display_en") or "")
 
             conn.execute(
                 """INSERT INTO terms (term, display, display_zh, display_en, origin,

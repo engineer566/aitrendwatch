@@ -391,7 +391,7 @@
   </div>
   <div class="term-meta">
     <span class="m-hot">🔥 <span class="num">{{ t.hot }}</span></span>
-    {% if t.rise != none and t.rise != 0 %}<span class="m-up">📈 <span class="num">{{ t.rise }}</span></span>{% endif %}
+    {% if t.rise != none and t.rise != 0 and t.rise > -0.999 %}<span class="m-up">📈 <span class="num">{{ t.rise }}</span></span>{% endif %}
   </div>
   {% if t.top_news %}
   <div class="word-top">
@@ -931,7 +931,7 @@ function renderWordCard(w, i) {
   const originBadge = originMap[w.origin]
     ? `<span class="origin-badge">${originMap[w.origin]}</span>` : "";
   let metrics = `<span class="m-hot">🔥 <span class="num">${fmtNum(w.hot)}</span></span>`;
-  if (currentSort === "rise" && w.rise != null)
+  if (currentSort === "rise" && w.rise != null && Number(w.rise) > -0.999)
     metrics += `<span class="m-up">📈 ${t("rise")} <span class="num">${Number(w.rise).toFixed(2)}</span></span>`;
   if (currentSort === "new" && w.novelty != null)
     metrics += `<span class="m-up">✨ ${t("novelty")} <span class="num">${Number(w.novelty).toFixed(2)}</span></span>`;

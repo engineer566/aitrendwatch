@@ -117,13 +117,14 @@ def _explain_fallback(term, lang, news_cnt=0, hot=0, rise=0, origin="news"):
                  f"{news_cnt} related reports."]
         if hot:
             parts.append(f"Hotness {hot}.")
-        if rise:
+        # rise == -1.0 是本周期无活跃报道的占位（非真实下跌），解释文案不展示
+        if rise and rise > -0.999:
             parts.append(f"Rise {rise:.2f}.")
         return " ".join(parts)
     parts = [f"「{term}」是近期 AI 热点词，与 {news_cnt} 篇相关报道关联。"]
     if hot:
         parts.append(f"热度 {hot}。")
-    if rise:
+    if rise and rise > -0.999:
         parts.append(f"环比上升 {rise:.2f}。")
     return " ".join(parts)
 
@@ -241,7 +242,10 @@ def _seo_enabled():
 
 
 # 统一卡片流的展示上限。排序由各数据源在截断前完成，前端只过滤不重排。
-WORD_STREAM_LIMIT = 60
+# 60 → 100（2026-09-02）：词池 words.json 保留 200 词，60 的展示窗口让今日热词
+# （如 Openclaw，按热窗新鲜度加权后仍 ~60-90 名）长期被挤出首屏；放宽到 100，
+# 配合 terms 的热度新鲜度加权，让近期热词稳定可见。
+WORD_STREAM_LIMIT = 100
 
 
 def _stream_number(card, field):

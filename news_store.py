@@ -132,6 +132,32 @@ def upsert_cards(cards):
     try:
         with _db_lock:
             conn = _conn()
+            rows = [_card_to_row(c, now) for c in cards]
+            # 关键词 churn 防护：同一 url 已存在且本轮抽取的关键词集合是旧集合的
+            # 真子集（典型场景：上一轮 LLM 抽词成功 → 本轮 GLM 限流/无 key 降级为
+            # 词典匹配，丢失词典外热词如 openclaw）时，保留旧的关键词不覆盖。
+            # 这样 LLM 发现的热词不会因某轮 LLM 失败而从词池/关联中静默消失；
+            # 新集合含旧集合没有的词（真实变化）时仍正常覆盖。
+            try:
+                existing_kw = {}
+                urls = [r["url"] for r in rows if r["url"]]
+                for i in range(0, len(urls), 500):
+                    chunk = urls[i:i + 500]
+                    placeholders = ",".join("?" * len(chunk))
+                    for u, kw in conn.execute(
+                            "SELECT url, keywords FROM news_cards "
+                            f"WHERE url IN ({placeholders})", chunk):
+                        existing_kw[u] = kw
+                for r in rows:
+                    old = existing_kw.get(r["url"])
+                    if old is None:
+                        continue
+                    new_set = _keyword_set(r["keywords"])
+                    old_set = _keyword_set(old)
+                    if new_set and new_set <= old_set and new_set != old_set:
+                        r["keywords"] = old
+            except Exception:
+                pass  # 读旧关键词失败则保持覆盖写入（原行为）
             conn.executemany(
                 """
                 INSERT INTO news_cards (
@@ -167,7 +193,7 @@ def upsert_cards(cards):
                     last_refresh_at=excluded.last_refresh_at,
                     active=1
                 """,
-                [_card_to_row(c, now) for c in cards],
+                rows,
             )
             # 收集本轮命中的 url，把既有的 active=1 但本轮未命中者置 0
             seen_urls = {_card_url(c) for c in cards}
@@ -266,6 +292,32 @@ def _keywords_to_json(kw):
             seen.add(canon)
             out.append(canon)
     return json.dumps(out[:8], ensure_ascii=False)
+
+
+def _keyword_set(value):
+    """存量 keywords 列 → canonical 词键集合（与 _keywords_to_json 同解析口径）。
+
+    供 upsert_cards 的关键词 churn 防护做新旧集合比较：旧值可能是 JSON 数组、
+    空串、或早期手写逗号分隔串，统一归一为集合。
+    """
+    raw = []
+    if isinstance(value, (list, tuple)):
+        raw = list(value)
+    elif isinstance(value, str) and value.strip():
+        try:
+            v = json.loads(value)
+            if isinstance(v, list):
+                raw = v
+            else:
+                raw = re.split(r"[,|]", value)
+        except (json.JSONDecodeError, ValueError):
+            raw = re.split(r"[,|]", value)
+    out = set()
+    for k in raw:
+        canon = _canonical_keyword(k)
+        if canon:
+            out.add(canon)
+    return out
 
 
 # ---------- 读：合并历史库扩大内容池 ----------
