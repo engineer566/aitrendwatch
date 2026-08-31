@@ -37,7 +37,7 @@ aitrendwatch/
 ├── skills/         # 项目技能（aitrendwatch-task-workflow：需求开发闭环 SKILL.md + 合并清理脚本）
 ├── docs/           # 代码索引 + Codex 项目记忆
 │   ├── PROJECT_MEMORY.md # 迁移来的项目记忆索引
-│   └── memory/           # 5 条按主题拆分的记忆条目
+│   └── memory/           # 6 条按主题拆分的记忆条目（含上线前回归清单）
 ├── vendor/         # ⚠️ vendored 依赖（flask/gunicorn/requests…），勿索引勿读
 ├── requirements.txt
 ├── Dockerfile / docker-compose.yml / docker-compose.prod.yml
