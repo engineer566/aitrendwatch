@@ -15,7 +15,7 @@ aitrendwatch/
 ├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度（158 行）
 ├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1538 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
-├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1459 行，新增）
+├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1500 行，新增）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP（474 行）
 ├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列）（350 行）
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
@@ -61,7 +61,7 @@ aitrendwatch/
 | `config.py` | 158 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
 | `dims.py` | 1538 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
-| `terms.py` | 1459 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典） | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
+| `terms.py` | 1500 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典；`_TERM_STOPWORDS` 停用表过滤 "AI" 等低价值通用词） | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `is_stopword`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
 | `store.py` | 474 | 赞助位/统计/GeoIP SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country` | config, sqlite3 |
 | `news_store.py` | 350 | 事件卡历史库 SQLite（含 keywords 列） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
 | `stream_utils.py` | 70 | 统一信息流卡片身份、去重、维度成员与计数 | `card_identity`, `dedupe_cards`, `dimension_members`, `dimension_counts`, `dimension_list` | — |

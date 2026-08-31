@@ -313,6 +313,21 @@ _LEXICON = {
     "sandbox":      ["sandbox", "沙盒"],
 }
 
+# ---------- 通用热词停用词表（canonical 键）----------
+# 低价值通用词：即使被词典/LLM/HF 抽中，也不作为独立热词进入词池（如 "AI"、
+# "模型" 这类词单独出现没有信息量）。键必须是 normalize_term() 输出的 canonical
+# 形式（小写、空白/连字符归 '-');维护时先 normalize_term 再放入。
+_TERM_STOPWORDS = {
+    "ai",                       # AI
+    "artificial-intelligence",  # 人工智能
+    "machine-learning",         # 机器学习
+    "deep-learning",            # 深度学习
+    "llm",                      # 大语言模型（通用概念）
+    "model",                    # 模型（通用词）
+    "technology",               # 技术
+    "tech",                     # 科技/技术
+}
+
 # ---------- 热词解释词典（canonical → 中/英解释）----------
 # 供热词详情页展示「这是什么」的静态文案；canonical 键与 _LEXICON 对齐。
 # 覆盖词典主要词条（头部模型/产品全量 + 技术概念尽量全），未收录词解释为空串。
@@ -470,11 +485,21 @@ def normalize_term(s):
     return t
 
 
+def is_stopword(term):
+    """通用热词停用判断：词形归一化后是否落在低价值通用词停用表。
+
+    入参可为任意词形（内部先 normalize_term），但调用方在 hot path 上应
+    传 canonical 键以避免重复归一。空串/无效词形返回 False。
+    """
+    canon = normalize_term(term)
+    return bool(canon) and canon in _TERM_STOPWORDS
+
+
 def extract_keywords_dict(title):
     """词典匹配抽词（零 LLM 成本）。无 API key 时的降级路径 + 历史回填用。
 
     对标题（可传多段拼接文本）做：ASCII 表面形式词边界匹配 + CJK 子串匹配，
-    返回 canonical 词键列表，去重，上限 3 个。
+    返回 canonical 词键列表，去重，上限 3 个；停用词（_TERM_STOPWORDS）不返回。
     """
     if not title:
         return []
@@ -492,7 +517,8 @@ def extract_keywords_dict(title):
             if any(ord(c) >= 128 for c in f) and f in text:
                 hits.append(canon)
                 break
-    return hits[:3]
+    # 停用词不进词池（即使词典命中也过滤，如 "llm"）
+    return [c for c in hits if not is_stopword(c)][:3]
 
 
 def _term_surfaces(canon):
@@ -613,7 +639,11 @@ def _keyword_canons(value):
             raw = re.split(r"[,|]", value)
     if not isinstance(raw, (list, tuple, set)):
         return set()
-    return {canon for canon in (normalize_term(k) for k in raw) if canon}
+    # 停用词（低价值通用词）在此统一剔除：LLM 抽出的 "AI"/"模型" 等即使已写入
+    # news_cards.keywords，也不会进入词池聚合与词-新闻关联（refresh_words 与
+    # get_term_news 共用本函数）。
+    return {canon for canon in (normalize_term(k) for k in raw)
+            if canon and not is_stopword(canon)}
 
 
 def _news_row_canons(row):
@@ -722,7 +752,9 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     hf_terms = {}  # canon → {display, hf_meta}
     for mc in model_cards:
         canon = _hf_canon(mc)
-        if not canon:
+        # 停用词不进池：HF 模型名归一后若落在低价值通用词（如 "model"），
+        # 不占词池名额（停止表只含极通用词，不会误伤真实模型名）。
+        if not canon or is_stopword(canon):
             continue
         display = (mc.get("term") or "").strip()
         # 同底模多变体：保留 trending_score 最高的展示名与元数据
