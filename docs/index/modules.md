@@ -5,7 +5,7 @@
 
 ---
 
-## app.py  （1353 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （1364 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
@@ -198,31 +198,32 @@
 
 ---
 
-## terms.py  （1096 行）— 词粒度聚合层（词维度重构，新增）
+## terms.py  （1319 行）— 词粒度聚合层（词维度重构，新增）
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
 | 42–149 | 词池规模控制 + words.json 文件缓存（复刻 dims.py） |
-| 150–194 | SQLite `init_db`：`terms` / `term_snapshots` 表 + WAL |
-| 195–328 | 关键词词典 `_LEXICON`/`_ALIAS`/`_ASCII_PATTERNS`（版本感知词边界） |
-| 329–523 | `normalize_term` / `extract_keywords_dict` / 历史关联匹配辅助 |
-| 495–853 | 词聚合 + 三榜打分 + 快照（`refresh_words`，dims 刷新锁内调） |
-| 850–1007 | 读：`get_word_cards` / `get_term_row` / `get_term_news` / `list_terms_for_sitemap` |
-| 1008–1096 | 历史回填 `backfill_history` + CLI |
+| 150–197 | SQLite `init_db`：`terms` / `term_snapshots` 表 + WAL |
+| 198–437 | 关键词词典 `_LEXICON`（209）+ 热词解释 `_EXPLANATIONS`（311）+ `_ALIAS`/`_ASCII_PATTERNS`（版本感知词边界） |
+| 440–663 | `normalize_term` / `extract_keywords_dict` / 历史关联匹配辅助 |
+| 666–1058 | 词聚合 + 三榜打分 + 快照（`refresh_words`，dims 刷新锁内调） |
+| 1060–1214 | 读：`get_word_cards` / `get_term_row` / `get_term_explanation` / `get_term_news` |
+| 1216–1319 | `list_terms_for_sitemap` + 历史回填 `backfill_history` + CLI |
 
 ### 公开函数（被 app.py / dims.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
 | `init_db()` | 151 | 建 `terms`/`term_snapshots` 表 + WAL（失败 `_DB_OK=False`） |
-| `normalize_term(s)` | 329 | 任意词形 → canonical 键（小写/别名/去复数） |
-| `extract_keywords_dict(title)` | 353 | 词典匹配抽词（无 LLM key 降级 + 回填） |
-| `refresh_words(all_cards, model_cards)` | 524 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json |
-| `get_word_cards(sort, lang, limit)` | 854 | `/api/stream?view=words` 数据源（读 words.json，先完整排序再截取再投影） |
-| `get_term_row(term)` | 897 | 查 terms 主表（canonical 键） |
-| `get_term_news(term, limit, lang)` | 913 | 词 → 关联报道（canonical/别名 + 标题边界兜底） |
-| `list_terms_for_sitemap(limit)` | 993 | sitemap 词表（热度降序） |
-| `backfill_history(days, force)` | 1009 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
+| `normalize_term(s)` | 440 | 任意词形 → canonical 键（小写/别名/去复数） |
+| `extract_keywords_dict(title)` | 464 | 词典匹配抽词（无 LLM key 降级 + 回填） |
+| `refresh_words(all_cards, model_cards)` | 666 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json |
+| `get_word_cards(sort, lang, limit)` | 1060 | `/api/stream?view=words` 数据源（读 words.json，先完整排序再截取再投影） |
+| `get_term_row(term)` | 1106 | 查 terms 主表（canonical 键） |
+| `get_term_explanation(term, lang)` | 1122 | 热词解释（`_EXPLANATIONS` 词典，zh/en 投影，未收录空串） |
+| `get_term_news(term, limit, lang)` | 1136 | 词 → 关联报道（canonical/别名 + 标题边界兜底） |
+| `list_terms_for_sitemap(limit)` | 1216 | sitemap 词表（热度降序） |
+| `backfill_history(days, force)` | 1232 | 词典回填 keywords + 合成历史快照（幂等，--force 全量） |
 
 ### SQLite 表
 `terms`（词主表：term/display/display_zh/origin/first_seen_at/total_mentions/hf_json/cur_hot/cur_rise/cur_novelty）、`term_snapshots`（(term,cycle) 周期快照支撑环比）。

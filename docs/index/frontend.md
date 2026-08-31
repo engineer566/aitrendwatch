@@ -56,12 +56,13 @@
 
 ---
 
-## templates/term_detail.html  （300 行）— 通用热词聚合页
+## templates/term_detail.html  （310 行）— 通用热词聚合页
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
 | 主题 JS | 28 | |
 | 词头（名称/来源徽标/热度/环比/报道数） | ~180–200 | `word.term` 通用字段 |
+| 词解释块（💡 双语） | ~238–241 | `{% if word.term.explain %}` 条件渲染，样式 `.term-explain`（109），未收录词不显示 |
 | 相关报道列表（SSR，SEO 主体） | ~210–225 | `word.news` 聚合卡 |
 | HF 区块（官方/社区/论文/标签，条件渲染） | ~185–210 | `{% if word.hf %}`，live 数据 `word.hf_detail` |
 | SEO ld+json | ~135–185 | DefinedTerm + ItemList（通用词）；SoftwareApplication + ScholarlyArticle（HF 词） |

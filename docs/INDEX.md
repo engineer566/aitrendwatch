@@ -57,11 +57,11 @@ aitrendwatch/
 
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
-| `app.py` | 1353 | Flask 入口、路由、8 直连源抓取、词详情装配 | 37 个路由 view 函数 + `_word_detail` | tracker, dims, terms, config, store, stream_utils |
+| `app.py` | 1364 | Flask 入口、路由、8 直连源抓取、词详情装配 | 37 个路由 view 函数 + `_word_detail` | tracker, dims, terms, config, store, stream_utils |
 | `config.py` | 126 | 配置集中地 + LLM 故障转移链 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint` | os |
 | `dims.py` | 1289 | RSS 事件层 + LLM 故障转移链打标/抽词 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
-| `terms.py` | 1096 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
+| `terms.py` | 1319 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
 | `store.py` | 474 | 赞助位/统计/GeoIP SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country` | config, sqlite3 |
 | `news_store.py` | 350 | 事件卡历史库 SQLite（含 keywords 列） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
 | `stream_utils.py` | 70 | 统一信息流卡片身份、去重、维度成员与计数 | `card_identity`, `dedupe_cards`, `dimension_members`, `dimension_counts`, `dimension_list` | — |
