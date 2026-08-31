@@ -226,8 +226,6 @@
   .word-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
   .word-expand-btn:hover { background: var(--bg-hover); }
-  .word-detail-link { font-size: 13px; color: var(--accent); text-decoration: none; }
-  .word-detail-link:hover { text-decoration: underline; }
   .word-expand { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 
   /* ---- 骨架屏 ---- */
@@ -910,12 +908,13 @@ function renderWordCard(w, i) {
         </div>`).join("")}</div>` : "";
   const term = w.term || w.id;
   const detailHref = termHref(term);
-  const expandBtn = (w.news_cnt || 0) > (w.top_news || []).length
-    ? `<div class="word-actions">
-         <button class="word-expand-btn" data-term="${escapeHtml(term)}"><span class="word-expand-label">${t("more_btn")} (${w.news_cnt || 0})</span></button>
-         <a class="word-detail-link" href="${detailHref}">${t("detail_link")}</a>
-       </div>`
-    : `<a class="link-btn official" href="${detailHref}" style="margin-top:8px">${t("detail_link")}</a>`;
+  // 「展开更多」与「查看热词」共用同一 .word-actions 容器与同一带框样式
+  // （link-btn official），保证有/无展开按钮时「查看热词」视觉完全一致。
+  const hasMoreNews = (w.news_cnt || 0) > (w.top_news || []).length;
+  const expandBtn = `<div class="word-actions">
+       ${hasMoreNews ? `<button class="word-expand-btn" data-term="${escapeHtml(term)}"><span class="word-expand-label">${t("more_btn")} (${w.news_cnt || 0})</span></button>` : ""}
+       <a class="word-detail-link link-btn official" href="${detailHref}">${t("detail_link")}</a>
+     </div>`;
   return `<div class="term-card" style="--cat-color:${dInfo.color}" data-wid="${escapeHtml(w.id)}">
     <div class="word-head">
       <span class="rank ${i<3?"top":""} num">${i+1}</span>
@@ -1224,7 +1223,7 @@ function MOCK_DATA() {
      summary:"AI 编程赛道再迎大额融资，红杉领投 5000 万美元 B 轮。", hn_points:0, reddit_score:40, reddit_comments:12},
     {kind:"word", id:"gpt-5", term:"GPT-5", display_zh:"", origin:"both",
      dimension:"模型与技术", dims:["模型与技术","研究与论文"], published:"2026-08-28",
-     score:9200, hot:9200, rise:1.95, novelty:0.95, news_cnt:2, first_seen_at:"2026-08-27",
+     score:9200, hot:9200, rise:1.95, novelty:0.95, news_cnt:5, first_seen_at:"2026-08-27",
      top_news:[
        {title:"OpenAI 发布 GPT-5", title_en:"OpenAI launches GPT-5", official_url:"https://openai.com", hot:5000, source:"OpenAI"},
        {title:"GPT-5 评测泄露", title_en:"GPT-5 benchmarks leaked", official_url:"https://techcrunch.com", hot:3000, source:"TC"},

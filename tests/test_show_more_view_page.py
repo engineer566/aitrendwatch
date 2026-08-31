@@ -32,8 +32,29 @@ class ShowMoreViewPageContractTest(unittest.TestCase):
         self.assertNotIn("<a ", button_markup)
         self.assertIn('<span class="word-expand-label">', button_markup)
         self.assertIn("</button>", self.card_controls[button_end:])
-        self.assertIn('<a class="word-detail-link" href="${detailHref}">', self.card_controls[button_end:])
+        self.assertIn(
+            '<a class="word-detail-link link-btn official" href="${detailHref}">',
+            self.card_controls[button_end:])
         self.assertNotIn('onclick="event.stopPropagation()"', self.card_controls)
+
+    def test_no_expand_branch_uses_same_actions_pattern(self):
+        """有/无展开按钮时，「查看热词」都处于同一 .word-actions 容器、同一带框样式。
+
+        The expand button is the only conditional element; without it the
+        container holds just the detail link, styled identically to the
+        two-control case (link-btn official 带框样式，与展开按钮同框)。
+        """
+        self.assertIn('<div class="word-actions">', self.card_controls)
+        # 统一的详情链接只定义一处（两条分支共用同一 markup，样式必然一致）
+        self.assertEqual(
+            self.card_controls.count(
+                '<a class="word-detail-link link-btn official" href="${detailHref}">'),
+            1)
+        # 旧的「单链接 + 内联 margin」分支已移除
+        self.assertNotIn('style="margin-top:8px"', self.card_controls)
+        # 展开按钮是唯一条件元素：无更多报道时容器内只剩详情链接
+        self.assertEqual(self.card_controls.count('<button class="word-expand-btn"'), 1)
+        self.assertIn(': ""}', self.card_controls)
 
     def test_loading_state_does_not_replace_button_children(self):
         """A fetch must update only the label, leaving sibling links intact."""
