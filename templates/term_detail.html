@@ -106,6 +106,13 @@
   .term-meta { font-size: 14px; color: var(--text-dim); margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
   .term-meta .m-up { color: var(--green); font-weight: 600; }
   .term-meta .m-hot { color: var(--orange); font-weight: 600; }
+  .term-explain {
+    margin-top: 12px; padding: 10px 14px; font-size: 14px; line-height: 1.65;
+    color: var(--text);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    border-radius: 10px;
+  }
   .tags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
   .tag { font-size: 11px; padding: 2px 8px; border-radius: 8px; background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text-dim); }
   .links { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -230,6 +237,9 @@
     </span>
     {% if word.term.origin == 'hf' %}<span class="origin-badge">🤗 HuggingFace</span>{% elif word.term.origin == 'both' %}<span class="origin-badge">📰 + 🤗</span>{% endif %}
   </div>
+  {% if word.term.explain %}
+  <div class="term-explain">💡 <span>{{ word.term.explain }}</span></div>
+  {% endif %}
   {% if word.term.hot or word.term.rise or word.term.news_cnt %}
   <div class="term-meta">
     {% if word.term.hot %}<span class="m-hot">🔥 {% if is_en %}Hotness{% else %}热度{% endif %} <span class="num">{{ word.term.hot }}</span></span>{% endif %}

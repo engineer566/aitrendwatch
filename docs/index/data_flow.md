@@ -51,9 +51,10 @@
 - 批量调用：`enrich_with_llm(items)` 分批打标（6 条子批）。
 - 生产定点刷新：`DIMS_REFRESH_HOURS=(13,19,1,7)`，避开高峰段 + 命中硬盘缓存 TTL。
 
-### 关键词词典（`terms.py:200` `_LEXICON`）
+### 关键词词典（`terms.py:209` `_LEXICON`）
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
 - 用途：无 LLM key 降级抽词、历史库零成本回填、常见异形归一、display_zh 来源。
+- 热词解释：`terms.py:311` `_EXPLANATIONS`（canonical → zh/en 解释），`terms.get_term_explanation`（`terms.py:1150`）供详情页「这是什么」块，未收录词空串。
 
 ## SQLite Schema
 
