@@ -133,15 +133,16 @@ class TermNewsLookupTests(unittest.TestCase):
         self.app._detail_cache.clear()
 
     def _insert_card(self, url, title, title_zh=None, title_en=None,
-                     keywords="[]", score=100):
+                     keywords="[]", score=100, hot=0, published="2026-08-29"):
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             """
             INSERT INTO news_cards (
-                url, title, title_zh, title_en, published, score, keywords
-            ) VALUES (?, ?, ?, ?, '2026-08-29', ?, ?)
+                url, title, title_zh, title_en, published, score, hot, keywords
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (url, title, title_zh or title, title_en or title, score, keywords),
+            (url, title, title_zh or title, title_en or title, published, score,
+             hot, keywords),
         )
         conn.commit()
         conn.close()
@@ -317,6 +318,64 @@ class TermNewsLookupTests(unittest.TestCase):
                 [card["official_url"] for card in response.get_json()["news"]],
                 ["bilingual-card"],
             )
+
+    def test_get_term_news_sorted_by_hot_descending(self):
+        # 详情页按热度排序：hot 降序；hot 为 0（缺失）回退 score；同 hot 按
+        # published 降序。排序先于 limit 截断。
+        self._insert_card("hot-low", "GPT-5 low heat", keywords='["gpt-5"]',
+                          score=100, hot=100, published="2026-08-29")
+        self._insert_card("hot-mid", "GPT-5 mid heat", keywords='["gpt-5"]',
+                          score=90, hot=500, published="2026-08-28")
+        self._insert_card("hot-high", "GPT-5 high heat", keywords='["gpt-5"]',
+                          score=80, hot=900, published="2026-08-27")
+        # hot=0 → 回退 score（950 最高，排最前；按 published 则是最后）。
+        self._insert_card("hot-score-only", "GPT-5 score only",
+                          keywords='["gpt-5"]', score=950, hot=0,
+                          published="2026-08-30")
+        cards = self.terms.get_term_news("gpt-5", limit=10)
+        self.assertEqual(
+            [c["official_url"] for c in cards],
+            ["hot-score-only", "hot-high", "hot-mid", "hot-low"],
+        )
+        hots = [c["hot"] for c in cards]
+        self.assertEqual(hots, sorted(hots, reverse=True))
+
+    def test_get_term_news_tie_hot_orders_by_published_desc(self):
+        # 同 hot 时按 published 降序（稳定次序）。
+        self._insert_card("tie-old", "GPT-5 tie older", keywords='["gpt-5"]',
+                          score=50, hot=500, published="2026-08-01")
+        self._insert_card("tie-new", "GPT-5 tie newer", keywords='["gpt-5"]',
+                          score=60, hot=500, published="2026-08-02")
+        cards = self.terms.get_term_news("gpt-5", limit=10)
+        self.assertEqual([c["official_url"] for c in cards],
+                         ["tie-new", "tie-old"])
+
+    def test_word_api_and_detail_page_news_sorted_by_hotness(self):
+        self._insert_card("page-low", "GPT-5 low report", keywords='["gpt-5"]',
+                          score=100, hot=100, published="2026-08-29")
+        self._insert_card("page-high", "GPT-5 high report", keywords='["gpt-5"]',
+                          score=90, hot=900, published="2026-08-27")
+        self._insert_card("page-mid", "GPT-5 mid report", keywords='["gpt-5"]',
+                          score=80, hot=500, published="2026-08-28")
+        self._insert_term()
+
+        client = self.app.app.test_client()
+        data = client.get("/api/word/gpt-5").get_json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(
+            [n["official_url"] for n in data["news"]],
+            ["page-high", "page-mid", "page-low"],
+        )
+        hots = [n["hot"] for n in data["news"]]
+        self.assertEqual(hots, sorted(hots, reverse=True))
+
+        resp = client.get("/term/gpt-5")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertLess(html.index("GPT-5 high report"),
+                        html.index("GPT-5 mid report"))
+        self.assertLess(html.index("GPT-5 mid report"),
+                        html.index("GPT-5 low report"))
 
 
 if __name__ == "__main__":

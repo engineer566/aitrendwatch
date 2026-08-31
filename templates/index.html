@@ -51,6 +51,28 @@
   document.documentElement.dataset.theme = saved || sys;
 })();
 </script>
+<script>
+// 返回首页场景：首帧绘制前隐藏内容，滚动恢复后再显示——避免「先见顶部 → 跳到原位置」的跳跃断裂感。
+// 判定与底部 restoreScrollPosition 同一口径：scroll_back=1（词条页返回按钮）或 back_forward（浏览器后退/前进）。
+(function () {
+  function isReturnNavigation() {
+    try {
+      if (new URLSearchParams(location.search).get("scroll_back") === "1") return true;
+      const e = performance.getEntriesByType && performance.getEntriesByType("navigation");
+      return !!(e && e.length && e[0].type === "back_forward");
+    } catch (err) { return false; }
+  }
+  try {
+    if (isReturnNavigation() && sessionStorage.getItem("aitw_last_scroll")) {
+      document.documentElement.classList.add("scroll-restoring");
+      // 兜底：即使主脚本异常，也要保证页面可见
+      window.addEventListener("load", function () {
+        document.documentElement.classList.remove("scroll-restoring");
+      });
+    }
+  } catch (err) {}
+})();
+</script>
 <style>
   :root {
     --bg: #0f1117;
@@ -84,6 +106,8 @@
     --shadow: 0 1px 3px rgba(20,25,40,.08);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* 返回首页恢复滚动前隐藏内容（head 脚本判定返回场景后加类），避免顶部闪现 */
+  html.scroll-restoring, html.scroll-restoring body { visibility: hidden; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                  "Microsoft YaHei", sans-serif;
@@ -172,7 +196,7 @@
     color: var(--cat-color); background: color-mix(in srgb, var(--cat-color) 14%, transparent);
     white-space: nowrap;
   }
-  .term-name { font-size: 16px; font-weight: 700; word-break: break-all; }
+  .term-name { font-size: 16px; font-weight: 700; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .term-name a { color: var(--text); text-decoration: none; }
   .term-name a:hover { color: var(--accent); }
   .term-name .author { color: var(--text-dim); font-weight: 500; font-size: 13px; }
@@ -205,13 +229,13 @@
   .papers { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
   .papers-title { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
   .paper { font-size: 13px; padding: 3px 0; }
-  .paper a { color: var(--purple); text-decoration: none; }
+  .paper a { color: var(--purple); text-decoration: none; overflow-wrap: break-word; }
   .paper a:hover { text-decoration: underline; }
   .paper .pm { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
 
   /* ===== 词卡（词维度重构） ===== */
   .word-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-  .word-name { font-size: 18px; font-weight: 800; word-break: break-all; }
+  .word-name { font-size: 18px; font-weight: 800; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .word-name a { color: var(--accent); text-decoration: none; }
   .word-name a:hover { text-decoration: underline; }
   .word-name .zh { color: var(--text); }
@@ -219,15 +243,13 @@
   .word-count { font-size: 12px; color: var(--text-dim); }
   .word-top { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
   .word-top-item { font-size: 13px; padding: 3px 0; display: flex; gap: 6px; align-items: baseline; }
-  .word-top-item a { color: var(--text); text-decoration: none; word-break: break-all; }
+  .word-top-item a { color: var(--text); text-decoration: none; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .word-top-item a:hover { color: var(--accent); }
   .word-top-item .src { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   .word-top-item .hd { color: var(--orange); font-size: 11px; white-space: nowrap; }
   .word-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
   .word-expand-btn:hover { background: var(--bg-hover); }
-  .word-detail-link { font-size: 13px; color: var(--accent); text-decoration: none; }
-  .word-detail-link:hover { text-decoration: underline; }
   .word-expand { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 
   /* ---- 骨架屏 ---- */
@@ -257,7 +279,7 @@
   }
   .sponsor-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .sponsor-name { font-size: 15px; font-weight: 700; color: var(--text); }
-  .sponsor-text { font-size: 14px; color: var(--text); flex: 1; min-width: 0; }
+  .sponsor-text { font-size: 14px; color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; }
   .sponsor-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
   .sponsor-cta {
     display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
@@ -326,6 +348,7 @@
       <kbd>/</kbd>
     </div>
     <div class="header-right">
+      <a id="hf-link" class="btn" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 HF</a>
       <span id="last-update">—</span>
       <button class="btn" id="lang-btn" title="{{ 'Switch language' if is_en else '切换语言' }}">{{ lang_toggle_label }}</button>
       <button class="btn" id="theme-btn" title="{{ 'Toggle theme' if is_en else '切换深浅色' }}">🌙</button>
@@ -560,6 +583,16 @@ function syncURL() {
 
 // ==================== 语言切换 ====================
 const langBtn = document.getElementById("lang-btn");
+const hfLink = document.getElementById("hf-link");
+function updateHfLink() {
+  if (!hfLink) return;
+  // 跟随前端 LANG（URL ?lang= / localStorage 覆盖后的实际显示语言），
+  // 避免链接停留在 SSR 默认语言导致点击跳到错误的语言页面。
+  hfLink.href = "/hf?lang=" + LANG;
+  hfLink.title = LANG === "en"
+    ? "HuggingFace open-source model leaderboard"
+    : "HuggingFace 开源模型榜";
+}
 function localizeStatic() {
   document.title = `{{ site_name }} · ${t("site_subtitle")}`;
   langBtn.title = LANG === "en" ? "Switch language" : "切换语言";
@@ -584,6 +617,7 @@ function applyLang(renderData = true) {
   document.documentElement.lang = LANG === "en" ? "en" : "zh-CN";
   langBtn.textContent = LANG === "en" ? "中" : "EN";
   localizeStatic();
+  updateHfLink();
   if (renderData) render();
 }
 langBtn.addEventListener("click", () => {
@@ -910,12 +944,13 @@ function renderWordCard(w, i) {
         </div>`).join("")}</div>` : "";
   const term = w.term || w.id;
   const detailHref = termHref(term);
-  const expandBtn = (w.news_cnt || 0) > (w.top_news || []).length
-    ? `<div class="word-actions">
-         <button class="word-expand-btn" data-term="${escapeHtml(term)}"><span class="word-expand-label">${t("more_btn")} (${w.news_cnt || 0})</span></button>
-         <a class="word-detail-link" href="${detailHref}">${t("detail_link")}</a>
-       </div>`
-    : `<a class="link-btn official" href="${detailHref}" style="margin-top:8px">${t("detail_link")}</a>`;
+  // 「展开更多」与「查看热词」共用同一 .word-actions 容器与同一带框样式
+  // （link-btn official），保证有/无展开按钮时「查看热词」视觉完全一致。
+  const hasMoreNews = (w.news_cnt || 0) > (w.top_news || []).length;
+  const expandBtn = `<div class="word-actions">
+       ${hasMoreNews ? `<button class="word-expand-btn" data-term="${escapeHtml(term)}"><span class="word-expand-label">${t("more_btn")} (${w.news_cnt || 0})</span></button>` : ""}
+       <a class="word-detail-link link-btn official" href="${detailHref}">${t("detail_link")}</a>
+     </div>`;
   return `<div class="term-card" style="--cat-color:${dInfo.color}" data-wid="${escapeHtml(w.id)}">
     <div class="word-head">
       <span class="rank ${i<3?"top":""} num">${i+1}</span>
@@ -1190,10 +1225,71 @@ async function fetchAll({ initial = false } = {}) {
   }
 }
 
+// ==================== 返回时恢复滚动位置 ====================
+// 首页是整页重载的非 SPA：点击热词进入 /term/<name> 后返回，首页会重新加载。
+// 跳转前把 window.scrollY 记入 sessionStorage，在首屏（SSR + /api/stream 异步补全）
+// 渲染完成后跳回原位置。两条返回路径都支持：
+//   1. 浏览器后退/前进（navigation.type == back_forward）
+//   2. 词条页「返回首页 / 查看更多 AI 热点」链接（fresh 导航，链接带 scroll_back=1 标记）
+const SCROLL_KEY = "aitw_last_scroll";
+const SCROLL_BACK_PARAM = "scroll_back";
+function saveScrollPosition() {
+  try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY || 0)); } catch (e) {}
+}
+// 事件委托：词名链接 / 「查看热词」链接 / SSR 首屏词链接的 href 均以 /term/ 开头；
+// 覆盖动态渲染后的元素；点击（含键盘激活）即记录当前位置，链接随后自然跳转。
+document.addEventListener("click", e => {
+  const a = e.target.closest('a[href^="/term/"]');
+  if (a) saveScrollPosition();
+});
+// bfcache 恢复（pageshow persisted）时浏览器已自动还原滚动位置，仅清理残留 key
+window.addEventListener("pageshow", e => {
+  if (e.persisted) { try { sessionStorage.removeItem(SCROLL_KEY); } catch (err) {} }
+});
+function isBackForwardNavigation() {
+  try {
+    const entries = performance.getEntriesByType("navigation");
+    return entries.length > 0 && entries[0].type === "back_forward";
+  } catch (e) { return false; }
+}
+function canRestoreScroll() {
+  const p = new URLSearchParams(location.search);
+  if (p.get(SCROLL_BACK_PARAM) === "1") return true;
+  return isBackForwardNavigation();
+}
+// 恢复但不消费 key：可多次调用（SSR 首屏落位一次、全量列表渲染后再校准一次），
+// 避免等待异步全量列表完成才跳转的「延迟 + 突跳」。
+function restoreScrollPosition() {
+  if (!canRestoreScroll()) return;
+  let y = null;
+  try { y = parseInt(sessionStorage.getItem(SCROLL_KEY), 10); } catch (e) {}
+  if (y !== null && isFinite(y) && y > 0) window.scrollTo(0, y);
+  // 恢复后立即显示内容（head 脚本首帧前已隐藏，此刻已就位，不再有顶部闪现）
+  document.documentElement.classList.remove("scroll-restoring");
+}
+// 最后一次校准后调用：消费 key + 清理 URL scroll_back 标记，避免刷新后误触发。
+function finalizeScrollRestore() {
+  document.documentElement.classList.remove("scroll-restoring");
+  try { sessionStorage.removeItem(SCROLL_KEY); } catch (e) {}
+  const p = new URLSearchParams(location.search);
+  if (p.get(SCROLL_BACK_PARAM) === "1") {
+    p.delete(SCROLL_BACK_PARAM);
+    const qs = p.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+  }
+}
+
 renderTopBanner();
 renderFooterSponsor();
 applyLang();          // 首屏按 LANG 本地化静态文案 + 设 <html lang> + 语言按钮 label
-fetchAll({ initial: true });
+// fetchAll 同步执行到首个 await 时，SSR 首屏 20 卡已渲染完成；
+// 返回场景下立即落位（不用等异步全量列表），全量 60 卡渲染后再校准并消费 key。
+const _fetchPromise = fetchAll({ initial: true });
+restoreScrollPosition();
+_fetchPromise.then(() => {
+  restoreScrollPosition();
+  finalizeScrollRestore();
+});
 // 不再做定时自动刷新：后端每 6 小时才预热一次榜单，期间数据不变，定时重拉只会
 // 在数据刷新后把整页重排一遍（用户视角的「二次排序」）。新数据靠用户刷新/重进获取。
 
@@ -1224,7 +1320,7 @@ function MOCK_DATA() {
      summary:"AI 编程赛道再迎大额融资，红杉领投 5000 万美元 B 轮。", hn_points:0, reddit_score:40, reddit_comments:12},
     {kind:"word", id:"gpt-5", term:"GPT-5", display_zh:"", origin:"both",
      dimension:"模型与技术", dims:["模型与技术","研究与论文"], published:"2026-08-28",
-     score:9200, hot:9200, rise:1.95, novelty:0.95, news_cnt:2, first_seen_at:"2026-08-27",
+     score:9200, hot:9200, rise:1.95, novelty:0.95, news_cnt:5, first_seen_at:"2026-08-27",
      top_news:[
        {title:"OpenAI 发布 GPT-5", title_en:"OpenAI launches GPT-5", official_url:"https://openai.com", hot:5000, source:"OpenAI"},
        {title:"GPT-5 评测泄露", title_en:"GPT-5 benchmarks leaked", official_url:"https://techcrunch.com", hot:3000, source:"TC"},

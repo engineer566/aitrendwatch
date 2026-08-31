@@ -98,7 +98,7 @@
     color: var(--text-dim); background: color-mix(in srgb, var(--text) 7%, transparent);
     white-space: nowrap;
   }
-  .term-name { font-size: 24px; font-weight: 800; word-break: break-all; }
+  .term-name { font-size: 24px; font-weight: 800; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .term-name a { color: var(--text); text-decoration: none; }
   .term-name a:hover { color: var(--accent); }
   .term-name .author { color: var(--text-dim); font-weight: 500; font-size: 15px; }
@@ -129,7 +129,7 @@
   .news-item {
     padding: 10px 0; border-top: 1px dashed var(--border); display: flex; gap: 8px; align-items: baseline;
   }
-  .news-item a { color: var(--text); text-decoration: none; word-break: break-all; font-size: 14px; }
+  .news-item a { color: var(--text); text-decoration: none; overflow-wrap: break-word; word-break: normal; min-width: 0; font-size: 14px; }
   .news-item a:hover { color: var(--accent); }
   .news-item .hd { color: var(--orange); font-size: 12px; white-space: nowrap; }
   .news-item .src { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
@@ -139,7 +139,7 @@
   .papers { margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 12px; }
   .papers-title { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
   .paper { font-size: 14px; padding: 5px 0; }
-  .paper a { color: var(--purple); text-decoration: none; }
+  .paper a { color: var(--purple); text-decoration: none; overflow-wrap: break-word; }
   .paper a:hover { text-decoration: underline; }
   .paper .pm { color: var(--text-dim); font-size: 12px; margin-left: 8px; }
   .paper .authors { color: var(--text-dim); font-size: 12px; display: block; }
