@@ -145,6 +145,10 @@ class LLMFailoverSkipTests(unittest.TestCase):
             stub.LOCK_UN = 8
             stub.flock = lambda *args: None
             sys.modules["fcntl"] = stub
+        # 记录旧值，tearDownClass 还原，避免 fake key 泄漏到同进程的其它测试
+        # （否则 test_language 的「无 LLM key」断言会失败）。
+        cls._old_env = {k: os.environ.get(k)
+                        for k in ("DEEPSEEK_API_KEY", "GLM_API_KEY")}
         os.environ["GLM_API_KEY"] = "fake-glm-key"
         os.environ["DEEPSEEK_API_KEY"] = "fake-ds-key"
 
@@ -231,6 +235,14 @@ class LLMFailoverSkipTests(unittest.TestCase):
         dims._llm_skip_provider()
         self.assertEqual(
             self.config.LLM_CHAIN[dims._LLM_ACTIVE_IDX], "deepseek-v4-flash")
+
+    @classmethod
+    def tearDownClass(cls):
+        for key, value in cls._old_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 if __name__ == "__main__":
