@@ -837,6 +837,94 @@ def api_stream():
     })
 
 
+# ---------- HuggingFace 独立排序页（/hf 页面 + /api/hf JSON）----------
+# 用户需求：HuggingFace 数据最可靠，单独成页作为「开源动向」，可按
+# 趋势分 / 点赞 / 下载量排序，并给每个模型打上合理的标签。
+# 原则：复用 tracker 缓存，请求路径不抓 HF；只在内存重排，零新后台线程。
+_HF_SORT_KEYS = {"trending": "trending_score", "likes": "likes",
+                 "downloads": "downloads"}
+# 文件缓存缺失（冷启动）时，get_model_cards 返回空 → 回退 get_terms 的
+# 对应 sort（自带快速兜底：只抓 HF ~1s，不触发 arXiv 慢路径）。
+_HF_SORT_FALLBACK = {"trending": "trending", "likes": "top",
+                     "downloads": "top"}
+
+
+def _hf_models_for(sort, lang="zh"):
+    """HF 模型卡列表（复用 tracker 缓存，秒回）。
+
+    1) 首选 tracker.get_model_cards(lang)：trending 文件缓存，统一卡片
+       schema（likes/downloads/trending_score/tags/pipeline_tag/community/
+       papers 原样透传）；
+    2) 冷启动缓存缺失时回退 tracker.get_terms(sort)（自带快速兜底）；
+    3) 排序：trending 用趋势分；likes/downloads 在内存按对应字段重排
+       （HF 原生 likes 排序经 get_terms('top') 拿到，downloads 内存重排）。
+    """
+    cards, fetched_at = tracker.get_model_cards(lang)
+    if not cards:
+        data = tracker.get_terms(_HF_SORT_FALLBACK.get(sort, "trending"))
+        cards = data.get("terms") or []
+        fetched_at = data.get("fetched_at", 0)
+    key = _HF_SORT_KEYS.get(sort, "trending_score")
+    cards = list(cards)
+    cards.sort(key=lambda c: _stream_number(c, key), reverse=True)
+    return cards, fetched_at
+
+
+@app.route("/hf")
+def hf_page():
+    """HuggingFace 模型排序页（独立页，作为开源动向）。
+
+    服务端渲染（SEO 可索引）；?sort=trending|likes|downloads&lang=zh|en。
+    排序/语言切换都是普通链接，前端零 fetch，自包含。
+    """
+    lang = _request_lang()
+    sort = request.args.get("sort", "trending")
+    if sort not in _HF_SORT_KEYS:
+        sort = "trending"
+    models, fetched_at = _hf_models_for(sort, lang)
+    canonical = _abs(_lang_url("/hf", lang))
+    if lang == "zh":
+        desc = ("HuggingFace 开源模型榜：按趋势分 / 点赞 / 下载量排序，"
+                "数据来自 HuggingFace 官方，追踪 AI 开源动向。")
+    else:
+        desc = ("HuggingFace open-source model leaderboard: sort by trend "
+                "score, likes, or downloads. Official HF data, tracking "
+                "AI open-source momentum.")
+    toggle = _lang_url(f"/hf?sort={sort}", "en" if lang == "zh" else "zh")
+    return render_template(
+        "hf.html", models=models, sort=sort, fetched_at=fetched_at,
+        lang=lang, site_name=config.SITE_NAME, site_desc=desc,
+        base_url=_base_url(), canonical=canonical, seo_enabled=_seo_enabled(),
+        home_url=_lang_url("/", lang), lang_toggle_url=toggle,
+        lang_toggle_label="中文" if lang == "en" else "English")
+
+
+@app.route("/api/hf")
+def api_hf():
+    """HF 模型排序 JSON API。
+
+    ?sort=trending|likes|downloads（默认 trending）&lang=zh|en。
+    返回 {ok, sort, lang, fetched_at, count, terms}；terms 为模型卡列表
+    （含 term/author/pipeline_tag/tags/likes/downloads/trending_score/
+    official_url/community/papers）。只读 tracker 文件缓存，秒回。
+    """
+    lang = request.args.get("lang", "zh")
+    if lang not in ("zh", "en"):
+        lang = "zh"
+    sort = request.args.get("sort", "trending")
+    if sort not in _HF_SORT_KEYS:
+        sort = "trending"
+    models, fetched_at = _hf_models_for(sort, lang)
+    return jsonify({
+        "ok": True,
+        "sort": sort,
+        "lang": lang,
+        "fetched_at": fetched_at,
+        "count": len(models),
+        "terms": models,
+    })
+
+
 @app.route("/api/word/<path:term_name>")
 def api_word(term_name):
     """单词聚合 JSON：词元信息 + 全量关联报道（≤50）。

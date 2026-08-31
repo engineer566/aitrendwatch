@@ -5,7 +5,7 @@
 
 ---
 
-## app.py  （1400 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （1488 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
@@ -14,12 +14,13 @@
 | 85–319 | SEO 辅助 + 词详情装配（`_explain_fallback`@103 解释模板兜底 / `_word_detail`@131） |
 | 320–511 | 各数据源抓取函数（8 个 `fetch_*`） |
 | 512–688 | 路由公共配置（`SOURCES`@515/`SOURCE_META`@526/region/ip 辅助） |
-| 689–858 | 页面 + 词流路由（含语言参数、稳定分类计数） |
-| 859–1158 | 全站搜索 v2 |
-| 1159–1247 | SEO 路由（robots/sitemap/favicon） |
-| 1248–1257 | 赞助位点击跳转 |
-| 1258–1341 | 管理后台 |
-| 1342–1400 | 流量监控页 + `__main__` 入口（1395） |
+| 689–839 | 页面 + 词流路由（含语言参数、稳定分类计数） |
+| 840–946 | HuggingFace 独立排序页（`_hf_models_for`@852 / `/hf`@873 / `/api/hf`@902） |
+| 947–1246 | 全站搜索 v2 |
+| 1247–1335 | SEO 路由（robots/sitemap/favicon） |
+| 1336–1345 | 赞助位点击跳转 |
+| 1346–1429 | 管理后台 |
+| 1430–1488 | 流量监控页 + `__main__` 入口（1483） |
 
 ### 公开函数（被路由/外部调用）
 | 函数 | 行号 | 职责 |
@@ -37,7 +38,7 @@
 | `_client_country(ip)` | 566 | 反代头优先 + GeoLite2 兜底 |
 | `get_source(source)` | 580 | 带缓存单源抓取 |
 | `get_source_timeout(source)` | 595 | 带硬性截止时间单源抓取 |
-| 37 个 view 函数 | 见 [api_routes.md](api_routes.md) | 路由处理 |
+| 39 个 view 函数 | 见 [api_routes.md](api_routes.md) | 路由处理 |
 
 ### 模块级常量
 `SOURCES`（source→fetcher 映射，`app.py:515`）、`SOURCE_META`（8 源元信息，`app.py:526`）、`WORD_STREAM_LIMIT=60`、`SSR_INITIAL_LIMIT=20`、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
