@@ -700,7 +700,11 @@ def term_detail(term_name):
     进程内 TTL 缓存（HF live 区块是慢路径）。未找到 → 404 HTML + noindex。
     """
     lang = _request_lang()
-    key = f"{lang}:{term_name.lower()}"
+    # 缓存键按 canonical 归一（GPT-5 / gpt-5 / GPT5 / GPT 5 共享同一缓存条目）；
+    # _word_detail 内部同样归一，纯大小写差异本就同键，这里补上别名/标点归一。
+    canon = (terms_mod.normalize_term(term_name) if terms_mod
+             else term_name.lower()) or term_name.lower()
+    key = f"{lang}:{canon}"
     data = _detail_cached(key)
     if data is None:
         data = _word_detail(term_name, lang=lang)

@@ -19,6 +19,7 @@ official_url 去重 upsert，保留首次发现时间，score/trend/hot 每次�
 """
 
 import os
+import re
 import json
 import sqlite3
 import threading
@@ -223,18 +224,48 @@ def _card_url(c, title=None):
     return decode_url_entities(c.get("official_url") or c.get("url") or title)
 
 
+def _canonical_keyword(k):
+    """keyword → canonical 词键（大小写无关：GPT-5/gpt-5/Gpt-5 → gpt-5）。
+
+    优先走 terms.normalize_term（别名/去复数同口径）；terms 不可用时退化为
+    本地小写 + 空白/下划线归一（读侧 terms._keyword_canons 仍会再归一）。
+    """
+    try:
+        import terms as _terms
+        canon = _terms.normalize_term(k)
+        if canon:
+            return canon
+    except Exception:
+        pass
+    s = re.sub(r"[\s_]+", "-", str(k or "").strip().lower())
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    return s if len(s) >= 2 and not s.isdigit() else ""
+
+
 def _keywords_to_json(kw):
-    """keywords 输入归一成 JSON 数组字符串：list → dump；已是 JSON 串 → 校验后原样。"""
+    """keywords 输入归一成 canonical 词键 JSON 数组：大小写/别名归一 + 去重 + 上限 8。
+
+    list → 逐项归一；已是 JSON 串 → 解析后归一；纯字符串按逗号/竖线拆分
+    （与 terms._keyword_canons 读侧同口径）。原始展示形不落库，保证
+    news_cards.keywords 列恒为 canonical 键，词聚合不会因大小写分裂成两条。
+    """
+    raw = []
     if isinstance(kw, list):
-        return json.dumps([str(k) for k in kw][:8], ensure_ascii=False)
-    if isinstance(kw, str) and kw.strip():
+        raw = kw
+    elif isinstance(kw, str) and kw.strip():
         try:
             v = json.loads(kw)
             if isinstance(v, list):
-                return json.dumps([str(k) for k in v][:8], ensure_ascii=False)
+                raw = v
         except (json.JSONDecodeError, ValueError):
-            pass
-    return "[]"
+            raw = re.split(r"[,|]", kw)
+    out, seen = [], set()
+    for k in raw:
+        canon = _canonical_keyword(k)
+        if canon and canon not in seen:
+            seen.add(canon)
+            out.append(canon)
+    return json.dumps(out[:8], ensure_ascii=False)
 
 
 # ---------- 读：合并历史库扩大内容池 ----------

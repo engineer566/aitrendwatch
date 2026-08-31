@@ -56,7 +56,7 @@
 ### 关键词词典（`terms.py:214` `_LEXICON`）
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
 - 用途：无 LLM key 降级抽词、历史库零成本回填、常见异形归一、display_zh 来源。
-- 热词解释：三级取词——① `terms.py:316` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1227`）。
+- 热词解释：三级取词——① `terms.py:316` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1249`）。
 
 ## SQLite Schema
 
@@ -88,7 +88,7 @@
 - 索引：`idx_visits_date`、`idx_visits_ip_date`。
 - PV = 行数，UV = `COUNT(DISTINCT ip)`。
 
-### news.db（`news_store.py:35` `init_db`，路径 `config.NEWS_DB_PATH`）
+### news.db（`news_store.py:36` `init_db`，路径 `config.NEWS_DB_PATH`）
 
 **`news_cards`** — 事件卡历史库
 | 列 | 类型 | 说明 |
@@ -104,9 +104,9 @@
 | first_seen_at/last_refresh_at | TEXT | 首次入库/最近刷新 |
 | active | INT | 0=历史归档（近期未刷新命中） |
 - 索引：`idx_news_{score,trend,published,dim}`。
-- 迁移 `_migrate`（`news_store.py:88`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
+- 迁移 `_migrate`（`news_store.py:89`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
 
-**`terms`** — 词主表（`terms.py:151` `init_db`）
+**`terms`** — 词主表（`terms.py:155` `init_db`）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | term | TEXT PK | canonical 键（小写归一），如 "gpt-5" |

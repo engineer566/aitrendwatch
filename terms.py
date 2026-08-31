@@ -446,16 +446,27 @@ for _canon, _forms in _LEXICON.items():
             )
 
 
+# 归一化用：ASCII 非字母数字字符集（去首尾标点噪音；CJK 词整词保留）
+_ASCII_PUNCT = "".join(chr(i) for i in range(128) if not chr(i).isalnum())
+
+
 def normalize_term(s):
     """任意词形 → canonical 键。单点收口，抽词/查询/详情页都用它。
 
-    规则：strip/lower → 空白与连字符归一为单 '-' → 查别名表 → 保守去复数
-    （仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃（返回 ""）。
+    规则：strip/lower → 空白与下划线归一为单 '-' → 去首尾 ASCII 标点
+    （LLM 抽词偶发 "GPT-5." / "(gpt-5)" 等噪音，CJK 词整词保留）→
+    查别名表 → 保守去复数（仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃。
+    大小写无关：GPT-5 / gpt-5 / Gpt-5 都归一到 gpt-5；版本感知边界保留
+    （内部 '.' 不动，gpt-5 ≠ gpt-5.5）。
     """
     if not s:
         return ""
     t = re.sub(r"[\s_]+", "-", str(s).strip().lower())
     t = re.sub(r"-{2,}", "-", t).strip("-")
+    if not t:
+        return ""
+    # 去首尾 ASCII 标点（CJK 词整词保留：只处理 ord<128 的非字母数字字符）
+    t = t.strip(_ASCII_PUNCT)
     if not t:
         return ""
     if t in _ALIAS:
@@ -862,11 +873,13 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
 
     # ---- 4. 读旧 terms 表（保留 first_seen_at / display 演进）----
     # 流式读取，不 fetchall 物化；用完后及时释放，避免与第 7 步 final_rows 双份驻留。
+    # 键按 canonical 归一：早期版本可能落过混合大小写行（"GPT-5"），归并后
+    # 与当前 canonical 键同一条目，避免被误判为全新词。
     old = {}
     try:
         conn = _conn()
         for r in conn.execute("SELECT * FROM terms"):
-            old[r["term"]] = dict(r)
+            old[normalize_term(r["term"]) or r["term"]] = dict(r)
         conn.close()
     except Exception:
         old = {}
