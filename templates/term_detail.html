@@ -243,7 +243,8 @@
   {% if word.term.hot or word.term.rise or word.term.news_cnt %}
   <div class="term-meta">
     {% if word.term.hot %}<span class="m-hot">🔥 {% if is_en %}Hotness{% else %}热度{% endif %} <span class="num">{{ word.term.hot }}</span></span>{% endif %}
-    {% if word.term.rise != none %}<span class="m-up">📈 {% if is_en %}Rise{% else %}上升{% endif %} <span class="num">{{ '%.2f' | format(word.term.rise) }}</span></span>{% endif %}
+    {# rise == -1.0 表示本周期无活跃报道（m_cur=0 的环比占位），对用户是噪音不是「下跌 100%」，隐藏 #}
+    {% if word.term.rise != none and word.term.rise > -0.999 %}<span class="m-up">📈 {% if is_en %}Rise{% else %}上升{% endif %} <span class="num">{{ '%.2f' | format(word.term.rise) }}</span></span>{% endif %}
     {% if word.term.news_cnt %}<span>📄 <span class="num">{{ word.term.news_cnt }}</span> {% if is_en %}reports{% else %}篇报道{% endif %}</span>{% endif %}
     {% if word.term.first_seen_at %}<span>🗓 {% if is_en %}First seen{% else %}首次出现{% endif %} {{ word.term.first_seen_at[:10] }}</span>{% endif %}
   </div>
