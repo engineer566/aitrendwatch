@@ -26,7 +26,7 @@ aitrendwatch/
 │   ├── index.html         # 首页主单页（1276 行：词卡/逐条新闻双视图，JS fetch + i18n）
 │   ├── terms.html         # 服务条款页（363 行）
 │   ├── term_detail.html   # 通用热词聚合页（309 行：相关报道聚合 + HF 区块 + 词解释）
-│   ├── search.html        # 搜索结果页（498 行：含热词命中卡区）
+│   ├── search.html        # 搜索结果页（499 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（345 行）
 │   ├── admin_login.html   # 管理员登录（60 行）
 │   └── monitor.html       # 流量监控页（582 行）
