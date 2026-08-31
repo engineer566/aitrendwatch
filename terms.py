@@ -313,6 +313,21 @@ _LEXICON = {
     "sandbox":      ["sandbox", "沙盒"],
 }
 
+# ---------- 通用热词停用词表（canonical 键）----------
+# 低价值通用词：即使被词典/LLM/HF 抽中，也不作为独立热词进入词池（如 "AI"、
+# "模型" 这类词单独出现没有信息量）。键必须是 normalize_term() 输出的 canonical
+# 形式（小写、空白/连字符归 '-');维护时先 normalize_term 再放入。
+_TERM_STOPWORDS = {
+    "ai",                       # AI
+    "artificial-intelligence",  # 人工智能
+    "machine-learning",         # 机器学习
+    "deep-learning",            # 深度学习
+    "llm",                      # 大语言模型（通用概念）
+    "model",                    # 模型（通用词）
+    "technology",               # 技术
+    "tech",                     # 科技/技术
+}
+
 # ---------- 热词解释词典（canonical → 中/英解释）----------
 # 供热词详情页展示「这是什么」的静态文案；canonical 键与 _LEXICON 对齐。
 # 覆盖词典主要词条（头部模型/产品全量 + 技术概念尽量全），未收录词解释为空串。
@@ -446,16 +461,27 @@ for _canon, _forms in _LEXICON.items():
             )
 
 
+# 归一化用：ASCII 非字母数字字符集（去首尾标点噪音；CJK 词整词保留）
+_ASCII_PUNCT = "".join(chr(i) for i in range(128) if not chr(i).isalnum())
+
+
 def normalize_term(s):
     """任意词形 → canonical 键。单点收口，抽词/查询/详情页都用它。
 
-    规则：strip/lower → 空白与连字符归一为单 '-' → 查别名表 → 保守去复数
-    （仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃（返回 ""）。
+    规则：strip/lower → 空白与下划线归一为单 '-' → 去首尾 ASCII 标点
+    （LLM 抽词偶发 "GPT-5." / "(gpt-5)" 等噪音，CJK 词整词保留）→
+    查别名表 → 保守去复数（仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃。
+    大小写无关：GPT-5 / gpt-5 / Gpt-5 都归一到 gpt-5；版本感知边界保留
+    （内部 '.' 不动，gpt-5 ≠ gpt-5.5）。
     """
     if not s:
         return ""
     t = re.sub(r"[\s_]+", "-", str(s).strip().lower())
     t = re.sub(r"-{2,}", "-", t).strip("-")
+    if not t:
+        return ""
+    # 去首尾 ASCII 标点（CJK 词整词保留：只处理 ord<128 的非字母数字字符）
+    t = t.strip(_ASCII_PUNCT)
     if not t:
         return ""
     if t in _ALIAS:
@@ -470,11 +496,21 @@ def normalize_term(s):
     return t
 
 
+def is_stopword(term):
+    """通用热词停用判断：词形归一化后是否落在低价值通用词停用表。
+
+    入参可为任意词形（内部先 normalize_term），但调用方在 hot path 上应
+    传 canonical 键以避免重复归一。空串/无效词形返回 False。
+    """
+    canon = normalize_term(term)
+    return bool(canon) and canon in _TERM_STOPWORDS
+
+
 def extract_keywords_dict(title):
     """词典匹配抽词（零 LLM 成本）。无 API key 时的降级路径 + 历史回填用。
 
     对标题（可传多段拼接文本）做：ASCII 表面形式词边界匹配 + CJK 子串匹配，
-    返回 canonical 词键列表，去重，上限 3 个。
+    返回 canonical 词键列表，去重，上限 3 个；停用词（_TERM_STOPWORDS）不返回。
     """
     if not title:
         return []
@@ -492,7 +528,8 @@ def extract_keywords_dict(title):
             if any(ord(c) >= 128 for c in f) and f in text:
                 hits.append(canon)
                 break
-    return hits[:3]
+    # 停用词不进词池（即使词典命中也过滤，如 "llm"）
+    return [c for c in hits if not is_stopword(c)][:3]
 
 
 def _term_surfaces(canon):
@@ -613,7 +650,11 @@ def _keyword_canons(value):
             raw = re.split(r"[,|]", value)
     if not isinstance(raw, (list, tuple, set)):
         return set()
-    return {canon for canon in (normalize_term(k) for k in raw) if canon}
+    # 停用词（低价值通用词）在此统一剔除：LLM 抽出的 "AI"/"模型" 等即使已写入
+    # news_cards.keywords，也不会进入词池聚合与词-新闻关联（refresh_words 与
+    # get_term_news 共用本函数）。
+    return {canon for canon in (normalize_term(k) for k in raw)
+            if canon and not is_stopword(canon)}
 
 
 def _news_row_canons(row):
@@ -722,7 +763,9 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     hf_terms = {}  # canon → {display, hf_meta}
     for mc in model_cards:
         canon = _hf_canon(mc)
-        if not canon:
+        # 停用词不进池：HF 模型名归一后若落在低价值通用词（如 "model"），
+        # 不占词池名额（停止表只含极通用词，不会误伤真实模型名）。
+        if not canon or is_stopword(canon):
             continue
         display = (mc.get("term") or "").strip()
         # 同底模多变体：保留 trending_score 最高的展示名与元数据
@@ -832,10 +875,11 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
         except Exception:
             pass
     for a in agg.values():
-        # top news 与 get_term_news 同序（published 降序 + score 降序），
-        # 保证卡片内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
-        a["top"].sort(key=lambda x: -x["score"])
+        # top news 与 get_term_news 同序（hot 降序，hot 缺失回退 score；
+        # 本路径只投影 score，故按 score 降序 + published 降序），保证卡片
+        # 内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
         a["top"].sort(key=lambda x: x["card"].get("published") or "", reverse=True)
+        a["top"].sort(key=lambda x: -x["score"])
         # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：保留排序后
         # 首条（即 score 最高者），与详情页 get_term_news 同口径，词卡 top_news
         # 不出现同标题两条。title_zh or title_en（title_zh 构造时已回退原始
@@ -862,11 +906,13 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
 
     # ---- 4. 读旧 terms 表（保留 first_seen_at / display 演进）----
     # 流式读取，不 fetchall 物化；用完后及时释放，避免与第 7 步 final_rows 双份驻留。
+    # 键按 canonical 归一：早期版本可能落过混合大小写行（"GPT-5"），归并后
+    # 与当前 canonical 键同一条目，避免被误判为全新词。
     old = {}
     try:
         conn = _conn()
         for r in conn.execute("SELECT * FROM terms"):
-            old[r["term"]] = dict(r)
+            old[normalize_term(r["term"]) or r["term"]] = dict(r)
         conn.close()
     except Exception:
         old = {}
@@ -1271,7 +1317,9 @@ def get_term_news(term, limit=50, lang="zh"):
     新卡的 ``keywords`` 是 canonical JSON，历史卡可能没有该列、列值为
     ``[]``，或仍保存旧的表面形式。因此 SQL 只负责收集候选行，最终的
     关联判断统一在 Python 中做 canonical/别名归一和版本感知边界匹配。
-    返回与 dims 卡同 schema 的投影卡列表，published 降序 + score 降序。
+    返回与 dims 卡同 schema 的投影卡列表：去重后按 hot 降序（hot 缺失或
+    为 0 回退 score，与 ``_row_to_card`` 兜底同口径），同 hot 按 published
+    降序稳定排序；排序先于 limit 截断。
     """
     if not _DB_OK or not news_store:
         return []
@@ -1339,10 +1387,11 @@ def get_term_news(term, limit=50, lang="zh"):
             title_match = any(_title_matches_term(t, surfaces) for t in titles)
             if keywords_match or title_match:
                 # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：
-                # rows 已按 published DESC, score DESC 排序，保留首条即 score
-                # 最高者；title_zh/title_en/原始 title 取首个非空（先解码再
-                # 归一，与展示卡同口径）。去重在 limit 截断之前做，同标题第二份
-                # 不会挤掉有效卡。空标题不去重（保持原行为）。
+                # rows 已按 published DESC, score DESC 排序，保留首条（同日
+                # 期下即 score 最高者）；title_zh/title_en/原始 title 取首个
+                # 非空（先解码再归一，与展示卡同口径）。去重在排序与 limit
+                # 截断之前做，同标题第二份不会挤掉有效卡。空标题不去重（保持
+                # 原行为）。
                 tkey = None
                 for field in ("title_zh", "title_en", "title"):
                     if field in title_fields:
@@ -1355,9 +1404,20 @@ def get_term_news(term, limit=50, lang="zh"):
                         continue
                     seen_titles.add(tkey)
                 out.append(r)
-                if len(out) >= limit:
-                    break
-        return [news_store._row_to_card(r) for r in out]
+
+        def _card_hot(r):
+            # 与 _row_to_card 的 hot 兜底同口径：hot 缺失/为 0 → score。
+            try:
+                hot = r["hot"]
+            except (KeyError, IndexError):
+                hot = 0
+            return hot or r["score"] or 0
+
+        # 详情页/展开列表按热度排序：hot 降序（hot 缺失回退 score），同 hot
+        # 按 published 降序稳定排序；排序在 limit 截断之前（去重也已先行，
+        # 因此 limit 只统计去重后的有效卡）。
+        out.sort(key=lambda r: (_card_hot(r), r["published"] or ""), reverse=True)
+        return [news_store._row_to_card(r) for r in out[:limit]]
     except Exception:
         return []
 
