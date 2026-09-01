@@ -505,25 +505,51 @@ _ASCII_PUNCT = "".join(chr(i) for i in range(128) if not chr(i).isalnum())
 # 包含已在 _LEXICON 中的词条（glm/llm/rag 等）和未收录的通用缩写。
 # 归一化流程中在别名查找之后应用：先走词典归并，再对结果做大写校正。
 _UPPER_ACRONYMS = {
-    # 已在 _LEXICON 中的缩写（canonical 键同步更新为大写）
-    "glm": "GLM", "llm": "LLM", "rag": "RAG", "mcp": "MCP",
-    "agi": "AGI", "rlhf": "RLHF", "moe": "MoE", "lora": "LoRA",
-    "cuda": "CUDA", "amd": "AMD", "xai": "xAI", "cot": "CoT",
-    "tts": "TTS", "ipo": "IPO",
     # 未收录的通用技术缩写
-    "gpu": "GPU", "ui": "UI", "api": "API", "ml": "ML",
-    "nlp": "NLP", "hf": "HF", "cnn": "CNN", "rnn": "RNN",
-    "gan": "GAN", "rl": "RL", "dl": "DL", "cv": "CV",
-    "tpu": "TPU", "npu": "NPU", "sdk": "SDK", "ide": "IDE",
-    "cli": "CLI", "http": "HTTP", "https": "HTTPS", "url": "URL",
-    "json": "JSON", "yaml": "YAML", "css": "CSS", "html": "HTML",
-    "sql": "SQL", "nosql": "NoSQL", "grpc": "gRPC", "rest": "REST",
-    "saas": "SaaS", "paas": "PaaS", "iaas": "IaaS",
-    "ci": "CI", "cd": "CD", "devops": "DevOps",
-    "aws": "AWS", "gcp": "GCP",
-    "ar": "AR", "vr": "VR", "mr": "MR", "xr": "XR",
-    "iot": "IoT", "oss": "OSS",
+    "api": "API",
+    "ar": "AR",
+    "aws": "AWS",
+    "cd": "CD",
+    "ci": "CI",
+    "cli": "CLI",
+    "cnn": "CNN",
+    "css": "CSS",
+    "cv": "CV",
+    "devops": "DevOps",
+    "dl": "DL",
+    "gan": "GAN",
+    "gcp": "GCP",
+    "gpu": "GPU",
+    "grpc": "gRPC",
+    "hf": "HF",
+    "html": "HTML",
+    "http": "HTTP",
+    "https": "HTTPS",
+    "iaas": "IaaS",
+    "ide": "IDE",
+    "iot": "IoT",
+    "json": "JSON",
+    "ml": "ML",
+    "mr": "MR",
+    "nlp": "NLP",
+    "nosql": "NoSQL",
+    "npu": "NPU",
+    "oss": "OSS",
+    "paas": "PaaS",
+    "rest": "REST",
+    "rl": "RL",
+    "rnn": "RNN",
+    "saas": "SaaS",
+    "sdk": "SDK",
+    "sql": "SQL",
+    "tpu": "TPU",
+    "ui": "UI",
+    "url": "URL",
+    "vr": "VR",
+    "xr": "XR",
+    "yaml": "YAML",
 }
+
 
 
 def normalize_term(s):
@@ -749,6 +775,112 @@ def _display_of(term, surfaces):
     _upper_vals = set(_UPPER_ACRONYMS.values())
     if term in _upper_vals:
         return term
+    # display_overrides（来自 terms_canonical.json，最高优先级）
+    _OVERRIDES = {
+        "agents-md": "AGENTS.md",
+        "agi": "AGI",
+        "amd": "AMD",
+        "aqua": "AQuA",
+        "chatgpt": "ChatGPT",
+        "cot": "CoT",
+        "cuda": "CUDA",
+        "glm": "GLM",
+        "gpt-4o": "GPT-4o",
+        "gpt-5": "GPT-5",
+        "ipo": "IPO",
+        "llm": "LLM",
+        "lora": "LoRA",
+        "mcp": "MCP",
+        "moe": "MoE",
+        "openclaw": "OpenClaw",
+        "rag": "RAG",
+        "rlhf": "RLHF",
+        "tts": "TTS",
+        "xai": "xAI"
+    }
+    if term in _OVERRIDES:
+        return _OVERRIDES[term]
+    if term.lower() in _OVERRIDES:
+        return _OVERRIDES[term.lower()]
+    # lexicon_display（来自 terms_canonical.json，品牌名/产品名展示名）
+    _LEXICON_DISPLAY = {
+        "agents.md": "AGENTS.md",
+        "alibaba": "Alibaba",
+        "anthropic": "Anthropic",
+        "apple-intelligence": "Apple Intelligence",
+        "baidu": "Baidu",
+        "bytedance": "ByteDance",
+        "deepseek": "DeepSeek",
+        "google": "Google",
+        "google-deepmind": "Google DeepMind",
+        "huawei": "Huawei",
+        "huggingface": "Hugging Face",
+        "meta-ai": "Meta AI",
+        "microsoft": "Microsoft",
+        "nvidia": "NVIDIA",
+        "openai": "OpenAI",
+        "ross-harness": "ROSS Harness",
+        "tencent": "Tencent",
+        "tsinghua": "Tsinghua"
+    }
+    if term in _LEXICON_DISPLAY:
+        return _LEXICON_DISPLAY[term]
+    if term.lower() in _LEXICON_DISPLAY:
+        return _LEXICON_DISPLAY[term.lower()]
+
+    # display_overrides（来自 terms_canonical.json，最高优先级）
+    _OVERRIDES = {
+        "agents.md": "AGENTS.md",
+        "agi": "AGI",
+        "amd": "AMD",
+        "aqua": "AQuA",
+        "chatgpt": "ChatGPT",
+        "cot": "CoT",
+        "cuda": "CUDA",
+        "glm": "GLM",
+        "gpt-4o": "GPT-4o",
+        "gpt-5": "GPT-5",
+        "ipo": "IPO",
+        "llm": "LLM",
+        "lora": "LoRA",
+        "mcp": "MCP",
+        "moe": "MoE",
+        "openclaw": "OpenClaw",
+        "rag": "RAG",
+        "rlhf": "RLHF",
+        "tts": "TTS",
+        "xai": "xAI"
+    }
+    if term in _OVERRIDES:
+        return _OVERRIDES[term]
+    if term.lower() in _OVERRIDES:
+        return _OVERRIDES[term.lower()]
+    # lexicon_display（来自 terms_canonical.json，品牌名/产品名展示名）
+    _LEXICON_DISPLAY = {
+        "agents.md": "AGENTS.md",
+        "alibaba": "Alibaba",
+        "anthropic": "Anthropic",
+        "apple-intelligence": "Apple Intelligence",
+        "baidu": "Baidu",
+        "bytedance": "ByteDance",
+        "deepseek": "DeepSeek",
+        "google": "Google",
+        "google-deepmind": "Google DeepMind",
+        "huawei": "Huawei",
+        "huggingface": "Hugging Face",
+        "meta-ai": "Meta AI",
+        "microsoft": "Microsoft",
+        "nvidia": "NVIDIA",
+        "openai": "OpenAI",
+        "ross-harness": "ROSS Harness",
+        "tencent": "Tencent",
+        "tsinghua": "Tsinghua"
+    }
+    if term in _LEXICON_DISPLAY:
+        return _LEXICON_DISPLAY[term]
+    if term.lower() in _LEXICON_DISPLAY:
+        return _LEXICON_DISPLAY[term.lower()]
+
     # 词典 canonical 的常见美化：按 '-' 分词，已知缩写全大写
     UPPER = {"gpt", "ai", "kv", "tts"}
     parts = term.split("-")

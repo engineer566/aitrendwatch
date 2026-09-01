@@ -109,7 +109,7 @@ class CountConsistencyTests(unittest.TestCase):
         self.terms._refresh_words_inner(cards, [], fetched_at=1750000000)
         words, _ = self.terms.get_word_cards("hot", "zh", limit=60)
         by_term = {w.get("term"): w.get("news_cnt") for w in words}
-        self.assertEqual(by_term.get("GPT 5"), 1)
+        self.assertEqual(by_term.get("GPT-5"), 1)
         self.assertEqual(
             len(self.terms.get_term_news("gpt-5", limit=50)), 1)
 
