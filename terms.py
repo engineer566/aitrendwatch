@@ -264,7 +264,7 @@ _LEXICON = {
     "kimi":         ["kimi", "月之暗面"],
     "doubao":       ["doubao", "豆包"],
     "wenxin":       ["wenxin", "文心一言", "文心"],
-    "glm":          ["glm", "智谱", "chatglm", "智谱清言"],
+    "GLM":          ["glm", "智谱", "chatglm", "智谱清言"],
     "hunyuan":      ["hunyuan", "混元"],
     "mistral":      ["mistral"],
     "grok":         ["grok"],
@@ -284,12 +284,12 @@ _LEXICON = {
     "ollama":       ["ollama"],
     "vllm":         ["vllm"],
     "nvidia":       ["nvidia", "英伟达"],
-    "cuda":         ["cuda"],
-    "amd":          ["amd"],
+    "CUDA":         ["cuda"],
+    "AMD":          ["amd"],
     "apple-intelligence": ["apple intelligence", "苹果智能"],
     "siri":         ["siri"],
     "meta-ai":      ["meta ai", "meta人工智能"],
-    "xai":          ["xai"],
+    "xAI":          ["xai"],
     "microsoft":    ["microsoft", "微软"],
     "google":       ["google", "谷歌"],
     "bytedance":    ["bytedance", "字节跳动", "字节"],
@@ -299,15 +299,15 @@ _LEXICON = {
     "huawei":       ["huawei", "华为"],
     "tsinghua":     ["tsinghua", "清华"],
     # —— 技术概念 ——
-    "llm":          ["llm", "llms", "大模型", "大语言模型"],
+    "LLM":          ["llm", "llms", "大模型", "大语言模型"],
     "agent":        ["agent", "agents", "智能体", "ai agent"],
-    "rag":          ["rag", "retrieval-augmented", "检索增强"],
-    "mcp":          ["mcp", "model context protocol"],
+    "RAG":          ["rag", "retrieval-augmented", "检索增强"],
+    "MCP":          ["mcp", "model context protocol"],
     "multimodal":   ["multimodal", "多模态"],
     "diffusion":    ["diffusion", "扩散模型"],
     "transformer":  ["transformer"],
     "fine-tuning":  ["fine-tuning", "finetuning", "fine tuning", "微调"],
-    "rlhf":         ["rlhf", "人类反馈强化学习"],
+    "RLHF":         ["rlhf", "人类反馈强化学习"],
     "reinforcement-learning": ["reinforcement learning", "强化学习"],
     "reasoning":    ["reasoning", "推理模型", "思维链", "chain-of-thought", "cot"],
     "embedding":    ["embedding", "embeddings", "向量", "词向量"],
@@ -317,10 +317,10 @@ _LEXICON = {
     "kv-cache":     ["kv cache", "kv-cache"],
     "quantization": ["quantization", "量化"],
     "distillation": ["distillation", "蒸馏", "知识蒸馏"],
-    "lora":         ["lora", "qlora"],
-    "moe":          ["moe", "mixture of experts", "混合专家"],
+    "LoRA":         ["lora", "qlora"],
+    "MoE":          ["moe", "mixture of experts", "混合专家"],
     "benchmark":    ["benchmark", "benchmarks", "基准测试", "评测"],
-    "agi":          ["agi", "通用人工智能"],
+    "AGI":          ["agi", "通用人工智能"],
     "alignment":    ["alignment", "对齐", "价值对齐"],
     "hallucination": ["hallucination", "幻觉"],
     "token":        ["token", "tokens"],
@@ -356,7 +356,7 @@ _TERM_STOPWORDS = {
     "artificial-intelligence",  # 人工智能
     "machine-learning",         # 机器学习
     "deep-learning",            # 深度学习
-    "llm",                      # 大语言模型（通用概念）
+    "LLM",                      # 大语言模型（通用概念，大写 canonical）
     "model",                    # 模型（通用词）
     "technology",               # 技术
     "tech",                     # 科技/技术
@@ -382,7 +382,7 @@ _EXPLANATIONS = {
     "kimi": {"zh": "月之暗面（Moonshot AI）开发的 AI 助手与大模型系列，主打长文本处理能力。", "en": "The AI assistant and model family by Moonshot AI, focused on long-context processing."},
     "doubao": {"zh": "字节跳动旗下的 AI 助手产品，基于其自研大模型。", "en": "ByteDance's AI assistant product built on its in-house large models."},
     "wenxin": {"zh": "百度的大模型与 AI 助手品牌（文心一言），提供对话与内容生成能力。", "en": "Baidu's large model and AI assistant brand (ERNIE Bot) offering dialogue and content generation."},
-    "glm": {"zh": "智谱 AI 开发的开源大模型系列（GLM/ChatGLM），提供对话与多模态能力。", "en": "Zhipu AI's open-source GLM/ChatGLM model family with conversational and multimodal abilities."},
+    "GLM": {"zh": "智谱 AI 开发的开源大模型系列（GLM/ChatGLM），提供对话与多模态能力。", "en": "Zhipu AI's open-source GLM/ChatGLM model family with conversational and multimodal abilities."},
     "hunyuan": {"zh": "腾讯的大模型系列（混元），支撑其多款 AI 应用。", "en": "Tencent's Hunyuan large model family powering its AI applications."},
     "mistral": {"zh": "法国公司 Mistral AI 的开源大模型系列，以高效架构著称。", "en": "The open-weight model family by French company Mistral AI, known for efficient architectures."},
     "grok": {"zh": "xAI 开发的 AI 对话助手，整合 X 平台的实时信息。", "en": "xAI's AI conversation assistant, integrated with real-time X (Twitter) data."},
@@ -402,12 +402,12 @@ _EXPLANATIONS = {
     "ollama": {"zh": "本地运行开源大模型的工具，一条命令即可拉取并运行模型。", "en": "A tool for running open-source large models locally with one-command pulls."},
     "vllm": {"zh": "高性能大模型推理引擎，广泛用于模型服务部署。", "en": "A high-performance large-model inference engine widely used for model serving."},
     "nvidia": {"zh": "美国芯片公司，GPU 与 AI 加速卡市场的领导者。", "en": "The American chip company that leads the GPU and AI accelerator market."},
-    "cuda": {"zh": "NVIDIA 的并行计算平台与编程模型，是 AI 训练与推理的事实标准之一。", "en": "NVIDIA's parallel computing platform and programming model, a de facto standard for AI compute."},
-    "amd": {"zh": "美国芯片公司，NVIDIA 在 GPU 与加速卡市场的主要竞争对手。", "en": "The American chip company, NVIDIA's main rival in the GPU and accelerator market."},
+    "CUDA": {"zh": "NVIDIA 的并行计算平台与编程模型，是 AI 训练与推理的事实标准之一。", "en": "NVIDIA's parallel computing platform and programming model, a de facto standard for AI compute."},
+    "AMD": {"zh": "美国芯片公司，NVIDIA 在 GPU 与加速卡市场的主要竞争对手。", "en": "The American chip company, NVIDIA's main rival in the GPU and accelerator market."},
     "apple-intelligence": {"zh": "苹果推出的 AI 能力体系，覆盖系统级智能与端侧模型。", "en": "Apple's AI feature stack spanning system-wide intelligence and on-device models."},
     "siri": {"zh": "苹果的语音助手，正逐步接入 Apple Intelligence 能力。", "en": "Apple's voice assistant, increasingly powered by Apple Intelligence."},
     "meta-ai": {"zh": "Meta 的 AI 助手，整合进 Facebook、WhatsApp、Instagram 等应用。", "en": "Meta's AI assistant integrated across Facebook, WhatsApp and Instagram."},
-    "xai": {"zh": "埃隆·马斯克创立、Grok 模型的开发商。", "en": "The AI company founded by Elon Musk; developer of the Grok models."},
+    "xAI": {"zh": "埃隆·马斯克创立、Grok 模型的开发商。", "en": "The AI company founded by Elon Musk; developer of the Grok models."},
     "microsoft": {"zh": "美国科技公司，OpenAI 的主要投资方，深度整合 Copilot 生态。", "en": "The American tech company, OpenAI's major investor, deeply integrating the Copilot ecosystem."},
     "google": {"zh": "美国科技公司，Google DeepMind 与 Gemini 模型的所有者。", "en": "The American tech company that owns Google DeepMind and the Gemini models."},
     "bytedance": {"zh": "中国科技公司（字节跳动），抖音/TikTok 与豆包大模型的母公司。", "en": "The Chinese tech company behind TikTok/Douyin and the Doubao large models."},
@@ -417,15 +417,15 @@ _EXPLANATIONS = {
     "huawei": {"zh": "中国科技公司，自研昇腾 AI 芯片与盘古大模型。", "en": "The Chinese tech company developing the Ascend AI chips and the Pangu large models."},
     "tsinghua": {"zh": "清华大学，GLM（智谱）等国产大模型的重要学术源头。", "en": "Tsinghua University, an important academic origin of Chinese large models such as GLM (Zhipu)."},
     # —— 技术概念 ——
-    "llm": {"zh": "大语言模型，在海量文本上预训练、可理解和生成自然语言的深度学习模型。", "en": "Large language models: deep-learning models pretrained on massive text to understand and generate natural language."},
+    "LLM": {"zh": "大语言模型，在海量文本上预训练、可理解和生成自然语言的深度学习模型。", "en": "Large language models: deep-learning models pretrained on massive text to understand and generate natural language."},
     "agent": {"zh": "智能体，能感知环境、自主规划并调用工具完成多步骤任务的 AI 系统。", "en": "AI systems that perceive their environment, plan autonomously and use tools to complete multi-step tasks."},
-    "rag": {"zh": "检索增强生成，先从外部知识库检索相关内容再交给大模型生成，用于减少幻觉。", "en": "Retrieval-augmented generation: retrieving relevant content from an external knowledge base before generation to reduce hallucination."},
-    "mcp": {"zh": "Model Context Protocol，Anthropic 提出的开放协议，标准化 AI 应用与外部数据/工具的连接。", "en": "Model Context Protocol: an open protocol by Anthropic standardizing how AI applications connect to external data and tools."},
+    "RAG": {"zh": "检索增强生成，先从外部知识库检索相关内容再交给大模型生成，用于减少幻觉。", "en": "Retrieval-augmented generation: retrieving relevant content from an external knowledge base before generation to reduce hallucination."},
+    "MCP": {"zh": "Model Context Protocol，Anthropic 提出的开放协议，标准化 AI 应用与外部数据/工具的连接。", "en": "Model Context Protocol: an open protocol by Anthropic standardizing how AI applications connect to external data and tools."},
     "multimodal": {"zh": "多模态，模型同时处理文本、图像、音频、视频等多种数据类型的能力。", "en": "The ability of models to process multiple data types such as text, image, audio and video."},
     "diffusion": {"zh": "扩散模型，通过逐步去噪从随机噪声生成图像的生成式模型。", "en": "Generative models that produce images by progressively denoising random noise."},
     "transformer": {"zh": "Transformer 架构，现代大模型的基石，通过自注意力机制处理序列数据。", "en": "The Transformer architecture, the foundation of modern large models, which processes sequences via self-attention."},
     "fine-tuning": {"zh": "微调，在预训练模型基础上用特定数据继续训练，使其适配下游任务。", "en": "Continuing to train a pretrained model on task-specific data to adapt it for downstream use."},
-    "rlhf": {"zh": "基于人类反馈的强化学习，用人类偏好训练奖励模型来对齐模型行为。", "en": "Reinforcement learning from human feedback: aligning model behavior using a reward model trained on human preferences."},
+    "RLHF": {"zh": "基于人类反馈的强化学习，用人类偏好训练奖励模型来对齐模型行为。", "en": "Reinforcement learning from human feedback: aligning model behavior using a reward model trained on human preferences."},
     "reinforcement-learning": {"zh": "强化学习，智能体通过与环境的试错交互来学习最优策略。", "en": "Machine learning in which an agent learns optimal behavior through trial-and-error interaction with an environment."},
     "reasoning": {"zh": "推理能力，模型在回答前进行多步逻辑思考，常见实现为思维链（Chain-of-Thought）。", "en": "A model's ability to perform multi-step logical thinking before answering, often implemented via chain-of-thought."},
     "embedding": {"zh": "嵌入/向量化，把文本等数据映射为稠密数值向量，便于计算相似度。", "en": "Mapping data such as text into dense numeric vectors for similarity computation."},
@@ -435,10 +435,10 @@ _EXPLANATIONS = {
     "kv-cache": {"zh": "键值缓存，推理时为避免重复计算而缓存注意力键值的技术。", "en": "A technique that caches attention keys and values during inference to avoid redundant computation."},
     "quantization": {"zh": "量化，压缩模型权重的数值精度，以减少内存占用并加速推理。", "en": "Compressing model weight precision to reduce memory usage and speed up inference."},
     "distillation": {"zh": "知识蒸馏，用大模型（教师）的输出训练小模型（学生）的技术。", "en": "Training a smaller student model on the outputs of a larger teacher model."},
-    "lora": {"zh": "低秩适配，一种参数高效微调方法，只训练少量新增参数。", "en": "Low-Rank Adaptation: a parameter-efficient fine-tuning method that trains only a small set of new parameters."},
-    "moe": {"zh": "混合专家，把模型拆成多个专家子网络、按输入动态激活，以提升规模与效率。", "en": "Mixture of Experts: routing inputs through subsets of expert sub-networks to scale capacity efficiently."},
+    "LoRA": {"zh": "低秩适配，一种参数高效微调方法，只训练少量新增参数。", "en": "Low-Rank Adaptation: a parameter-efficient fine-tuning method that trains only a small set of new parameters."},
+    "MoE": {"zh": "混合专家，把模型拆成多个专家子网络、按输入动态激活，以提升规模与效率。", "en": "Mixture of Experts: routing inputs through subsets of expert sub-networks to scale capacity efficiently."},
     "benchmark": {"zh": "基准测试/评测，用标准化数据集衡量并比较模型能力的方式。", "en": "Standardized datasets and tasks used to measure and compare model capabilities."},
-    "agi": {"zh": "通用人工智能，能在所有认知任务上达到或超越人类水平的假设性 AI。", "en": "Artificial general intelligence: hypothetical AI matching or exceeding human ability across all cognitive tasks."},
+    "AGI": {"zh": "通用人工智能，能在所有认知任务上达到或超越人类水平的假设性 AI。", "en": "Artificial general intelligence: hypothetical AI matching or exceeding human ability across all cognitive tasks."},
     "alignment": {"zh": "对齐，让模型行为符合人类意图与价值观的技术方向。", "en": "Techniques for making model behavior match human intentions and values."},
     "hallucination": {"zh": "幻觉，模型生成看似合理但事实错误或凭空捏造的内容。", "en": "Model outputs that sound plausible but are factually wrong or fabricated."},
     "token": {"zh": "token，模型处理文本的基本单元，约为子词或字符块。", "en": "The basic unit of text that models process, roughly a sub-word chunk."},
@@ -474,7 +474,7 @@ for _canon, _forms in _LEXICON.items():
 _ALIAS.update({
     "gpt5": "gpt-5", "gpt4o": "gpt-4o",
     "千问": "qwen", "通义": "qwen",
-    "智谱ai": "glm", "智谱清言": "glm",
+    "智谱ai": "GLM", "智谱清言": "GLM",
     "月之暗面": "kimi",
     "深度求索": "deepseek",
     "苹果智能": "apple-intelligence",
@@ -499,13 +499,40 @@ for _canon, _forms in _LEXICON.items():
 # 归一化用：ASCII 非字母数字字符集（去首尾标点噪音；CJK 词整词保留）
 _ASCII_PUNCT = "".join(chr(i) for i in range(128) if not chr(i).isalnum())
 
+# ---------- 必须大写的技术缩写（lowercase → uppercase canonical）----------
+# 常见技术缩写/品牌名在归一化后应统一为大写形式；覆盖 LLM 抽词的大小写不一致
+# （如 "Gpu"/"gpu" → "GPU"、"Ui"/"ui" → "UI"）。
+# 包含已在 _LEXICON 中的词条（glm/llm/rag 等）和未收录的通用缩写。
+# 归一化流程中在别名查找之后应用：先走词典归并，再对结果做大写校正。
+_UPPER_ACRONYMS = {
+    # 已在 _LEXICON 中的缩写（canonical 键同步更新为大写）
+    "glm": "GLM", "llm": "LLM", "rag": "RAG", "mcp": "MCP",
+    "agi": "AGI", "rlhf": "RLHF", "moe": "MoE", "lora": "LoRA",
+    "cuda": "CUDA", "amd": "AMD", "xai": "xAI", "cot": "CoT",
+    "tts": "TTS", "ipo": "IPO",
+    # 未收录的通用技术缩写
+    "gpu": "GPU", "ui": "UI", "api": "API", "ml": "ML",
+    "nlp": "NLP", "hf": "HF", "cnn": "CNN", "rnn": "RNN",
+    "gan": "GAN", "rl": "RL", "dl": "DL", "cv": "CV",
+    "tpu": "TPU", "npu": "NPU", "sdk": "SDK", "ide": "IDE",
+    "cli": "CLI", "http": "HTTP", "https": "HTTPS", "url": "URL",
+    "json": "JSON", "yaml": "YAML", "css": "CSS", "html": "HTML",
+    "sql": "SQL", "nosql": "NoSQL", "grpc": "gRPC", "rest": "REST",
+    "saas": "SaaS", "paas": "PaaS", "iaas": "IaaS",
+    "ci": "CI", "cd": "CD", "devops": "DevOps",
+    "aws": "AWS", "gcp": "GCP",
+    "ar": "AR", "vr": "VR", "mr": "MR", "xr": "XR",
+    "iot": "IoT", "oss": "OSS",
+}
+
 
 def normalize_term(s):
     """任意词形 → canonical 键。单点收口，抽词/查询/详情页都用它。
 
     规则：strip/lower → 空白与下划线归一为单 '-' → 去首尾 ASCII 标点
     （LLM 抽词偶发 "GPT-5." / "(gpt-5)" 等噪音，CJK 词整词保留）→
-    查别名表 → 保守去复数（仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃。
+    查别名表 → 保守去复数（仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃 →
+    缩写大写校正（_UPPER_ACRONYMS：gpu→GPU / ui→UI / glm→GLM 等）。
     大小写无关：GPT-5 / gpt-5 / Gpt-5 都归一到 gpt-5；版本感知边界保留
     （内部 '.' 不动，gpt-5 ≠ gpt-5.5）。
     """
@@ -520,15 +547,17 @@ def normalize_term(s):
     if not t:
         return ""
     if t in _ALIAS:
-        return _ALIAS[t]
-    # 保守去复数：仅纯 ASCII 词、长度>3、不以 ss 结尾
-    if t.isascii() and len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
-        cand = t[:-1]
-        if cand in _ALIAS:
-            return _ALIAS[cand]
+        t = _ALIAS[t]
+    else:
+        # 保守去复数：仅纯 ASCII 词、长度>3、不以 ss 结尾
+        if t.isascii() and len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
+            cand = t[:-1]
+            if cand in _ALIAS:
+                t = _ALIAS[cand]
     if len(t) < 2 or t.isdigit():
         return ""
-    return t
+    # 缩写大写校正：已知技术缩写统一为大写 canonical 形式
+    return _UPPER_ACRONYMS.get(t, t)
 
 
 def is_stopword(term):
@@ -709,16 +738,19 @@ def _news_row_canons(row):
 
 
 def _display_of(term, surfaces):
-    """从命中表面形式里挑展示名：优先含大写的最长形式，否则首字母大写化。"""
+    """从命中表面形式里挑展示名：优先含大写的最长形式，否则按规则美化。"""
     best = ""
     for s in surfaces:
         if any(c.isupper() for c in s) and len(s) > len(best):
             best = s
     if best:
         return best
+    # canonical 已是规范缩写形式的直接返回（LLM/RAG/GLM/GPU/UI/LoRA/MoE/xAI 等）
+    _upper_vals = set(_UPPER_ACRONYMS.values())
+    if term in _upper_vals:
+        return term
     # 词典 canonical 的常见美化：按 '-' 分词，已知缩写全大写
-    UPPER = {"gpt", "llm", "rag", "mcp", "agi", "rlhf", "moe", "lora", "ai",
-             "kv", "tts", "ipo", "cuda", "amd", "xai", "cot"}
+    UPPER = {"gpt", "ai", "kv", "tts"}
     parts = term.split("-")
     pretty = " ".join(p.upper() if p in UPPER else p.capitalize() for p in parts)
     pretty = pretty.replace("Gpt ", "GPT-").replace("Gpt", "GPT")
