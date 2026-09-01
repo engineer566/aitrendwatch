@@ -183,6 +183,8 @@ RSS_SOURCES = [
     # —— 无官方 RSS 的厂商 → Google News 聚合（official_url 为媒体域名，非文章直链）——
     {"name": "Anthropic (GN)", "feed": "https://news.google.com/rss/search?q=Anthropic+when:3d&hl=en-US&gl=US&ceid=US:en",  "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
     {"name": "Meta AI (GN)",   "feed": "https://news.google.com/rss/search?q=%22Meta+AI%22+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
+    {"name": "OpenClaw (GN)",  "feed": "https://news.google.com/rss/search?q=OpenClaw+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
+    {"name": "Open Source AI (GN)", "feed": "https://news.google.com/rss/search?q=%22open+source%22+AI+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "模型与技术", "is_gnews": True, "lang": "en"},
     # —— 国内 AI 一手媒体（国内厂商无 RSS，用主流媒体官方 RSS 覆盖）——
     {"name": "量子位",     "feed": "https://www.qbitai.com/feed",   "region": "国内", "default_dim": "政策与行业", "lang": "zh"},
     {"name": "InfoQ中文",  "feed": "https://www.infoq.cn/feed",     "region": "国内", "default_dim": "政策与行业", "lang": "zh"},

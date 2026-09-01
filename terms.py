@@ -200,6 +200,7 @@ def init_db():
                 term       TEXT,
                 cycle      TEXT,              -- "2026-08-28-13"（Asia/Shanghai 小时）
                 news_cnt   INTEGER DEFAULT 0, -- 本周期关联报道数
+                win7_cnt   INTEGER DEFAULT 0, -- 近 7 天滑动窗口内关联报道数（rise 环比口径）
                 score_sum  INTEGER DEFAULT 0, -- 本周期 Σ score
                 signal_sum REAL DEFAULT 0,    -- 本周期 Σ 社区信号
                 PRIMARY KEY (term, cycle)
@@ -216,6 +217,17 @@ def init_db():
                 if col not in cols:
                     conn.execute(
                         f"ALTER TABLE terms ADD COLUMN {col} {ddl}")
+            snap_cols = {r[1] for r in
+                         conn.execute("PRAGMA table_info(term_snapshots)")}
+            if "win7_cnt" not in snap_cols:
+                conn.execute(
+                    "ALTER TABLE term_snapshots ADD COLUMN win7_cnt "
+                    "INTEGER DEFAULT 0")
+                # 存量快照 win7_cnt 置 0 会让部署后首个刷新轮次所有词 rise 虚高
+                # （m_prev=0 → 全部顶到 10 上限）。用旧口径 news_cnt 做基线，
+                # 让首轮环比从「每轮报道数」平滑过渡到「7 天窗口值」。
+                conn.execute(
+                    "UPDATE term_snapshots SET win7_cnt = news_cnt")
         except Exception:
             pass
         conn.commit()
@@ -856,6 +868,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                         "mentions": 0, "hot_score": 0, "urls": set(),
                         "dims": {}, "top": [], "latest_pub": "", "earliest_pub": "9999",
                         "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
+                        "win7_cnt": 0,
                     })
                     url = r["url"] or ""
                     if url not in a["urls"]:
@@ -868,6 +881,11 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                         # 热窗内按报道新鲜度加权：今日热词（最近 1-3 天）不被
                         # 存量累计分埋没（hot 展示与排序同口径，见 _hot_recency_weight）
                         a["hot_score"] += int(r["score"] or 0) * _hot_recency_weight(pub, today)
+                        # 近 7 天滑动窗口报道数：rise 环比口径——
+                        # 「近一周声量」相对上一刷新时刻是否增长，避免用单个刷新
+                        # 轮次的瞬时 cur_cnt 环比把「发布日已进池」的词误判为降温。
+                        # （url 已在前一行加入 urls，这里直接计数即可）
+                        a["win7_cnt"] += 1
                     d = r["dimension"] or "其他"
                     a["dims"][d] = a["dims"].get(d, 0) + 1
                     if pub > a["latest_pub"]:
@@ -927,6 +945,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
             "mentions": 0, "hot_score": 0, "urls": set(), "dims": {},
             "top": [], "latest_pub": "", "earliest_pub": "9999",
             "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
+            "win7_cnt": 0,
         })
 
     # ---- 4. 读旧 terms 表（保留 first_seen_at / display 演进）----
@@ -1028,22 +1047,23 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                       ("hf" if is_hf else "news"))
             hot = a["hot_score"] + int(hf_meta.get("likes", 0) or 0)
 
-            # rise：活动量环比（报道数口径，不掺分数）
-            # score 自身含时效衰减（每轮刷新重算时越老的报道分数越低），若用
-            # news_cnt + score_sum/2000 做环比，稳态词（每轮同样报道）会因分数
-            # 自然衰减被误判为「热度下降」——上升榜长期被 -0.05 左右的衰减噪音
-            # 占据，今日仍活跃的词（如 Openclaw）排不上榜。改用报道数 news_cnt：
-            # 报道数不衰减，环比反映真实活动量增减；冷启动 ln(1+m) 不变。
-            m_cur = a["cur_cnt"]
+            # rise：近 7 天滑动窗口报道数环比（口径 2026-09-01）
+            # 之前用单刷新轮次 cur_cnt 环比：发布日当天进池的词（如 Openclaw
+            # 8-31 发布），下一轮 cur_cnt 从 2→1 就被误判为「降温」（-0.5），
+            # 排 rise 榜 188/200；而 Token/Apple 等「本轮从 0→1」的词却靠冷启动
+            # 霸榜。改用 win7_cnt（近 7 天窗口内报道数，随刷新滑动）：语义变成
+            # 「近一周声量相对上一刷新时刻是否增长」，发布日进池的词窗口值稳定
+            # 不为负，新增报道持续进入窗口的词自然上升。
+            m_cur = a["win7_cnt"]
             try:
                 prev = conn.execute(
-                    "SELECT news_cnt, score_sum FROM term_snapshots "
+                    "SELECT win7_cnt FROM term_snapshots "
                     "WHERE term=? AND cycle<>? ORDER BY cycle DESC LIMIT 1",
                     (canon, cycle)).fetchone()
             except Exception:
                 prev = None
             if prev:
-                m_prev = prev["news_cnt"]
+                m_prev = prev["win7_cnt"]
                 rise = (m_cur - m_prev) / max(m_prev, 0.5)
             else:
                 rise = math.log(1 + m_cur) if m_cur > 0 else 0.0
@@ -1099,12 +1119,13 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                  hot, round(rise, 4), novelty),
             )
             conn.execute(
-                """INSERT INTO term_snapshots (term, cycle, news_cnt, score_sum, signal_sum)
-                   VALUES (?,?,?,?,?)
+                """INSERT INTO term_snapshots (term, cycle, news_cnt, win7_cnt, score_sum, signal_sum)
+                   VALUES (?,?,?,?,?,?)
                    ON CONFLICT(term, cycle) DO UPDATE SET
-                       news_cnt=excluded.news_cnt, score_sum=excluded.score_sum,
-                       signal_sum=excluded.signal_sum""",
-                (canon, cycle, a["cur_cnt"], a["cur_score"], round(a["cur_signal"], 1)),
+                       news_cnt=excluded.news_cnt, win7_cnt=excluded.win7_cnt,
+                       score_sum=excluded.score_sum, signal_sum=excluded.signal_sum""",
+                (canon, cycle, a["cur_cnt"], a["win7_cnt"],
+                 a["cur_score"], round(a["cur_signal"], 1)),
             )
             if healed_first_seen:
                 # ON CONFLICT 不更新 first_seen_at；自愈场景需显式回填
@@ -1529,10 +1550,10 @@ def backfill_history(days=30, force=False):
             # 合成历史快照（不覆盖真实刷新产生的快照）
             for (term, pub), s in snap.items():
                 conn.execute(
-                    """INSERT INTO term_snapshots (term, cycle, news_cnt, score_sum, signal_sum)
-                       VALUES (?,?,?,?,0)
+                    """INSERT INTO term_snapshots (term, cycle, news_cnt, win7_cnt, score_sum, signal_sum)
+                       VALUES (?,?,?,?,?,0)
                        ON CONFLICT(term, cycle) DO NOTHING""",
-                    (term, f"{pub}-00", s["cnt"], s["score_sum"]))
+                    (term, f"{pub}-00", s["cnt"], s["cnt"], s["score_sum"]))
             conn.commit()
             conn.close()
     except Exception as e:

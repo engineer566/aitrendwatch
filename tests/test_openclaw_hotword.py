@@ -177,6 +177,56 @@ class OpenclawHotwordTests(unittest.TestCase):
         w = self.terms._hot_recency_weight(future, datetime.date.today())
         self.assertEqual(w, 3.0)
 
+    # ---- 5. rise 环比改「近 7 天滑动窗口报道数」口径（2026-09-01）----
+    def test_rise_uses_7day_window_not_single_cycle(self):
+        """发布日进池的词（如 Openclaw 8-31 发布）不应因下一刷新轮 cur_cnt
+        回落而被误判降温：rise 环比基于近 7 天窗口报道数。
+
+        场景：词 X 第 1 轮有 2 篇报道（窗口内 2），第 2 轮窗口内新增 1 篇
+        （共 3 篇，且都在 7 天内）→ rise 应为正，而不是按「本轮 cur_cnt=1
+        vs 上轮 cur_cnt=2」算出 -0.5。
+        """
+        today = datetime.date.today().isoformat()
+        y1 = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        y2 = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+        # 第 1 轮：2 篇（今天 1 篇 + 昨天 1 篇）
+        round1 = [
+            self._card("https://h.example/x1", "X 报道一", ["word-x"], today, 100),
+            self._card("https://h.example/x2", "X 报道二", ["word-x"], y1, 50),
+        ]
+        self.news_store.upsert_cards(round1)
+        self.terms.refresh_words(round1, [], fetched_at=1750000000)
+        # 第 2 轮：新增 1 篇（前天），窗口内共 3 篇；本轮 all_cards 只有 1 篇
+        round2 = round1 + [self._card("https://h.example/x3", "X 报道三",
+                                      ["word-x"], y2, 30)]
+        self.news_store.upsert_cards(round2)
+        self.terms.refresh_words(
+            [self._card("https://h.example/x3", "X 报道三", ["word-x"], y2, 30)],
+            [], fetched_at=1750001000)
+        conn = sqlite3.connect(self.db_path)
+        rise = conn.execute("SELECT cur_rise FROM terms WHERE term='word-x'"
+                            ).fetchone()[0]
+        win = conn.execute(
+            "SELECT win7_cnt FROM term_snapshots WHERE term='word-x' "
+            "ORDER BY cycle DESC LIMIT 1").fetchone()[0]
+        conn.close()
+        self.assertGreater(win, 1, "第 2 轮窗口内应有 >1 篇报道")
+        self.assertGreater(rise, 0,
+                           "窗口报道数增长时 rise 应为正，而非按单轮 cur_cnt 回落误判为降温")
+
+    def test_rise_cold_start_positive_when_first_seen(self):
+        """无历史快照（冷启动）时，近 7 天窗口有报道 → rise 为正，
+        而非 0（此前 cur_cnt 环比在首轮也走 ln(1+m)，保持一致）。"""
+        today = datetime.date.today().isoformat()
+        card = self._card("https://h.example/x1", "X 报道", ["word-x"], today, 100)
+        self.news_store.upsert_cards([card])
+        self.terms.refresh_words([card], [], fetched_at=1750000000)
+        conn = sqlite3.connect(self.db_path)
+        rise = conn.execute("SELECT cur_rise FROM terms WHERE term='word-x'"
+                            ).fetchone()[0]
+        conn.close()
+        self.assertGreater(rise, 0, "冷启动且窗口内有报道 → rise 应为正")
+
 
 if __name__ == "__main__":
     unittest.main()
