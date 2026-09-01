@@ -10,12 +10,12 @@
 | 路径 | 方法 | 函数 | 行号 | 功能 | 备注 |
 |------|------|------|------|------|------|
 | `/` | GET | `index` | `app.py:633` | 首页主单页（词视图为主 + 逐条新闻 tab） | 记 PV/visit/曝光，SSR 首批词卡，前端 JS 再拉 `/api/stream` |
-| `/hf` | GET | `hf_page` | `app.py:882` | **HuggingFace 独立排序页（开源动向）**：按趋势分/点赞/下载量排序，每卡带 pipeline_tag 主徽标 + tags/官方/社区/论文 | 服务端渲染双语（zh/en），排序/语言切换零 fetch；数据复用 tracker 缓存 |
-| `/term/<path:term_name>` | GET | `term_detail` | `app.py:699` | 通用热词聚合页（SEO 长尾）：任何词有页——相关报道聚合 + 词热度；HF 词额外含官方/社区/arXiv 区块 | 进程内 TTL 缓存；未找到 → 404 |
-| `/terms` | GET | `terms` | `app.py:740` | 服务条款页（中英双语） | 静态文案，`SITE_TERMS_UPDATED` 常量 |
-| `/admin/login` | GET,POST | `admin_login` | `app.py:1375` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身 |
-| `/admin` | GET | `admin_home` | `app.py:1399` | 赞助位管理后台 | 需 admin |
-| `/monitor` | GET | `monitor` | `app.py:1441` | 流量监控页 | 需 admin，只读 PV/UV/地域 |
+| `/hf` | GET | `hf_page` | `app.py:910` | **HuggingFace 独立排序页（开源动向）**：按趋势分/点赞/下载量排序，每卡带 pipeline_tag 主徽标 + tags/官方/社区/论文 | 服务端渲染双语（zh/en），排序/语言切换零 fetch；数据复用 tracker 缓存 |
+| `/term/<path:term_name>` | GET | `term_detail` | `app.py:712` | 通用热词聚合页（SEO 长尾）：任何词有页——相关报道聚合 + 词热度；HF 词额外含官方/社区/arXiv 区块 | 进程内 TTL 缓存；未找到 → 404 |
+| `/terms` | GET | `terms` | `app.py:768` | 服务条款页（中英双语） | 静态文案，`SITE_TERMS_UPDATED` 常量 |
+| `/admin/login` | GET,POST | `admin_login` | `app.py:1403` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身 |
+| `/admin` | GET | `admin_home` | `app.py:1427` | 赞助位管理后台 | 需 admin |
+| `/monitor` | GET | `monitor` | `app.py:1469` | 流量监控页 | 需 admin，只读 PV/UV/地域 |
 
 ## 数据 API（JSON）
 
@@ -34,7 +34,7 @@
 | `/api/dims` | GET | `api_dims` | `app.py:769` | 按 AI 维度分组的热点卡；`?dimension=` `?lang=zh/en` |
 | `/api/stream` | GET | `api_stream` | `app.py:778` | **统一卡片流**，前端主数据源；`?view=words\|news`（默认 words）+ `?lang=` `?sort=rise/hot/new`。words 视图词卡（热度=报道聚合+HF likes、上升=环比、最新=新奇度新词发现）；news 视图 model+news 逐条（返回 count/dimension_counts 与稳定排序） |
 | `/api/word/<term>` | GET | `api_word` | `app.py:937` | 单词聚合 JSON：词元信息 + 全量关联报道（≤50）；词卡「展开更多」与详情页共用 |
-| `/api/hf` | GET | `api_hf` | `app.py:911` | **HuggingFace 模型排序 JSON**：`?sort=trending\|likes\|downloads` + `?lang=`；返回 `{ok, sort, lang, fetched_at, count, terms}`（每卡含 pipeline_tag/tags/likes/downloads/trending_score/community/papers） | 复用 tracker 文件缓存（`_hf_models_for`，`app.py:860`），秒回 |
+| `/api/hf` | GET | `api_hf` | `app.py:939` | **HuggingFace 模型排序 JSON**：`?sort=trending\|likes\|downloads` + `?lang=`；返回 `{ok, sort, lang, fetched_at, count, terms}`（每卡含 pipeline_tag/tags/likes/downloads/trending_score/community/papers） | 复用 tracker 文件缓存（`_hf_models_for`，`app.py:888`），秒回 |
 
 ### 系统
 

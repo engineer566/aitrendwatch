@@ -643,8 +643,20 @@ def index():
         store.record_impression(s.get("slot_id"))
     requested_view = request.args.get("view", "words")
     requested_sort = request.args.get("sort", "rise")
+    requested_cat = request.args.get("cat", "all")
+    if requested_view not in ("words", "news"):
+        requested_view = "words"
     if requested_sort not in ("rise", "hot", "new"):
         requested_sort = "rise"
+    # SSR 首屏词链接携带当前榜单状态（非默认项），返回恢复滚动位置需要原样状态
+    ssr_term_parts = [f"lang={lang}"]
+    if requested_view != "words":
+        ssr_term_parts.append(f"view={requested_view}")
+    if requested_sort != "rise":
+        ssr_term_parts.append(f"sort={requested_sort}")
+    if requested_cat and requested_cat != "all":
+        ssr_term_parts.append(f"cat={quote(requested_cat)}")
+    ssr_term_qs = "&".join(ssr_term_parts)
     initial_terms = (
         _initial_terms_for_ssr(sort=requested_sort, lang=lang)
         if _seo_enabled() and requested_view != "news" else []
@@ -655,6 +667,7 @@ def index():
                            base_url=_base_url(), canonical=_abs(_lang_url("/", lang)),
                            seo_enabled=_seo_enabled(),
                            initial_terms=initial_terms,
+                           ssr_term_qs=ssr_term_qs,
                            adsense_enabled=config.ADSENSE_ENABLED,
                            adsense_client=config.ADSENSE_CLIENT,
                            baidu_ads_enabled=config.BAIDU_ADS_ENABLED,
@@ -726,11 +739,26 @@ def term_detail(term_name):
     else:
         desc = (f"{slug}: {t.get('news_cnt', 0)} related reports aggregated, "
                 f"hotness {t.get('hot', 0)}. Track the latest on {slug}.")
+    # 返回首页时回显进入词条页前的榜单状态（view/sort/cat 非默认项）。
+    # 滚动恢复按保存的 scrollY 像素落位，若返回后榜单被重置为默认 Trending，
+    # 像素会落在不同排序的列表上 → 位置错乱（20260901 #7 边界修复）。
+    back_parts = []
+    back_view = request.args.get("view")
+    if back_view in ("news",):
+        back_parts.append(f"view={back_view}")
+    back_sort = request.args.get("sort")
+    if back_sort in ("hot", "new"):
+        back_parts.append(f"sort={back_sort}")
+    back_cat = request.args.get("cat")
+    if back_cat and back_cat != "all":
+        back_parts.append(f"cat={quote(back_cat)}")
+    home_url = _lang_url("/", lang) + ("&" + "&".join(back_parts) if back_parts else "") \
+        + "&scroll_back=1"
     return render_template("term_detail.html", word=data, lang=lang,
                            site_name=config.SITE_NAME,
                            site_desc=desc[:160], base_url=_base_url(),
                            canonical=canonical, seo_enabled=_seo_enabled(),
-                           home_url=_lang_url("/", lang) + "&scroll_back=1",
+                           home_url=home_url,
                            lang_toggle_url=_lang_url(
                                request.path, "en" if lang == "zh" else "zh"),
                            lang_toggle_label="中文" if lang == "en" else "English")
