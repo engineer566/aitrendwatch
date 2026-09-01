@@ -4,9 +4,9 @@
 
 ## 外部数据源
 
-### RSS 源（31 个，`dims.py:155` `RSS_SOURCES`，其中 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）
+### RSS 源（36 个，`dims.py:155` `RSS_SOURCES`，其中 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）
 
-并发抓取（`fetch_all_rss` `dims.py:331`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条；RSS 标题使用有界双层实体解码，URL 只解一层 XML entity。
+并发抓取（`fetch_all_rss` `dims.py:329`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条；RSS 标题使用有界双层实体解码，URL 只解一层 XML entity。
 
 | 名称 | feed | region | default_dim | lang | 备注 |
 |------|------|--------|-------------|------|------|
@@ -22,6 +22,11 @@
 | MIT TechReview | technologyreview.com/.../ai/feed | 国际 | 行业动态 | en | 媒体 |
 | VentureBeat AI | venturebeat.com/category/ai/feed/ | 国际 | 投融资 | en | UTF-8 强制解码 |
 | The Gradient | thegradient.pub/rss/ | 国际 | 研究论文 | en | 媒体 |
+| IEEE Spectrum AI | spectrum.ieee.org/.../ai.rss | 国际 | 行业动态 | en | 权威科技媒体 AI 专题 |
+| MIT News AI | news.mit.edu/rss/topic/ai2 | 国际 | 研究论文 | en | 高校官方新闻 |
+| ZDNet AI | zdnet.com/topic/ai/rss.xml | 国际 | 行业动态 | en | 主流科技媒体 |
+| The Decoder | the-decoder.com/feed/ | 国际 | 产品发布 | en | 专注 AI 的媒体 |
+| The Rundown AI | therundown.ai/feed | 国际 | 产品发布 | en | AI 日报媒体 |
 | Anthropic (GN) | news.google.com/rss/search?q=Anthropic | 国际 | 产品发布 | en | Google News 聚合，无官方 RSS |
 | Meta AI (GN) | news.google.com/rss/search?q="Meta AI" | 国际 | 产品发布 | en | Google News 聚合 |
 | 量子位 | qbitai.com/feed | 国内 | 行业动态 | zh | |

@@ -191,11 +191,6 @@ RSS_SOURCES = [
     {"name": "Meta AI (GN)",   "feed": "https://news.google.com/rss/search?q=%22Meta+AI%22+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
     {"name": "OpenClaw (GN)",  "feed": "https://news.google.com/rss/search?q=OpenClaw+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
     {"name": "Open Source AI (GN)", "feed": "https://news.google.com/rss/search?q=%22open+source%22+AI+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "模型与技术", "is_gnews": True, "lang": "en"},
-    {"name": "Google AI Blog", "feed": "https://ai.googleblog.com/feeds/posts/default", "region": "国际", "default_dim": "研究与论文", "lang": "en"},
-    {"name": "Apple ML", "feed": "https://machinelearning.apple.com/rss.xml", "region": "国际", "default_dim": "产品与应用", "lang": "en"},
-    {"name": "Meta AI Blog", "feed": "https://ai.meta.com/blog/rss/", "region": "国际", "default_dim": "模型与技术", "lang": "en"},
-    {"name": "HuggingFace Blog", "feed": "https://huggingface.co/blog/feed.xml", "region": "国际", "default_dim": "模型与技术", "lang": "en"},
-    {"name": "AssemblyAI", "feed": "https://www.assemblyai.com/blog/rss/", "region": "国际", "default_dim": "产品与应用", "lang": "en"},
     # —— 国内 AI 一手媒体（国内厂商无 RSS，用主流媒体官方 RSS 覆盖）——
     {"name": "量子位",     "feed": "https://www.qbitai.com/feed",   "region": "国内", "default_dim": "政策与行业", "lang": "zh"},
     {"name": "InfoQ中文",  "feed": "https://www.infoq.cn/feed",     "region": "国内", "default_dim": "政策与行业", "lang": "zh"},
@@ -486,8 +481,8 @@ def _reddit_points(title, dimension):
 
 
 # 无社区信号时的兜底权重（与 model likes 同量级）。
-# 国内源按媒体影响力给 floor；英文源统一 floor=20（覆盖面广、无单一权重锚点）。
-# 仅在 HN/Reddit 都未命中时启用，避免无社区信号的小维度卡全员并列。
+# 国内源按媒体影响力给 floor（已整体下调，缩小与英文源差距）；英文源统一 floor=25
+# （覆盖面广、无单一权重锚点）。仅在 HN/Reddit 都未命中时启用，避免无社区信号的小维度卡全员并列。
 _SOURCE_WEIGHT = {
     "量子位": 45, "InfoQ中文": 40, "极客公园": 35, "少数派": 30,
 }
@@ -539,7 +534,7 @@ def _composite_score(hn, reddit_score, reddit_comments, published, region, sourc
     - 时效衰减用 HN 排名公式（gravity=1.5）：越新越热分越高。
     - HN 乘 10 使 32 分约等于 320，与 Reddit 赞同量级。
     - HN/Reddit 都没命中（community<1）时，国内源按 _SOURCE_WEIGHT 兜底，
-      国际源默认 20。此时叠加一个基于 url 的确定性「讨论度」抖动（_buzz），
+      国际源默认 25。此时叠加一个基于 url 的确定性「讨论度」抖动（_buzz），
       使「最热」排序不完全退化为时间倒序（issue 2 区分度）。
     返回 int（作为 hot/累计热度排序键）。
     """
@@ -549,7 +544,7 @@ def _composite_score(hn, reddit_score, reddit_comments, published, region, sourc
         if region == "国内":
             weight = _SOURCE_WEIGHT.get(source, 30)
         else:
-            weight = 20
+            weight = 25
         # 无社区信号时让 hot 与 rise 产生区分度（issue 2）：
         # 三标签页只剩「时效」一个真实信号，若 hot/rise/new 都是时效的单调函数则排序必然相同。
         # 解法：用确定性「讨论度」抖动 _buzz(url)（0~1），让 hot 与 rise 沿「相反方向」叠加它——
@@ -618,7 +613,7 @@ def _trend_score(hn, reddit_score, reddit_comments, published, region, source, u
         recency = 1.0 / (math.log(age_days + 1) + 1)
         # 连续 fresh 因子：0d→2.5, 3d→1.60, 7d→1.15, 30d→1.00，近期卡显著放大、旧卡趋 1
         fresh_factor = 1.0 + 1.5 * math.exp(-age_days / 3.0)
-        weight = _SOURCE_WEIGHT.get(source, 25) if region == "国内" else 28
+        weight = _SOURCE_WEIGHT.get(source, 30) if region == "国内" else 25
         trend = weight * recency * fresh_factor * (1.0 - 0.7 * _buzz(url)) * 1000
     else:
         trend = community * decay * fresh_boost

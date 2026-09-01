@@ -82,7 +82,7 @@
 |----------|------|
 | 58–75 | LLM 配置（模型故障转移链） |
 | 76–146 | 文件缓存（`cache/dims.json`） |
-| 147–343 | RSS 源定义 `RSS_SOURCES`（31 源）+ RSS 解析 + 抓取（`fetch_all_rss`@331） |
+| 147–348 | RSS 源定义 `RSS_SOURCES`（36 源）+ RSS 解析 + 抓取（`fetch_all_rss`@329） |
 | 345–654 | 社区热度增强（HN/Reddit/复合分/趋势分） |
 | 656–1264 | LLM 批量打标（685–783 故障转移状态 + `_is_mixed_translation` 混杂检查；786–1096 `_llm_classify_batch`；1097–1137 `enrich_with_llm`；1138–1184 `_translate_terms`；1185–1264 `explain_terms` 热词解释生成/优化） |
 | 1265–1452 | 顶层聚合（`get_dims`/`get_news_cards`/`_fetch_dims_raw`） |
@@ -105,7 +105,7 @@
 - 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
 
 ### 模块级常量
-`RSS_SOURCES`（31 源，`dims.py:155`，含 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`LLM_REASONING_EFFORT`（自 config 导入）、`_LLM_ACTIVE_IDX`/`_LLM_FAILS`（故障转移进程级状态）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
+`RSS_SOURCES`（36 源，`dims.py:155`，含 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`LLM_REASONING_EFFORT`（自 config 导入）、`_LLM_ACTIVE_IDX`/`_LLM_FAILS`（故障转移进程级状态）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
 
 ---
 

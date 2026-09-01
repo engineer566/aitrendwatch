@@ -5,7 +5,7 @@
 
 ## 项目一句话定位
 
-AI 热点聚合单页应用：Flask 后端聚合 19 个 RSS 源（+2 个 Google News 关键词源） + HuggingFace 模型榜 + arXiv 论文，DeepSeek 做维度打标/双语翻译，产出「热词卡 / 事件卡」，前端单页展示 + 后台定时预热。
+AI 热点聚合单页应用：Flask 后端聚合 36 个 RSS 源（含 4 个 Google News 关键词源） + HuggingFace 模型榜 + arXiv 论文，DeepSeek 做维度打标/双语翻译，产出「热词卡 / 事件卡」，前端单页展示 + 后台定时预热。
 
 ## 目录树（仅项目代码）
 
