@@ -95,7 +95,7 @@ GET /term/<name>
 ```
 GET /hf?sort=trending|likes|downloads&lang=zh|en
   → _request_lang() 决定语言
-  → _hf_models_for(sort, lang)  # app.py:888
+  → _hf_models_for(sort, lang)  # app.py:924
   │    → tracker.get_model_cards(lang)   # trending 文件缓存（统一卡片 schema）
   │    → 冷启动缓存缺失 → tracker.get_terms(sort)  # 自带快速兜底，只抓 HF ~1s
   → likes/downloads 在内存按字段重排（_stream_number 容错）
@@ -113,11 +113,11 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 - `_cross_proc_lock` (`tracker.py:476`) 用 `fcntl.flock` 跨进程锁，整个容器只有一个 worker 在抓。
 - 失败兜底：读旧缓存文件；旧缓存也无 → 内存兜底。
 
-### dims 层  （`dims.py:1599` `start_background_dims_refresher`）
+### dims 层  （`dims.py:1597` `start_background_dims_refresher`）
 - 独立 daemon 线程，独立跨进程锁 `cache/.dims.refresh.lock`。
-- `_dims_refresh_once` (`dims.py:1502`)：拉 31 个 RSS 源（含 4 个 Google News 关键词源） → HN/Reddit 复合热度 → LLM 批量打标（故障转移链）+ 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库 → **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
-- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (1,7,13,19)`（`config.py:118`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1552`) 算下次刷新倒计时。
-- `_persist_to_history` (`dims.py:1483`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
+- `_dims_refresh_once` (`dims.py:1500`)：拉 31 个 RSS 源（含 4 个 Google News 关键词源） → HN/Reddit 复合热度 → LLM 批量打标（故障转移链）+ 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库 → **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
+- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (1,7,13,19)`（`config.py:118`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1550`) 算下次刷新倒计时。
+- `_persist_to_history` (`dims.py:1481`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
 
 ### 启动时机
 `app.py:47-49` 模块加载时即 `start_background_refresher()` + `start_background_dims_refresher()`。每个 worker 进程各起线程，靠 fcntl 锁去重。
@@ -126,7 +126,7 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 
 | 层级 | 介质 | 作用域 | TTL | 典型键 | 代码位置 |
 |------|------|--------|-----|--------|----------|
-| L1 内存 | 进程内 `dict` | 单 worker 进程 | 300s（单源）/ 1800s（详情） | `{source: (ts,data)}` | `app.py:61` `_cache` |
+| L1 内存 | 进程内 `dict` | 单 worker 进程 | 300s（单源）/ 1800s（详情） | `{source: (ts,data)}` | `app.py:62` `_cache` |
 | L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:79` / `terms.py:116` |
 | L3 SQLite | `data/*.db` | 跨 worker 共享，持久 | 永久（历史库）/ 按周期聚合 | sponsors.db, news.db | `store.py` / `news_store.py` / `terms.py` |
 

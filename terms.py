@@ -777,59 +777,6 @@ def _display_of(term, surfaces):
         return term
     # display_overrides（来自 terms_canonical.json，最高优先级）
     _OVERRIDES = {
-        "agents-md": "AGENTS.md",
-        "agi": "AGI",
-        "amd": "AMD",
-        "aqua": "AQuA",
-        "chatgpt": "ChatGPT",
-        "cot": "CoT",
-        "cuda": "CUDA",
-        "glm": "GLM",
-        "gpt-4o": "GPT-4o",
-        "gpt-5": "GPT-5",
-        "ipo": "IPO",
-        "llm": "LLM",
-        "lora": "LoRA",
-        "mcp": "MCP",
-        "moe": "MoE",
-        "openclaw": "OpenClaw",
-        "rag": "RAG",
-        "rlhf": "RLHF",
-        "tts": "TTS",
-        "xai": "xAI"
-    }
-    if term in _OVERRIDES:
-        return _OVERRIDES[term]
-    if term.lower() in _OVERRIDES:
-        return _OVERRIDES[term.lower()]
-    # lexicon_display（来自 terms_canonical.json，品牌名/产品名展示名）
-    _LEXICON_DISPLAY = {
-        "agents.md": "AGENTS.md",
-        "alibaba": "Alibaba",
-        "anthropic": "Anthropic",
-        "apple-intelligence": "Apple Intelligence",
-        "baidu": "Baidu",
-        "bytedance": "ByteDance",
-        "deepseek": "DeepSeek",
-        "google": "Google",
-        "google-deepmind": "Google DeepMind",
-        "huawei": "Huawei",
-        "huggingface": "Hugging Face",
-        "meta-ai": "Meta AI",
-        "microsoft": "Microsoft",
-        "nvidia": "NVIDIA",
-        "openai": "OpenAI",
-        "ross-harness": "ROSS Harness",
-        "tencent": "Tencent",
-        "tsinghua": "Tsinghua"
-    }
-    if term in _LEXICON_DISPLAY:
-        return _LEXICON_DISPLAY[term]
-    if term.lower() in _LEXICON_DISPLAY:
-        return _LEXICON_DISPLAY[term.lower()]
-
-    # display_overrides（来自 terms_canonical.json，最高优先级）
-    _OVERRIDES = {
         "agents.md": "AGENTS.md",
         "agi": "AGI",
         "amd": "AMD",
