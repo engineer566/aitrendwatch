@@ -759,6 +759,30 @@ def _llm_skip_provider(reason="账户级限流"):
               f"{LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
 
 
+def _is_mixed_translation(text, native_lang):
+    """硬编码检查翻译是否中英混杂（issue 11）。
+
+    native_lang 是条目的原文语言（lang），text 是对应的外文翻译槽：
+    - native_lang='zh'：中文原文 → 英文翻译。英文翻译不应再含 CJK 字符，
+      残留任一 CJK 即「没翻完」，判混杂。
+    - native_lang='en'：英文原文 → 中文翻译。翻译不应再以英文为主体
+      （只翻了一半 / 整段照抄原文）。允许保留常见 AI 术语/专名
+      （GPT-5、OpenAI 等），用启发式：长度 >15 且 ASCII 字母占比 >60%
+      视为未翻译。
+    空文本按混杂计（调用方先过缺翻译检查，这里只是兜底）。
+    """
+    if not text:
+        return True
+    if native_lang == "zh":
+        # 中文原文翻英文：一个 CJK 都不能有才算翻完
+        return bool(re.search(r"[\u4e00-\u9fff]", text))
+    # 英文原文翻中文：ASCII 字母占比过高 → 英文残留
+    ascii_chars = sum(1 for c in text if c.isascii() and c.isalpha())
+    if len(text) > 15 and ascii_chars / len(text) > 0.6:
+        return True
+    return False
+
+
 def _llm_classify_batch(batch):
     """让 LLM 给一批事件打维度标签 + 生成中英双标题/双摘要。
 
@@ -806,17 +830,27 @@ def _llm_classify_batch(batch):
     # 翻译字段禁止空字符串（缺翻译按失败计会触发换档，直接堵住源头）；
     # ③ 数组长度与输入一致、idx 逐条对应，杜绝缺条目；④ 禁止 Markdown 代码块，
     # 避免 ```json 包裹干扰提取。
+    # 2026-09-01 优化（issue 11 中英混杂）：⑤ 翻译必须完整——中文翻译不得残留英文
+    # 原文片段、英文翻译不得残留中文原文片段，禁止中英混杂输出（LLM 会漏翻/只翻一半，
+    # 把原文语言原样留在翻译槽里）；⑥ summary 同样必须是完整翻译，不得混合原文。
+    # 软约束之外再配 _is_mixed_translation 硬编码检查兜底（翻译仍以原文语言为主
+    # → 该批按失败计，触发换档/换 provider 重试）。
     _USER_PREFIX = (
         "对以下AI事件分类并产出中英双标题+双摘要，输出JSON数组，每项"
         '{"idx","dimension","title_zh","title_en","summary_zh","summary_en","keywords"}。规则：\n'
         "- dimension 从 " + json.dumps(DIMENSIONS, ensure_ascii=False) + " 选。\n"
         "- 标注 (en) 的条目：title_en=原标题逐字照抄，title_zh=中文翻译"
-        "（必须翻译，不得照抄英文原标题）；"
-        "summary_en=一句英文<=30词概括，summary_zh=该概括的中文翻译<=30字。\n"
+        "（必须翻译，不得照抄英文原标题；翻译必须完整，不得保留英文原文片段，"
+        "禁止中英混杂输出）；"
+        "summary_en=一句英文<=30词概括，summary_zh=该概括的中文翻译<=30字"
+        "（必须完整翻译，不得混合英文原文）。\n"
         "- 标注 (zh) 的条目：title_zh=原标题逐字照抄，title_en=英文翻译"
-        "（必须翻译，不得照抄中文原标题）；"
-        "summary_zh=一句中文<=30字概括，summary_en=该概括的英文翻译<=30词。\n"
-        "- title 翻译要忠实于原标题（保留专名/数字/缩写，不要增删或加注释）；"
+        "（必须翻译，不得照抄中文原标题；翻译必须完整，不得保留中文原文片段，"
+        "禁止中英混杂输出）；"
+        "summary_zh=一句中文<=30字概括，summary_en=该概括的英文翻译<=30词"
+        "（必须完整翻译，不得混合中文原文）。\n"
+        "- title 翻译要忠实于原标题（保留专名/数字/缩写，不要增删或加注释），"
+        "且必须完整翻译、不得保留原文片段；"
         "summary 必须是原事件的一句话概括，不是标题的重复，不得为空。\n"
         "- keywords：抽取1-3个高价值AI实体/概念作为热词候选，JSON数组。"
         "优先：具体模型/产品/公司/组织名（如 GPT-5、Claude、Anthropic、Cursor）、"
@@ -958,6 +992,26 @@ def _llm_classify_batch(batch):
         if _missing:
             raise RuntimeError(
                 f"LLM 返回缺翻译条目 {_missing}/{len(batch)} 个，按失败计")
+
+        # 中英混杂检查（issue 11）：缺翻译检查抓不到「翻了一半」——LLM 可能把
+        # 英文原标题原样留在 title_zh、或把中文原标题原样留在 title_en。对非母语槽
+        # 再做语言一致性硬检查（_is_mixed_translation）：翻译仍以原文语言为主即判
+        # 混杂，按失败计（触发换档/换 provider 重试），不静默回退成原文标题。
+        _mixed = 0
+        for i, it in enumerate(batch):
+            p = _pby.get(i) or {}
+            native = it.get("lang", "en")
+            if native == "zh":
+                if (_is_mixed_translation(p.get("title_en", ""), "zh")
+                        or _is_mixed_translation(p.get("summary_en", ""), "zh")):
+                    _mixed += 1
+            else:
+                if (_is_mixed_translation(p.get("title_zh", ""), "en")
+                        or _is_mixed_translation(p.get("summary_zh", ""), "en")):
+                    _mixed += 1
+        if _mixed:
+            raise RuntimeError(
+                f"LLM 返回 {_mixed}/{len(batch)} 条中英混杂，按失败计")
     except _LLMAccountRateLimit as e:
         # 账户级限流：跳过当前 provider 剩余档位（同 key 全档受限），
         # 本批降级，下一批直接用下一个 provider。

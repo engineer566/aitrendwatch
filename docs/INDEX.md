@@ -61,7 +61,7 @@ aitrendwatch/
 |------|------|------|---------------------------------------|------|
 | `app.py` | 1524 | Flask 入口、路由、8 直连源抓取、词详情装配 | 39 个路由 view 函数 + `_word_detail` + `_explain_fallback` + `_hf_models_for` | tracker, dims, terms, config, store, stream_utils |
 | `config.py` | 158 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
-| `dims.py` | 1553 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
+| `dims.py` | 1607 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成 | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
 | `terms.py` | 1582 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典）+ 热窗新鲜度加权 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict` | config, sqlite3, news_store, text_utils |
 | `store.py` | 474 | 赞助位/统计/GeoIP SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country` | config, sqlite3 |
