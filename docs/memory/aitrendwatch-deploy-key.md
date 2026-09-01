@@ -36,6 +36,8 @@ metadata:
 
 **⚠️ 镜像策略变更记录（2026-09-01，release 1.8.0）**：此前部署一直用 `python:3.13-slim` 基础镜像 + bind mount 挂代码（免 build）。1.8.0 起改为**本地构建镜像 `aitrendwatch:<VERSION>`**（Dockerfile + requirements.txt 进镜像），原因是 og-image 动态生成依赖 Pillow 且基础镜像每次 recreate 都会丢 pip 安装。今后每次发版：`docker build -t aitrendwatch:<VERSION> .` + compose `image:` 改版本号 + `up -d --force-recreate`。构建在 1.6G 小内存测试机较慢（约 6-10 分钟，需耐心或后台执行）。
 
+**⚠️ 镜像策略再简化（2026-09-01 同日晚，merge `d7c9123`）**：`aitrendwatch:<VERSION>` 按版本打标签仍需每次发版 build + 改 compose 的 `image:`，繁琐。改为**固定标签 `aitrendwatch:runtime`**：Dockerfile 精简为**只装依赖、不 COPY 代码**（compose 本就 bind mount 源码 `:ro`，镜像只负责运行时依赖）→ 镜像只在 `requirements.txt` 变更时才重建（pip install 层有缓存，重建快），发版流程回到最简：rsync 代码 → `docker compose up -d --force-recreate`，**无需 build**。三处 compose（本机 `docker-compose.yml` / 生产 `docker-compose.prod.yml` / 测试机 `docker-compose.test.yml`，后者仅主机维护）`image:` 统一为 `aitrendwatch:runtime`。两台主机已各自 `docker build -t aitrendwatch:runtime .`（生产 257MB / 测试机 258MB，比 1.8.0 版略小）。验证：生产/测试机容器 healthy、`/og-image.png` 1200×630 正常（7849B）、关键 API 全 200、155 tests + 8 subtests 全绿。
+
 **⚠️ 动态词典解释批次锁占用事故（2026-08-31 发现并已修）**：动态词典特性首轮部署后，解释批次对存量 ~455 个词典外词全量生成（38 块 LLM 调用），在 **dims 刷新锁内**执行；GLM 免费档限流不稳时单块最长 90s 读超时，整批可占锁 30-60 分钟，**阻塞 words.json 更新**（热词卡停留旧数据）。且 fcntl 锁被卡住的 worker 持有，后续所有刷新被挡回（`SPY2 ok:True calls:[]` 特征）。**已修**（commit `862c39b`）：① `EXPLAIN_BATCH_MAX_WORDS=60` 每轮解释批次上限（按热度降序，最热优先，存量词后续轮次回填，单轮锁占用约 5 分钟）；② `EXPLAIN_CONSECUTIVE_FAIL_LIMIT=5` 连续失败熔断 + 读超时 90s→60s。**教训**：任何在刷新锁内的 LLM 批量工作都必须有数量上限 + 失败熔断；排障手法——`/proc/locks` 查 flock 持有者、worker 线程 `wchan`（do_select/do_poll=网络等待）、`docker top` 看 CPU 时间。
 
 **权限提示**：生产主机 SSH 每次读写常被分类器软拦截，需用户 AskUserQuestion 显式授权「生产」目标后才放行；只读日志/文件检查也可能被拦，可用公网 API（`https://aitrendwatch.top/api/*`）替代验证。
