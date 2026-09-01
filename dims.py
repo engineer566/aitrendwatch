@@ -1088,7 +1088,13 @@ def _llm_classify_batch(batch):
                     kws.append(ck)
         if not kws and terms_mod:
             kws = terms_mod.extract_keywords_dict(it["title"])
-        it["keywords"] = kws[:3]
+        # 需求 5：硬编码大小写校验——关键词必须与原文大小写完全一致
+        # （命中原文表面形式则取原文确切大小写；未命中保持 canonical）。
+        if terms_mod:
+            it["keywords"] = [terms_mod.case_match_original(k, it["title"])
+                              for k in kws[:3]]
+        else:
+            it["keywords"] = kws[:3]
     return batch
 
 
