@@ -5,9 +5,9 @@
 ## 通用机制
 
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。
-- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:445`）+ `t(k)` 翻译函数（`index.html:491`）+ `LANG` 状态（`index.html:506`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
-- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:436`）+ `<script id="initial-terms-data">`（`index.html:437`）。
-- **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:159,170,191,206`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:287,296`）。
+- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:468`）+ `t(k)` 翻译函数（`index.html:514`）+ `LANG` 状态（`index.html:529`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
+- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:459`）+ `<script id="initial-terms-data">`（`index.html:460`）。
+- **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:159,170,191,206`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:309,318`）。
 
 ---
 
@@ -27,14 +27,14 @@
 | ├ `LANG`/`currentView` 状态 | 501–506 | `currentView=words\|news`，URL/localStorage 记忆 |
 | ├ URL 状态恢复 | 534–558 | `?view=&cat=&sort=&lang=` 可分享 |
 | ├ 视图切换 seg | 790 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
-| ├ 词卡渲染 `renderWordCard` | 897 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
-| ├ 词卡展开 `toggleWordExpand` | 951 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
-| ├ `visibleData` | 1065 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
-| ├ `render` | 1081 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
-| ├ 数据拉取 `fetchAll` | 1153 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
-| ├ AbortController | 1140–1142 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
-| ├ 返回滚动恢复 | 1237–1286 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；后退/前进（back_forward）或经词条页「返回首页」链接（`scroll_back=1`）回首页时恢复——head 脚本（55，首帧前加 `scroll-restoring` 隐藏内容）→ SSR 首屏立即落位 → `/api/stream` 全量渲染后校准并 `finalizeScrollRestore` 消费 key + 清理 URL 标记，全程无顶部闪现 |
-| └ Mock 数据 | 1297 | 后端不可用时的内置预览数据 |
+| ├ 词卡渲染 `renderWordCard` | 929 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
+| ├ 词卡展开 `toggleWordExpand` | 983 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
+| ├ `visibleData` | 1097 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
+| ├ `render` | 1113 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
+| ├ 数据拉取 `fetchAll` | 1185 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
+| ├ AbortController | 1172 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
+| ├ 返回滚动恢复 | 1236–1292 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；后退/前进（back_forward）或经词条页「返回首页」链接（`scroll_back=1`）回首页时恢复——head 脚本（55，首帧前加 `scroll-restoring` 隐藏内容）→ SSR 首屏立即落位 → `/api/stream` 全量渲染后校准并 `finalizeScrollRestore` 消费 key + 清理 URL 标记，全程无顶部闪现；**词链接 `termHref`（917）携带当前非默认 view/sort/cat，词条页 `home_url` 回显（app.py:755）——返回后榜单状态不丢失（20260901 #7 边界修复）** |
+| └ Mock 数据 | 1304 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
 **渲染路由**：`/`（`app.py:633`）。
@@ -54,8 +54,8 @@
 | 模型卡列表 | 266–303 | 排名 / 🤗 开源模型徽标 / pipeline_tag 主徽标 / tags / 趋势分·点赞·下载 / 官方 + 社区链接 / 相关论文 |
 | 主 JS `<script>` | 311–353 | 主题切换 / 搜索跳转 `/search` / 更新时间渲染 |
 
-**引用 API**：无（服务端 `_hf_models_for`（`app.py:860`）装配后 SSR；数据与 `/api/hf` 同一来源）。
-**渲染路由**：`/hf`（`app.py:882`）。
+**引用 API**：无（服务端 `_hf_models_for`（`app.py:888`）装配后 SSR；数据与 `/api/hf` 同一来源）。
+**渲染路由**：`/hf`（`app.py:910`）。
 **数据源**：`tracker.get_model_cards`（trending 文件缓存）→ 冷启动回退 `tracker.get_terms`（自带快速兜底，只抓 HF ~1s）；likes/downloads 在内存重排。
 
 ---
@@ -72,7 +72,7 @@
 | 切换 JS | 352 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:740`）。
+**渲染路由**：`/terms`（`app.py:768`）。
 
 ---
 
@@ -89,7 +89,7 @@
 | SEO ld+json | 159, 170, 191, 206 | 四个块：DefinedTerm（159）/ ItemList（170）/ SoftwareApplication（191）/ ScholarlyArticle（206）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
 
 **引用 API**：无（服务端 `_word_detail`（`app.py:132`）同步装配，进程内 TTL 缓存）。
-**渲染路由**：`/term/<name>`（`app.py:699`）。
+**渲染路由**：`/term/<name>`（`app.py:712`）。
 **数据源**：词池 `terms` 表命中（任何词有页）→ 报道聚合；未命中回退 HF live；再无 → 404。
 
 ---
@@ -106,7 +106,7 @@
 | └ stats | 307 | `fetch("/admin/stats")` |
 
 **引用 API**：`/admin/sponsors`、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/admin`（`app.py:1399`，需 admin）。
+**渲染路由**：`/admin`（`app.py:1427`，需 admin）。
 
 ---
 
@@ -119,7 +119,7 @@
 | 建议补全 | ~300+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1144`）、SSR `word_hits` 由 `_do_search`（`app.py:1114`）返回。
+**渲染路由**：`/search`（`app.py:1172`）、SSR `word_hits` 由 `_do_search`（`app.py:1142`）返回。
 
 ---
 
@@ -130,7 +130,7 @@
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1375`）。
+**渲染路由**：`/admin/login`（`app.py:1403`）。
 
 ---
 
@@ -148,5 +148,5 @@
 | └ 数据拉取 | 543–579 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
 
 **引用 API**：`/monitor/api?days=N`。
-**渲染路由**：`/monitor`（`app.py:1441`，需 admin）。
+**渲染路由**：`/monitor`（`app.py:1469`，需 admin）。
 **数据**：PV/UV/地域分布（来自 `visits` 表，`store.monitor_stats`）。

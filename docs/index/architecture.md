@@ -80,7 +80,7 @@ GET /api/word/<term>
   → 进程内 TTL 缓存
 ```
 
-### 4. 热词详情 `/term/<name>`  （`app.py:699`）  ← SEO 长尾 + 慢路径
+### 4. 热词详情 `/term/<name>`  （`app.py:712`）  ← SEO 长尾 + 慢路径
 ```
 GET /term/<name>
   → _detail_cached(key)            # 进程内 TTL 缓存（默认 1800s）
@@ -91,11 +91,11 @@ GET /term/<name>
 ```
 因 HF live 区块慢（arXiv 串行检索），靠进程内缓存 + SEO 长尾页价值支撑。
 
-### 5. HuggingFace 排序页 `/hf` + `/api/hf`  （`app.py:882` / `app.py:911`）  ← 开源动向独立页
+### 5. HuggingFace 排序页 `/hf` + `/api/hf`  （`app.py:910` / `app.py:939`）  ← 开源动向独立页
 ```
 GET /hf?sort=trending|likes|downloads&lang=zh|en
   → _request_lang() 决定语言
-  → _hf_models_for(sort, lang)  # app.py:860
+  → _hf_models_for(sort, lang)  # app.py:888
   │    → tracker.get_model_cards(lang)   # trending 文件缓存（统一卡片 schema）
   │    → 冷启动缓存缺失 → tracker.get_terms(sort)  # 自带快速兜底，只抓 HF ~1s
   → likes/downloads 在内存按字段重排（_stream_number 容错）

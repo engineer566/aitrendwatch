@@ -386,7 +386,7 @@
   <div class="word-head">
     <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
     <span class="cat-badge">🔤 {{ dim_labels.get(dim, dim) if is_en else dim }}</span>
-    <span class="word-name"><a href="/term/{{ t.id|urlencode }}?lang={{ page_lang }}"><span class="{{ 'en' if is_en else 'zh' }}">{{ t.term_display or t.display_zh or t.term }}</span></a></span>
+    <span class="word-name"><a href="/term/{{ t.id|urlencode }}?{{ ssr_term_qs }}"><span class="{{ 'en' if is_en else 'zh' }}">{{ t.term_display or t.display_zh or t.term }}</span></a></span>
     <span class="head-right"><span>{{ t.news_cnt }} {{ 'reports' if is_en else '篇报道' }} · {{ t.published or '' }}</span></span>
   </div>
   <div class="term-meta">
@@ -915,7 +915,15 @@ function escapeTerm(term) {
 }
 
 function termHref(term) {
-  return `/term/${escapeTerm(term)}?lang=${encodeURIComponent(LANG)}`;
+  // 返回恢复滚动需要原榜单状态：词链接带上当前非默认 view/sort/cat，
+  // 词条页 home_url 再原样回显，否则返回时榜单重置为默认 Trending，
+  // 保存的 scrollY 像素落在不同排序的列表上（位置错乱）。
+  const p = new URLSearchParams();
+  p.set("lang", LANG);
+  if (currentView !== "words") p.set("view", currentView);
+  if (currentSort !== "rise") p.set("sort", currentSort);
+  if (currentCat !== "all") p.set("cat", currentCat);
+  return `/term/${escapeTerm(term)}?${p.toString()}`;
 }
 
 function renderWordCard(w, i) {

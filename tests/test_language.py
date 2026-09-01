@@ -131,6 +131,68 @@ class LanguageRouteTest(unittest.TestCase):
         self.assertNotIn("智能体创业公司融资", body)
         build.assert_called_once_with("agent", lang="en")
 
+    def test_term_detail_home_url_echoes_rank_state(self):
+        """返回首页链接必须回显进入时的 view/sort/cat，否则返回后榜单重置为
+        默认 Trending，保存的 scrollY 像素落在不同排序的列表上（位置错乱）。
+
+        覆盖 20260901 #7 的边界：Trending 默认排序恰好等于回显缺省，因此只有
+        Trending 正常；Hottest/Newest（以及任意 cat 筛选）此前丢失状态。
+        """
+        detail = {
+            "ok": True,
+            "term": {"term": "Agent", "display_zh": "智能体", "origin": "news",
+                     "news_cnt": 1, "hot": 10, "rise": 1.0,
+                     "first_seen_at": "2026-08-29"},
+            "news": [], "hf": None, "hf_detail": None, "legacy_hf": False,
+        }
+        with patch.object(app_module, "_detail_cached", return_value=None), \
+                patch.object(app_module, "_detail_set_cache"), \
+                patch.object(app_module, "_word_detail", return_value=detail):
+            # 模板 href 经 Jinja 转义：& → &amp;
+            for query, expect in [
+                ("?lang=zh&sort=hot", "/?lang=zh&amp;sort=hot&amp;scroll_back=1"),
+                ("?lang=zh&sort=new", "/?lang=zh&amp;sort=new&amp;scroll_back=1"),
+                ("?lang=en&sort=hot&view=news&cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF",
+                 "/?lang=en&amp;view=news&amp;sort=hot&amp;cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF&amp;scroll_back=1"),
+                ("?lang=zh", "/?lang=zh&amp;scroll_back=1"),
+            ]:
+                body = self.client.get(f"/term/agent{query}").get_data(as_text=True)
+                self.assertIn(f'href="{expect}"', body, f"query={query}")
+
+    def test_homepage_ssr_term_links_carry_rank_state(self):
+        """SSR 首屏词链接必须带 requested view/sort/cat（默认项省略），
+        与前端 termHref 同口径，保证爬虫/首屏路径返回也恢复正确榜单。"""
+        ssr_card = {
+            "kind": "word", "id": "agent", "term": "Agent",
+            "term_display": "Agent", "display_zh": "智能体",
+            "dimension": "产品与应用", "news_cnt": 1, "hot": 10, "rise": 1,
+            "top_news": [{"title": "Agent startup funding", "title_zh": "智能体创业公司融资",
+                          "title_en": "Agent startup funding",
+                          "official_url": "https://example.test/news", "hot": 5}],
+        }
+        with patch.object(app_module, "_seo_enabled", return_value=True), \
+                patch.object(app_module, "_initial_terms_for_ssr",
+                             return_value=[ssr_card]) as ssr:
+            body = self.client.get("/?lang=zh&sort=hot").get_data(as_text=True)
+        self.assertIn('href="/term/agent?lang=zh&amp;sort=hot"', body)
+        ssr.assert_called_once_with(sort="hot", lang="zh")
+
+        with patch.object(app_module, "_seo_enabled", return_value=True), \
+                patch.object(app_module, "_initial_terms_for_ssr",
+                             return_value=[ssr_card]) as ssr:
+            body = self.client.get(
+                "/?lang=en&sort=new&cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF"
+            ).get_data(as_text=True)
+        self.assertIn('href="/term/agent?lang=en&amp;sort=new&amp;cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF"', body)
+        ssr.assert_called_once_with(sort="new", lang="en")
+
+        # 默认 Trending（rise/all/words）保持简洁链接
+        with patch.object(app_module, "_seo_enabled", return_value=True), \
+                patch.object(app_module, "_initial_terms_for_ssr",
+                             return_value=[ssr_card]):
+            body = self.client.get("/?lang=zh").get_data(as_text=True)
+        self.assertIn('href="/term/agent?lang=zh"', body)
+
     def test_word_api_accepts_explicit_language(self):
         detail = {"ok": True, "term": {}, "news": []}
         with patch.object(app_module, "_word_detail", return_value=detail) as build:
@@ -168,10 +230,13 @@ class LanguageRouteTest(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'return `/term/${escapeTerm(term)}?lang=${encodeURIComponent(LANG)}`;',
+            'return `/term/${escapeTerm(term)}?${p.toString()}`;',
             source,
         )
         self.assertIn('p.set("lang", LANG);', source)
+        self.assertIn('if (currentView !== "words") p.set("view", currentView);', source)
+        self.assertIn('if (currentSort !== "rise") p.set("sort", currentSort);', source)
+        self.assertIn('if (currentCat !== "all") p.set("cat", currentCat);', source)
         self.assertIn("if (!langFromURL &&", source)
 
     def test_ssr_cards_all_stay_inside_list_container(self):
