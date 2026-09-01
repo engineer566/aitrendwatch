@@ -464,6 +464,7 @@
 <script id="initial-terms-data" type="application/json">{{ initial_terms|tojson }}</script>
 <script id="initial-dimensions-data" type="application/json">{{ initial_dimensions|tojson }}</script>
 <script id="initial-dimension-counts-data" type="application/json">{{ initial_dimension_counts|tojson }}</script>
+<script id="initial-total-data" type="application/json">{{ initial_total|tojson }}</script>
 <script>
 const ADSENSE_ENABLED = {{ adsense_enabled | tojson }};
 const ADSENSE_CLIENT = {{ adsense_client | tojson }};
@@ -1232,6 +1233,14 @@ function readInitialDimensionCounts() {
     return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
   } catch (e) { return {}; }
 }
+function readInitialTotal() {
+  try {
+    const el = document.getElementById("initial-total-data");
+    const raw = el && el.textContent.trim();
+    const v = raw ? parseInt(raw, 10) : NaN;
+    return isFinite(v) && v > 0 ? v : 0;
+  } catch (e) { return 0; }
+}
 async function fetchAll({ initial = false } = {}) {
   // 首次加载阶段锁定分类计数，避免 SSR(20条)→全量(100条)的数值跳变
   if (initial) lockCatCounts();
@@ -1253,11 +1262,13 @@ async function fetchAll({ initial = false } = {}) {
         } else if (!dimensionList.length) {
           dimensionList = Object.keys(DIMS_CATEGORY);
         }
-        // 用后端给出的首屏维度计数作为稳定计数，避免 SSR(20条) 阶段就把未出现的维度过滤掉。
-        // all 标签的总数仍用实际卡片数，避免跨维度计数之和与列表可见数量不一致。
+        // 用后端给出的全量维度计数作为稳定计数：首屏分类条即显示最终数值
+        // （all=全量总数、各维度=全量计数），全量列表到达后数字不再跳变。
+        // SSR 只渲染前 20 条列表，但计数是 100 条全量口径。
         _stableCatCounts = (ssrCounts && Object.keys(ssrCounts).length)
           ? { ...ssrCounts } : null;
-        _stableCatTotal = ssr.length;
+        const ssrTotal = readInitialTotal();
+        _stableCatTotal = ssrTotal > 0 ? ssrTotal : ssr.length;
       }
       render();
     } else if (!allData.length) {

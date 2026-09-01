@@ -285,6 +285,29 @@ def _initial_terms_for_ssr(sort="rise", lang="zh"):
         return []
 
 
+def _initial_dimension_meta_for_ssr(sort="rise", lang="zh"):
+    """首页分类条 SSR 元数据：基于全量词卡（与 /api/stream 同口径）计算。
+
+    返回 (dimension_list, dimension_counts, total)。分类条首屏直接显示全量
+    计数，避免加载完成后 all 20→100、other 1→5 的数值跳变闪烁——标签数字
+    从一开始就是最终值，全量列表到达后数字不再变化。
+    任何失败返回 ([], {}, 0)。
+    """
+    try:
+        if not terms_mod:
+            return [], {}, 0
+        cards, _ = terms_mod.get_word_cards(sort=sort, lang=lang,
+                                            limit=WORD_STREAM_LIMIT)
+        cards = _dedupe_stream_cards(cards)[:WORD_STREAM_LIMIT]
+        if not cards:
+            return [], {}, 0
+        return (_stream_dimension_list(cards, "words"),
+                _stream_dimension_counts(cards, "words"),
+                len(cards))
+    except Exception:
+        return [], {}, 0
+
+
 def _sitemap_terms():
     """sitemap.xml 用词列表：读 terms 词主表（词维度重构），按热度降序。
 
@@ -661,9 +684,14 @@ def index():
         _initial_terms_for_ssr(sort=requested_sort, lang=lang)
         if _seo_enabled() and requested_view != "news" else []
     )
-    # 前端首屏分类条需要完整的维度顺序与计数，避免 SSR 阶段只出现部分维度就把其它标签“弄丢”。
-    initial_dimensions = _stream_dimension_list(initial_terms, "words") if initial_terms else []
-    initial_dimension_counts = _stream_dimension_counts(initial_terms, "words") if initial_terms else {}
+    # 分类条首屏元数据：基于全量词卡计算（与 /api/stream 同口径），
+    # 计数首屏即显示全量值，避免加载完成后 all 20→100 的数值跳变闪烁。
+    if initial_terms:
+        (initial_dimensions, initial_dimension_counts,
+         initial_total) = _initial_dimension_meta_for_ssr(
+             sort=requested_sort, lang=lang)
+    else:
+        initial_dimensions, initial_dimension_counts, initial_total = [], {}, 0
     return render_template("index.html", sources=SOURCE_META,
                            sponsors=sponsors, site_name=config.SITE_NAME,
                            site_desc=SITE_DESC_EN if lang == "en" else SITE_DESC,
@@ -672,6 +700,7 @@ def index():
                            initial_terms=initial_terms,
                            initial_dimensions=initial_dimensions,
                            initial_dimension_counts=initial_dimension_counts,
+                           initial_total=initial_total,
                            ssr_term_qs=ssr_term_qs,
                            adsense_enabled=config.ADSENSE_ENABLED,
                            adsense_client=config.ADSENSE_CLIENT,
