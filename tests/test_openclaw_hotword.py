@@ -87,7 +87,7 @@ class OpenclawHotwordTests(unittest.TestCase):
     def test_openclaw_in_lexicon_degradation_extraction(self):
         kws = self.terms.extract_keywords_dict(
             "OpenClaw Releases OpenClaw 2.0: Guided Model Setup")
-        self.assertIn("openclaw", kws)
+        self.assertIn("OpenClaw", kws)
 
     def test_openclaw_has_static_explanation(self):
         zh = self.terms.get_term_explanation("openclaw", "zh")

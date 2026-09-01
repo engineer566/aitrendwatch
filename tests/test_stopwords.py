@@ -93,8 +93,8 @@ class StopwordTests(unittest.TestCase):
         self.assertNotIn("llm", t.extract_keywords_dict("LLM breakthrough today"))
         # real terms survive; "ai" is never returned for an OpenAI headline
         kws = t.extract_keywords_dict("OpenAI releases GPT-5")
-        self.assertIn("gpt-5", kws)
-        self.assertIn("openai", kws)
+        self.assertIn("GPT-5", kws)
+        self.assertIn("OpenAI", kws)
         self.assertNotIn("ai", kws)
 
     def test_refresh_words_skips_stopword_keywords(self):
