@@ -7,7 +7,7 @@
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。head 最前的主题初始化脚本（在 `<style>` 之前）同时给 `<html>` 设内联背景/文字色（`#f5f6f8`/`#1c2130` 或 `#0f1117`/`#e6e8ee`），避免亮色用户首帧「先暗后亮」闪烁；`#theme-btn` 切换时同步更新内联色（20260901 #12）。
 - **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:474`）+ `t(k)` 翻译函数（`index.html:520`）+ `LANG` 状态（`index.html:535`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
 - **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:463`）+ `<script id="initial-terms-data">`（`index.html:464`）+ `<script id="initial-dimensions-data">`（`index.html:465`）+ `<script id="initial-dimension-counts-data">`（`index.html:466`）。
-- **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:164,175,196,211`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:313,322`）。
+- **SEO**：全站统一 meta 标签体系（title/description/keywords/OG/Twitter Card/og:image）；`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:169,182,203,218`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 有 WebSite+SearchAction + ItemList ld+json（`index.html:325,339`）；`hf.html` 有 CollectionPage + ItemList ld+json（`hf.html:216,228`）；搜索页 `noindex,follow` 防重复索引。所有页面引用 `/og-image.png` 社交分享图。
 
 ---
 
@@ -95,19 +95,10 @@
 
 ---
 
-## templates/admin.html  （353 行）— 赞助位管理后台
+## templates/admin.html  （353 行）— 赞助位管理后台（已废弃，保留备用）
 
-| 区块 | 行号 | 说明 |
-|------|------|------|
-| 样式 + 表单 | ~1–227 | 赞助位列表 + 编辑表单 |
-| 主 JS | 228 | `<script>` |
-| ├ upsert | 275 | `fetch("/admin/sponsors", {method:POST, body})` |
-| ├ toggle | 290 | `fetch("/admin/sponsors/<id>/toggle", {method:POST})` |
-| ├ delete | 298 | `fetch("/admin/sponsors/<id>/delete", {method:POST})` |
-| └ stats | 307 | `fetch("/admin/stats")` |
-
-**引用 API**：`/admin/sponsors`、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/admin`（`app.py:1427`，需 admin）。
+> ⚠️ 已合并到 `monitor.html`。`/admin` 路由重定向到 `/monitor#sponsors`。
+> 此文件保留作为历史参考，不再被任何路由渲染。
 
 ---
 
@@ -135,19 +126,24 @@
 
 ---
 
-## templates/monitor.html  （588 行）— 流量监控页
+## templates/monitor.html  （928 行）— 统一管理后台（流量监控 + 赞助位管理）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
 | 主题 JS | 4–15 | 主题初始化（data-theme + `<html>` 内联背景/文字色，防闪烁，与首页同 key，head 最前） |
-| 样式（含 chart） | 123–137 | `.chart` 柱状图样式 |
-| 主题切换 | 303–315 | `#theme-btn` |
-| 30 天趋势图 | 248–250 | `#chart` + `#chart-x`（纯 CSS 柱状图，按 UV 口径） |
-| 主 JS | 301 | `<script>` |
-| ├ 主题切换逻辑 | 307 | |
-| ├ 图表渲染 | 341, 370–392 | `chartEl`/`chartXEl`/`chartSub`；`renderChart`（UV 柱高 + 峰值 UV 副标题） |
-| └ 数据拉取 | 549–585 | `fetch("/monitor/api", {headers:{Accept:application/json}})` |
+| 样式（含 chart + tab + 赞助位表单） | 30–260 | 设计 token + 柱状图 + Tab 导航 + 赞助位管理样式 |
+| Tab 导航 | ~280 | `📊 流量监控` / `📋 赞助位管理` 两个 tab，URL hash 记忆 |
+| Tab 1: 流量监控面板 | ~290–400 | PV/UV 概览 + 趋势图 + 地域分布 + 访问明细 + 搜索统计 + 漏斗 |
+| Tab 2: 赞助位管理面板 | ~405–530 | 统计概览 + 赞助位列表 + 新增/编辑表单（从 admin.html 迁移） |
+| 主 JS | ~540 | `<script>` |
+| ├ Tab 切换 `switchTab` | ~545 | hash 记忆 + 懒加载赞助位数据 |
+| ├ 主题切换逻辑 | ~570 | |
+| ├ 流量监控渲染 | ~590–720 | `renderStats`/`renderChart`/`renderRegions`/`renderRecent`/`renderSearchStats`/`renderFunnel` |
+| ├ 流量监控数据拉取 `loadMonitor` | ~730 | `fetch("/monitor/api")` + `/monitor/api/search` + `/monitor/api/search/funnel` |
+| ├ 赞助位 CRUD | ~770–870 | `loadSponsors`/`loadSponsorStats`/`saveSlot`/`toggleSlot`/`deleteSlot`/`editSlot` |
+| └ 自动刷新 | ~920 | 60s 轮询（仅 monitor tab 激活时） |
 
-**引用 API**：`/monitor/api?days=N`。
-**渲染路由**：`/monitor`（`app.py:1469`，需 admin）。
-**数据**：PV/UV/地域分布（来自 `visits` 表，`store.monitor_stats`）。
+**引用 API**：`/monitor/api?days=N`、`/monitor/api/search`、`/monitor/api/search/funnel`、`/admin/sponsors/list`、`/admin/sponsors`（POST）、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
+**渲染路由**：`/monitor`（`app.py:1512`，需 admin）。
+**旧 `/admin` 路由**：重定向到 `/monitor#sponsors`（`app.py:1462`）。
+**数据**：PV/UV/地域分布（`store.monitor_stats`）+ 赞助位 CRUD（`store.list_slots`/`upsert_slot`/`toggle_slot`/`delete_slot`）。

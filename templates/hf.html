@@ -57,8 +57,9 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ 'HuggingFace Open-Source Models' if is_en else 'HuggingFace 开源模型榜' }} · {{ site_name }}</title>
+<title>{{ 'HuggingFace Open-Source Model Leaderboard – Trending, Likes & Downloads' if is_en else 'HuggingFace 开源模型榜 · 趋势 / 点赞 / 下载排行' }} · {{ site_name }}</title>
 <meta name="description" content="{{ site_desc }}">
+<meta name="keywords" content="{{ 'HuggingFace,open-source models,AI leaderboard,trending models,machine learning' if is_en else 'HuggingFace,开源模型,AI排行榜,趋势模型,机器学习' }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -68,14 +69,16 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ 'HuggingFace Open-Source Models' if is_en else 'HuggingFace 开源模型榜' }} · {{ site_name }}">
+<meta property="og:title" content="{{ 'HuggingFace Open-Source Model Leaderboard – Trending, Likes & Downloads' if is_en else 'HuggingFace 开源模型榜 · 趋势 / 点赞 / 下载排行' }} · {{ site_name }}">
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png">{% endif %}
 <!-- Twitter Card -->
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="{{ 'HuggingFace Open-Source Models' if is_en else 'HuggingFace 开源模型榜' }} · {{ site_name }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ 'HuggingFace Open-Source Model Leaderboard – Trending, Likes & Downloads' if is_en else 'HuggingFace 开源模型榜 · 趋势 / 点赞 / 下载排行' }} · {{ site_name }}">
 <meta name="twitter:description" content="{{ site_desc }}">
+{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image.png">{% endif %}
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
@@ -209,12 +212,25 @@
     .page-title { font-size: 17px; }
   }
 </style>
+{% if seo_enabled %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "name": {{ ('HuggingFace Open-Source Model Leaderboard' if is_en else 'HuggingFace 开源模型榜') | tojson }},
+  "description": {{ site_desc | tojson }},
+  "url": {{ (canonical or '') | tojson }},
+  "inLanguage": {{ ('en' if is_en else 'zh-CN') | tojson }}
+}
+</script>
+{% endif %}
 {% if seo_enabled and models %}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "ItemList",
   "name": {{ ('HuggingFace Open-Source Model Leaderboard' if is_en else 'HuggingFace 开源模型榜') | tojson }},
+  "numberOfItems": {{ models | length }},
   "itemListElement": [
     {% for m in models[:20] %}
     {
@@ -248,7 +264,7 @@
 
 <main>
   <div class="page-head">
-    <div class="page-title">🤗 {% if is_en %}HuggingFace Open-Source Models{% else %}HuggingFace 开源模型榜{% endif %}</div>
+    <h2 class="page-title">🤗 {% if is_en %}HuggingFace Open-Source Models{% else %}HuggingFace 开源模型榜{% endif %}</h2>
     <div class="page-desc">
       {% if is_en %}
       Official HuggingFace data — the most reliable view of open-source AI momentum. Sort by trend / likes / downloads.
@@ -258,12 +274,12 @@
     </div>
   </div>
 
-  <div class="sort-row">
+  <nav class="sort-row" aria-label="{{ 'Sort options' if is_en else '排序选项' }}">
     <a class="sort-pill {{ 'active' if sort == 'trending' }}" href="/hf?sort=trending&lang={{ lang }}">📈 {% if is_en %}Trending{% else %}趋势{% endif %}</a>
     <a class="sort-pill {{ 'active' if sort == 'likes' }}" href="/hf?sort=likes&lang={{ lang }}">❤ {% if is_en %}Likes{% else %}点赞{% endif %}</a>
     <a class="sort-pill {{ 'active' if sort == 'downloads' }}" href="/hf?sort=downloads&lang={{ lang }}">↓ {% if is_en %}Downloads{% else %}下载{% endif %}</a>
     <span class="updated" id="updated-at" data-ts="{{ fetched_at }}">—</span>
-  </div>
+  </nav>
   <div class="count-line">{{ models|length }} {% if is_en %}models{% else %}个模型{% endif %}</div>
 
   {% for m in models %}

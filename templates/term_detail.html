@@ -24,8 +24,11 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ word.term.term }} · {{ site_name }}</title>
+{% set page_title = (word.term.display_zh ~ '（' ~ word.term.term ~ '）' if (lang == 'zh' and word.term.display_zh and word.term.display_zh != word.term.term) else word.term.term) %}
+{% set page_keywords = ([word.term.term] + (word.term.tags or [])[:5]) | join(',') %}
+<title>{{ page_title }} · {{ 'AI Trends & News' if is_en else 'AI 热点动态' }} · {{ site_name }}</title>
 <meta name="description" content="{{ site_desc }}">
+<meta name="keywords" content="{{ page_keywords }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -35,14 +38,16 @@
 <!-- Open Graph -->
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ word.term.term }} · {{ site_name }}">
+<meta property="og:title" content="{{ page_title }} · {{ 'AI Trends & News' if is_en else 'AI 热点动态' }} · {{ site_name }}">
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{% if lang == 'en' %}en_US{% else %}zh_CN{% endif %}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png">{% endif %}
 <!-- Twitter Card -->
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="{{ word.term.term }} · {{ site_name }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ page_title }} · {{ 'AI Trends & News' if is_en else 'AI 热点动态' }} · {{ site_name }}">
 <meta name="twitter:description" content="{{ site_desc }}">
+{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image.png">{% endif %}
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
@@ -166,9 +171,11 @@
   "@context": "https://schema.org",
   "@type": "DefinedTerm",
   "name": {{ (word.term.term or '') | tojson }},
-  "description": {{ (site_desc or '') | tojson }},
+  {% if word.term.display_zh %}"alternateName": {{ word.term.display_zh | tojson }},{% endif %}
+  "description": {{ (word.term.explain or site_desc or '') | tojson }},
   {% if word.term.news_cnt %}"usageInfo": "{{ word.term.news_cnt }} {{ 'related reports aggregated' if is_en else '篇相关报道' }}",{% endif %}
-  "url": {{ (canonical or '') | tojson }}
+  "url": {{ (canonical or '') | tojson }},
+  "inLanguage": {{ ('en' if is_en else 'zh-CN') | tojson }}
 }
 </script>
 {% if word.news %}
@@ -236,10 +243,10 @@
 <div class="word-card">
   <div class="term-head">
     <span class="cat-badge">{% if word.hf %}{% if word.legacy_hf %}🤗 {% if is_en %}HF Model{% else %}HF 模型{% endif %}{% else %}🧠 / 🤗{% endif %}{% else %}🔤 {% if is_en %}Word{% else %}热词{% endif %}{% endif %}</span>
-    <span class="term-name">
+    <h2 class="term-name">
       {% if lang == 'zh' and word.term.display_zh %}<span class="zh">{{ word.term.display_zh }}</span>{% if word.term.term and word.term.display_zh != word.term.term %}（<a href="{{ word.hf.official_url or home_url }}">{{ word.term.term }}</a>）{% endif %}
       {% else %}<a href="{{ word.hf.official_url or home_url }}" target="_blank" rel="noopener">{{ word.term.term }}</a>{% endif %}
-    </span>
+    </h2>
     {% if word.term.origin == 'hf' %}<span class="origin-badge">🤗 HuggingFace</span>{% elif word.term.origin == 'both' %}<span class="origin-badge">📰 + 🤗</span>{% endif %}
   </div>
   {% if word.term.explain %}
@@ -285,7 +292,7 @@
 </div>
 
 {% if word.news %}
-<div class="section-title">🗞 {% if is_en %}Related reports{% else %}相关报道{% endif %}（{{ word.term.news_cnt }}）</div>
+<h3 class="section-title">🗞 {% if is_en %}Related reports{% else %}相关报道{% endif %}（{{ word.term.news_cnt }}）</h3>
 <div class="word-card news-list">
   {% for n in word.news %}
   <div class="news-item">

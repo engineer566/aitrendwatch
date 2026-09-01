@@ -67,7 +67,7 @@
 
 ## SQLite Schema
 
-### sponsors.db（`store.py:80` `init_db`，路径 `config.DB_PATH`）
+### sponsors.db（`store.py:80` `init_db`，路径 `config.DB_PATH`，含用户行为事件表 v3）
 
 **`sponsor_slots`** — 赞助位
 | 列 | 类型 | 说明 |
@@ -94,6 +94,22 @@
 | date | TEXT | YYYY-MM-DD，索引化 |
 - 索引：`idx_visits_date`、`idx_visits_ip_date`。
 - PV = 行数，UV = `COUNT(DISTINCT ip)`。
+
+**`user_events`** — 通用用户行为事件（埋点系统 v3，`store.py:670`）
+| 列 | 类型 | 说明 |
+|----|------|------|
+| id | INT PK AUTO | |
+| event_type | TEXT | page_view / click / search / word_expand / word_detail / view_switch / lang_switch / sort_switch / cat_filter / link_click / search_click |
+| event_data | TEXT | JSON 附加数据（如 {term, url, from_view, ...}），限长 2000 |
+| ip | TEXT | 客户端 IP |
+| country | TEXT | ISO 国家码或 Unknown |
+| session_id | TEXT | 前端生成的会话 ID（localStorage），串联同一用户轨迹 |
+| path | TEXT | 当前页面路径 |
+| ts | TEXT | 完整 ISO 时间戳 |
+| date | TEXT | YYYY-MM-DD，索引化 |
+- 索引：`idx_events_date`、`idx_events_type_date`。
+- 写入函数：`record_event()`（单条）、`record_events_batch()`（批量事务）。
+- 查询函数：`event_stats(days)` → 按类型计数 + 每日趋势 + 近期明细。
 
 ### news.db（`news_store.py:36` `init_db`，路径 `config.NEWS_DB_PATH`）
 

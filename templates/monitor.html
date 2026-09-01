@@ -26,7 +26,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>{{ site_name }} · 流量监控</title>
+<title>{{ site_name }} · 管理后台</title>
 <style>
   /* ---- 设计 token（与首页 index.html 完全一致）---- */
   :root {
@@ -76,7 +76,7 @@
     border-bottom: 1px solid var(--border); padding: 12px 24px;
   }
   .header-inner {
-    max-width: 860px; margin: 0 auto;
+    max-width: 1000px; margin: 0 auto;
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   }
   h1 {
@@ -95,8 +95,31 @@
          padding: 6px 12px; color: var(--text-dim); transition: all .15s; font-size: 13px;
          text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
   .btn:hover { color: var(--text); border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover { opacity: .9; }
+  .btn.danger { color: var(--accent-2); }
+  .btn.danger:hover { border-color: var(--accent-2); }
+  .btn.sm { padding: 4px 10px; font-size: 12px; }
 
-  main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
+  main { max-width: 1000px; margin: 14px auto 40px; padding: 0 24px; }
+
+  /* ---- Tab 导航 ---- */
+  .tab-nav {
+    display: flex; gap: 4px; margin-bottom: 18px;
+    border-bottom: 2px solid var(--border); padding-bottom: 0;
+  }
+  .tab-btn {
+    padding: 10px 20px; font-size: 14px; font-weight: 600;
+    color: var(--text-dim); border: none; background: none;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: all .15s; cursor: pointer;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent); border-bottom-color: var(--accent);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
 
   /* ---- 概览 stat 行 ---- */
   .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
@@ -148,7 +171,7 @@
   .region-count { font-size: 13px; font-weight: 600; min-width: 50px; text-align: right; }
   .region-pct { font-size: 12px; color: var(--text-dim); min-width: 44px; text-align: right; }
 
-  /* ---- 近期访问明细表 ---- */
+  /* ---- 表格通用 ---- */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--border); }
   th { color: var(--text-dim); font-weight: 600; font-size: 12px; }
@@ -210,95 +233,281 @@
   .funnel-count { font-variant-numeric: tabular-nums; text-align: right; color: var(--text-dim); }
   .funnel-count strong { color: var(--text); font-weight: 600; }
 
+  /* ---- 赞助位管理样式（从 admin.html 迁移）---- */
+  .pill {
+    display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+  }
+  .pill.on { background: rgba(62,207,142,.15); color: var(--green); }
+  .pill.off { background: rgba(139,145,163,.15); color: var(--text-dim); }
+  .slot-id { font-family: ui-monospace, monospace; font-size: 12px; color: var(--accent); }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; }
+  input, textarea, select {
+    width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font-size: 13px; outline: none; transition: border-color .15s; font-family: inherit;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+  .form-actions { margin-top: 16px; display: flex; gap: 10px; }
+
+  .msg { font-size: 13px; padding: 8px 12px; border-radius: 8px; margin-top: 12px; display: none; }
+  .msg.ok { display: block; background: rgba(62,207,142,.12); color: var(--green); }
+  .msg.err { display: block; background: rgba(255,93,143,.12); color: var(--accent-2); }
+
   @media (max-width: 640px) {
     header { padding: 10px 16px; }
     main { padding: 0 16px; }
     .stats-row { grid-template-columns: repeat(2, 1fr); }
     .region-code { width: 48px; }
     .region-pct { display: none; }
+    .form-grid { grid-template-columns: 1fr; }
+    .tab-btn { padding: 8px 14px; font-size: 13px; }
   }
 </style>
 </head>
 <body>
 <header>
   <div class="header-inner">
-    <h1>📊 {{ site_name }} 流量监控</h1>
+    <h1>🛠 {{ site_name }} 管理后台</h1>
     <div class="header-right">
-      <span><span class="live-dot"></span> 实时</span>
+      <span id="live-indicator"><span class="live-dot"></span> 实时</span>
       <span id="last-update">—</span>
-      <button class="btn" id="refresh-btn" title="刷新">🔄</button>
+      <button class="btn" id="refresh-btn" title="刷新数据">🔄</button>
       <button class="btn" id="theme-btn" title="切换深浅色">🌙</button>
-      <a class="btn" href="/admin">返回后台</a>
-      <a class="btn" href="/">查看首页</a>
+      <a class="btn" href="/" target="_blank">查看首页</a>
+      <a class="btn" href="/admin/logout">退出登录</a>
     </div>
   </div>
 </header>
 
 <main>
-  <!-- 概览 stat 行 -->
-  <div class="stats-row" id="stats-row">
-    <div class="stat-box"><div class="label">今日 PV</div><div class="value accent num" id="today-pv">—</div></div>
-    <div class="stat-box"><div class="label">今日独立 IP</div><div class="value green num" id="today-uv">—</div></div>
-    <div class="stat-box"><div class="label">近 30 天 PV</div><div class="value purple num" id="total-pv">—</div></div>
-    <div class="stat-box"><div class="label">近 30 天独立 IP</div><div class="value orange num" id="total-uv">—</div></div>
+  <!-- Tab 导航 -->
+  <div class="tab-nav">
+    <button class="tab-btn active" data-tab="monitor" onclick="switchTab('monitor')">📊 流量监控</button>
+    <button class="tab-btn" data-tab="sponsors" onclick="switchTab('sponsors')">📋 赞助位管理</button>
   </div>
 
-  <!-- 每日趋势柱状图 -->
-  <div class="card">
-    <h2>📈 近 30 天趋势（独立 IP）<span class="sub" id="chart-sub"></span></h2>
-    <div class="chart" id="chart"></div>
-    <div class="chart-x" id="chart-x"></div>
-  </div>
-
-  <!-- IP 地域分布 -->
-  <div class="card">
-    <h2>🌍 IP 地域分布 <span class="sub">按独立 IP 数 · 近 30 天</span></h2>
-    <div id="regions"></div>
-  </div>
-
-  <!-- 近期访问明细 -->
-  <div class="card">
-    <h2>🕐 近期访问明细 <span class="sub">最近 30 条</span></h2>
-    <div id="recent-wrap"></div>
-  </div>
-
-  <!-- 搜索词统计 -->
-  <div class="card">
-    <h2>🔍 用户搜索关键词 <span class="sub" id="search-sub">近 30 天</span></h2>
-    <div class="stats-row" id="search-stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
-      <div class="stat-box"><div class="label">近 30 天搜索次数</div><div class="value accent num" id="search-total">—</div></div>
-      <div class="stat-box"><div class="label">独立关键词数</div><div class="value green num" id="search-unique">—</div></div>
-      <div class="stat-box"><div class="label">今日搜索次数</div><div class="value purple num" id="search-today">—</div></div>
+  <!-- ==================== Tab 1: 流量监控 ==================== -->
+  <div class="tab-panel active" id="panel-monitor">
+    <!-- 概览 stat 行 -->
+    <div class="stats-row" id="stats-row">
+      <div class="stat-box"><div class="label">今日 PV</div><div class="value accent num" id="today-pv">—</div></div>
+      <div class="stat-box"><div class="label">今日独立 IP</div><div class="value green num" id="today-uv">—</div></div>
+      <div class="stat-box"><div class="label">近 30 天 PV</div><div class="value purple num" id="total-pv">—</div></div>
+      <div class="stat-box"><div class="label">近 30 天独立 IP</div><div class="value orange num" id="total-uv">—</div></div>
     </div>
-    <h2 style="font-size:13px;margin-top:18px">热门搜索词 Top 20 <span class="sub">按次数降序</span></h2>
-    <div id="search-top"></div>
-    <h2 style="font-size:13px;margin-top:18px">近期搜索词 <span class="sub">最近 30 条</span></h2>
-    <div id="search-recent"></div>
+
+    <!-- 每日趋势柱状图 -->
+    <div class="card">
+      <h2>📈 近 30 天趋势（独立 IP）<span class="sub" id="chart-sub"></span></h2>
+      <div class="chart" id="chart"></div>
+      <div class="chart-x" id="chart-x"></div>
+    </div>
+
+    <!-- IP 地域分布 -->
+    <div class="card">
+      <h2>🌍 IP 地域分布 <span class="sub">按独立 IP 数 · 近 30 天</span></h2>
+      <div id="regions"></div>
+    </div>
+
+    <!-- 近期访问明细 -->
+    <div class="card">
+      <h2>🕐 近期访问明细 <span class="sub">最近 30 条</span></h2>
+      <div id="recent-wrap"></div>
+    </div>
+
+    <!-- 搜索词统计 -->
+    <div class="card">
+      <h2>🔍 用户搜索关键词 <span class="sub" id="search-sub">近 30 天</span></h2>
+      <div class="stats-row" id="search-stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+        <div class="stat-box"><div class="label">近 30 天搜索次数</div><div class="value accent num" id="search-total">—</div></div>
+        <div class="stat-box"><div class="label">独立关键词数</div><div class="value green num" id="search-unique">—</div></div>
+        <div class="stat-box"><div class="label">今日搜索次数</div><div class="value purple num" id="search-today">—</div></div>
+      </div>
+      <h2 style="font-size:13px;margin-top:18px">热门搜索词 Top 20 <span class="sub">按次数降序</span></h2>
+      <div id="search-top"></div>
+      <h2 style="font-size:13px;margin-top:18px">近期搜索词 <span class="sub">最近 30 条</span></h2>
+      <div id="search-recent"></div>
+    </div>
+
+    <!-- v2: 搜索→点击漏斗（哪些搜索词真有转化） -->
+    <div class="card">
+      <h2>🎯 搜索→点击漏斗 <span class="sub" id="funnel-sub">近 30 天 · Top 15</span></h2>
+      <div class="funnel-stats" id="funnel-stats-row">
+        <div class="stat-box"><div class="label">近 30 天搜索次数</div><div class="value accent num" id="funnel-total-search">—</div></div>
+        <div class="stat-box"><div class="label">近 30 天点击次数</div><div class="value green num" id="funnel-total-click">—</div></div>
+        <div class="stat-box"><div class="label">整体点击率</div><div class="value purple num" id="funnel-overall-rate">—</div></div>
+      </div>
+      <div class="funnel-row" style="font-size:11px;color:var(--text-dim);font-weight:600;border-bottom:2px solid var(--border)">
+        <span>搜索词</span>
+        <span style="text-align:right">搜索</span>
+        <span style="text-align:right">点击</span>
+        <span style="text-align:right">点击率</span>
+      </div>
+      <div id="funnel-list"></div>
+    </div>
+
+    <!-- v3: 用户行为事件统计（埋点系统） -->
+    <div class="card">
+      <h2>📍 用户行为事件 <span class="sub" id="events-sub">近 30 天 · 埋点追踪</span></h2>
+      <div class="stats-row" id="events-stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+        <div class="stat-box"><div class="label">近 30 天事件总数</div><div class="value accent num" id="events-total">—</div></div>
+        <div class="stat-box"><div class="label">事件类型数</div><div class="value green num" id="events-type-count">—</div></div>
+        <div class="stat-box"><div class="label">今日事件数</div><div class="value purple num" id="events-today">—</div></div>
+        <div class="stat-box"><div class="label">活跃会话数</div><div class="value orange num" id="events-sessions">—</div></div>
+      </div>
+      <h2 style="font-size:13px;margin-top:18px">事件类型分布 <span class="sub">按次数降序</span></h2>
+      <div id="events-by-type"></div>
+      <h2 style="font-size:13px;margin-top:18px">每日事件趋势 <span class="sub">近 30 天</span></h2>
+      <div class="chart" id="events-chart" style="height:100px"></div>
+      <div class="chart-x" id="events-chart-x"></div>
+      <h2 style="font-size:13px;margin-top:18px">近期事件明细 <span class="sub">最近 50 条</span></h2>
+      <div id="events-recent"></div>
+    </div>
   </div>
 
-  <!-- v2: 搜索→点击漏斗（哪些搜索词真有转化） -->
-  <div class="card">
-    <h2>🎯 搜索→点击漏斗 <span class="sub" id="funnel-sub">近 30 天 · Top 15</span></h2>
-    <div class="funnel-stats" id="funnel-stats-row">
-      <div class="stat-box"><div class="label">近 30 天搜索次数</div><div class="value accent num" id="funnel-total-search">—</div></div>
-      <div class="stat-box"><div class="label">近 30 天点击次数</div><div class="value green num" id="funnel-total-click">—</div></div>
-      <div class="stat-box"><div class="label">整体点击率</div><div class="value purple num" id="funnel-overall-rate">—</div></div>
+  <!-- ==================== Tab 2: 赞助位管理 ==================== -->
+  <div class="tab-panel" id="panel-sponsors">
+    <!-- 赞助位统计概览 -->
+    <h2 style="font-size:16px;margin-bottom:12px">📊 近 30 天赞助位统计</h2>
+    <div class="card">
+      <div class="stats-row" id="sponsor-stats-row">
+        <div class="stat-box"><div class="label">全站 PV</div><div class="value accent num" id="sp-stat-pv">—</div></div>
+        <div class="stat-box"><div class="label">总曝光</div><div class="value green num" id="sp-stat-imp">—</div></div>
+        <div class="stat-box"><div class="label">总点击</div><div class="value purple num" id="sp-stat-click">—</div></div>
+        <div class="stat-box"><div class="label">点击率</div><div class="value orange num" id="sp-stat-ctr">—</div></div>
+      </div>
+      <table>
+        <thead><tr><th>赞助商</th><th>位置</th><th>曝光</th><th>点击</th><th>点击率</th></tr></thead>
+        <tbody id="sp-stats-body"><tr><td colspan="5" class="empty-state">加载中…</td></tr></tbody>
+      </table>
     </div>
-    <div class="funnel-row" style="font-size:11px;color:var(--text-dim);font-weight:600;border-bottom:2px solid var(--border)">
-      <span>搜索词</span>
-      <span style="text-align:right">搜索</span>
-      <span style="text-align:right">点击</span>
-      <span style="text-align:right">点击率</span>
+
+    <!-- 赞助位列表 -->
+    <h2 style="font-size:16px;margin:24px 0 12px">📋 赞助位列表</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>赞助商</th><th>位置(slot_id)</th><th>地域</th><th>状态</th>
+            <th>投放期</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="slots-body">
+          <tr><td colspan="6" class="empty-state">加载中…</td></tr>
+        </tbody>
+      </table>
     </div>
-    <div id="funnel-list"></div>
+
+    <!-- 新增 / 编辑表单 -->
+    <h2 id="form-title" style="font-size:16px;margin:24px 0 12px">➕ 新增赞助位</h2>
+    <div class="card">
+      <form id="sponsor-form" onsubmit="return saveSlot(event)">
+        <input type="hidden" name="_edit" id="_edit" value="">
+        <div class="form-grid">
+          <div>
+            <label>slot_id（位置标识）</label>
+            <input name="slot_id" id="f-slot_id" required placeholder="top-banner / inline-1 / footer">
+          </div>
+          <div>
+            <label>赞助商名称</label>
+            <input name="name" id="f-name" placeholder="Acme AI">
+          </div>
+          <div class="full">
+            <label>主文案</label>
+            <input name="text" id="f-text" placeholder="最懂开发者的 AI 推理平台">
+          </div>
+          <div class="full">
+            <label>副文案（可选）</label>
+            <input name="subtext" id="f-subtext" placeholder="免费试用，无需信用卡">
+          </div>
+          <div>
+            <label>跳转链接 link_url</label>
+            <input name="link_url" id="f-link_url" type="url" placeholder="https://acme.com">
+          </div>
+          <div>
+            <label>logo 图片 URL（可选）</label>
+            <input name="image_url" id="f-image_url" type="url" placeholder="https://acme.com/logo.png">
+          </div>
+          <div>
+            <label>地域定向</label>
+            <select name="region" id="f-region">
+              <option value="all">all（全部）</option>
+              <option value="zh">zh（中文区）</option>
+              <option value="global">global（国际）</option>
+            </select>
+          </div>
+          <div>
+            <label>CTA 按钮文字</label>
+            <input name="cta_text" id="f-cta_text" value="了解" placeholder="了解 / 试用 / 立即查看">
+          </div>
+          <div>
+            <label>投放起始（可空=立即）</label>
+            <input name="start_date" id="f-start_date" type="date">
+          </div>
+          <div>
+            <label>投放结束（可空=长期）</label>
+            <input name="end_date" id="f-end_date" type="date">
+          </div>
+          <div>
+            <label>排序权重（数字越小越靠前）</label>
+            <input name="sort_order" id="f-sort_order" type="number" value="0">
+          </div>
+          <div>
+            <label>状态</label>
+            <select name="active" id="f-active">
+              <option value="1">投放中</option>
+              <option value="0">已暂停</option>
+            </select>
+          </div>
+          <div class="full">
+            <label>自定义 banner HTML（可选，覆盖上方文案；仅白名单标签 a/b/strong/em/i/br/span/p）</label>
+            <textarea name="banner_html" id="f-banner_html" placeholder='<a href="https://acme.com"><strong>Acme</strong> — 立即试用</a>'></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">保存</button>
+          <button type="button" class="btn" onclick="resetForm()">清空 / 取消编辑</button>
+        </div>
+        <div class="msg" id="form-msg"></div>
+      </form>
+    </div>
   </div>
 </main>
 
 <footer>
-  仅监控访问量与独立 IP（含地域）· 不含广告指标 · 反代头优先 + GeoLite2 兜底
+  流量监控 · 赞助位管理 · 统一管理后台
 </footer>
 
 <script>
+// ==================== Tab 切换 ====================
+let currentTab = 'monitor';
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+  // 更新 URL hash 以便书签/分享
+  history.replaceState(null, '', '#' + tab);
+  // 切换到赞助位 tab 时自动加载数据
+  if (tab === 'sponsors' && !sponsorsLoaded) {
+    loadSponsors();
+    loadSponsorStats();
+  }
+  // 更新 live indicator 可见性
+  document.getElementById('live-indicator').style.display = tab === 'monitor' ? '' : 'none';
+}
+
+// 页面加载时根据 hash 恢复 tab
+(function initTab() {
+  const hash = location.hash.replace('#', '');
+  if (hash === 'sponsors') {
+    switchTab('sponsors');
+  }
+})();
+
 // ==================== 主题切换（与首页同 key，跨页一致）====================
 const themeBtn = document.getElementById("theme-btn");
 function paintThemeBtn() {
@@ -337,15 +546,12 @@ function flagEmoji(cc) {
   return e;
 }
 
-// ==================== 渲染 ====================
+// ==================== 流量监控渲染 ====================
 const chartEl = document.getElementById("chart");
 const chartXEl = document.getElementById("chart-x");
 const chartSub = document.getElementById("chart-sub");
 
 function renderStats(d) {
-  // 安全写入：元素可能被 skeleton() 的 innerHTML 覆盖删除，先重建结构再填值。
-  // 否则 getElementById 返回 null → 抛 TypeError → 整个 load() 进 catch，
-  // 所有渲染跳过，骨架屏永远留着，页面「一直加载中」。
   const row = document.getElementById("stats-row");
   const boxes = [
     { id: "today-pv",  label: "今日 PV",        cls: "accent", val: d.today_pv },
@@ -353,7 +559,6 @@ function renderStats(d) {
     { id: "total-pv",  label: "近 30 天 PV",    cls: "purple", val: d.total_pv },
     { id: "total-uv",  label: "近 30 天独立 IP", cls: "orange", val: d.total_uv },
   ];
-  // 若任一 id 缺失（被骨架覆盖），整体重建 stats-row 结构
   const missing = boxes.some(b => !document.getElementById(b.id));
   if (missing) {
     row.innerHTML = boxes.map(b =>
@@ -375,7 +580,6 @@ function renderChart(daily) {
     return;
   }
   const maxUv = Math.max(...daily.map(x => x.uv), 1);
-  // 横轴最多标 6 个日期，避免拥挤
   const step = Math.ceil(daily.length / 6);
   let bars = "", labels = "";
   daily.forEach((d, i) => {
@@ -397,7 +601,6 @@ function renderRegions(regions) {
     el.innerHTML = '<div class="empty-state">暂无地域数据</div>';
     return;
   }
-  // Top 15 + 「其他」合并
   const TOP = 15;
   let list = regions.slice(0, TOP);
   const rest = regions.slice(TOP);
@@ -450,6 +653,12 @@ function skeleton() {
     '<div class="sk sk-stat"></div>'.repeat(3);
   document.getElementById("funnel-list").innerHTML =
     '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
+  const evStatsRow = document.getElementById("events-stats-row");
+  if (evStatsRow) evStatsRow.innerHTML = '<div class="sk sk-stat"></div>'.repeat(4);
+  document.getElementById("events-by-type").innerHTML =
+    '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(6);
+  document.getElementById("events-recent").innerHTML =
+    '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
 }
 
 // ==================== 搜索统计渲染 ====================
@@ -459,7 +668,6 @@ function renderSearchStats(d) {
     { id: "search-unique", val: d.unique },
     { id: "search-today",  val: d.today },
   ];
-  // 元素可能被骨架覆盖，缺失则重建
   const row = document.getElementById("search-stats-row");
   const labels = ["近 30 天搜索次数", "独立关键词数", "今日搜索次数"];
   const cls = ["accent", "green", "purple"];
@@ -543,18 +751,115 @@ function renderFunnel(d) {
   }).join("");
 }
 
-// ==================== 数据拉取 ====================
+// ==================== v3: 用户行为事件渲染 ====================
+const EVENT_TYPE_LABELS = {
+  "page_view": "📄 页面浏览", "click": "🖱️ 点击", "search": "🔍 搜索",
+  "word_expand": "📖 词展开", "word_detail": "🔗 词详情", "view_switch": "🔄 视图切换",
+  "lang_switch": "🌐 语言切换", "sort_switch": "📊 排序切换", "cat_filter": "🏷️ 分类筛选",
+  "link_click": "🔗 链接点击", "search_click": "🎯 搜索点击"
+};
+
+function renderEvents(d) {
+  const row = document.getElementById("events-stats-row");
+  const boxes = [
+    { id: "events-total",       label: "近 30 天事件总数", cls: "accent", val: d.total },
+    { id: "events-type-count",  label: "事件类型数",       cls: "green",  val: Object.keys(d.by_type || {}).length },
+    { id: "events-today",       label: "今日事件数",       cls: "purple", val: (d.daily || []).slice(-1)[0]?.count || 0 },
+    { id: "events-sessions",    label: "活跃会话数",       cls: "orange", val: d.total }, // 近似用事件数
+  ];
+  const missing = boxes.some(b => !document.getElementById(b.id));
+  if (missing) {
+    row.innerHTML = boxes.map(b =>
+      `<div class="stat-box"><div class="label">${b.label}</div>` +
+      `<div class="value ${b.cls} num" id="${b.id}">—</div></div>`
+    ).join("");
+  }
+  boxes.forEach(b => {
+    const el = document.getElementById(b.id);
+    if (el) el.textContent = typeof b.val === "number" ? fmtNum(b.val) : b.val;
+  });
+
+  // 事件类型分布
+  const typeEl = document.getElementById("events-by-type");
+  const byType = d.by_type || {};
+  if (!Object.keys(byType).length) {
+    typeEl.innerHTML = '<div class="empty-state">暂无事件数据</div>';
+  } else {
+    const maxC = Math.max(...Object.values(byType), 1);
+    typeEl.innerHTML = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, count]) =>
+      `<div class="query-row">
+        <span class="query-text">${EVENT_TYPE_LABELS[type] || type}</span>
+        <div class="query-bar-wrap"><div class="query-bar" style="width:${(count/maxC*100).toFixed(1)}%"></div></div>
+        <span class="query-count num">${fmtNum(count)}</span>
+      </div>`
+    ).join("");
+  }
+
+  // 每日趋势
+  const chartEl = document.getElementById("events-chart");
+  const chartXEl = document.getElementById("events-chart-x");
+  const daily = d.daily || [];
+  if (!daily.length) {
+    chartEl.innerHTML = '<div class="empty-state">暂无趋势数据</div>';
+    chartXEl.innerHTML = "";
+  } else {
+    const maxC = Math.max(...daily.map(x => x.count), 1);
+    const step = Math.ceil(daily.length / 6);
+    let bars = "", labels = "";
+    daily.forEach((d, i) => {
+      const h = (d.count / maxC * 100).toFixed(1);
+      bars += `<div class="bar-col">
+        <div class="bar" style="height:${h}%"></div>
+        <div class="tip">${escapeHtml(d.date)} · ${fmtNum(d.count)} 事件</div>
+      </div>`;
+      labels += `<span>${i % step === 0 ? d.date.slice(5) : ""}</span>`;
+    });
+    chartEl.innerHTML = bars;
+    chartXEl.innerHTML = labels;
+  }
+
+  // 近期明细
+  const recentEl = document.getElementById("events-recent");
+  const recent = d.recent || [];
+  if (!recent.length) {
+    recentEl.innerHTML = '<div class="empty-state">暂无近期事件</div>';
+  } else {
+    recentEl.innerHTML = `<table>
+      <thead><tr><th>时间</th><th>事件类型</th><th>详情</th><th>页面</th><th>地域</th></tr></thead>
+      <tbody>${recent.map(r => {
+        let detail = "";
+        if (r.event_data) {
+          if (typeof r.event_data === "object") {
+            const pairs = Object.entries(r.event_data).map(([k, v]) => `${k}=${v}`).join(", ");
+            detail = `<span class="mono" style="font-size:11px">${escapeHtml(pairs)}</span>`;
+          } else {
+            detail = `<span class="mono" style="font-size:11px">${escapeHtml(String(r.event_data))}</span>`;
+          }
+        }
+        return `<tr>
+          <td class="num" style="white-space:nowrap">${escapeHtml(r.ts || "")}</td>
+          <td><span class="country-badge">${EVENT_TYPE_LABELS[r.event_type] || r.event_type}</span></td>
+          <td>${detail || "—"}</td>
+          <td class="mono" style="font-size:11px">${escapeHtml(r.path || "")}</td>
+          <td><span class="country-badge">${flagEmoji(r.country)} ${escapeHtml(r.country)}</span></td>
+        </tr>`;
+      }).join("")}</tbody></table>`;
+  }
+}
+
+// ==================== 流量监控数据拉取 ====================
 const lastUpdateEl = document.getElementById("last-update");
 let loading = false;
-async function load() {
+async function loadMonitor() {
   if (loading) return;
   loading = true;
   lastUpdateEl.textContent = "加载中…";
   try {
-    const [visRes, searchRes, funnelRes] = await Promise.all([
+    const [visRes, searchRes, funnelRes, eventsRes] = await Promise.all([
       fetch("/monitor/api", { headers: { "Accept": "application/json" } }),
       fetch("/monitor/api/search", { headers: { "Accept": "application/json" } }),
       fetch("/monitor/api/search/funnel", { headers: { "Accept": "application/json" } }),
+      fetch("/monitor/api/events", { headers: { "Accept": "application/json" } }),
     ]);
     if (!visRes.ok) throw new Error(visRes.status);
     const d = await visRes.json();
@@ -562,12 +867,14 @@ async function load() {
     renderChart(d.daily);
     renderRegions(d.regions);
     renderRecent(d.recent);
-    // 搜索统计 + 漏斗独立拉取，失败不阻塞访问统计
     try {
       if (searchRes.ok) renderSearchStats(await searchRes.json());
     } catch (e) {}
     try {
       if (funnelRes && funnelRes.ok) renderFunnel(await funnelRes.json());
+    } catch (e) {}
+    try {
+      if (eventsRes && eventsRes.ok) renderEvents(await eventsRes.json());
     } catch (e) {}
     lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
   } catch (e) {
@@ -577,12 +884,169 @@ async function load() {
   }
 }
 
-document.getElementById("refresh-btn").addEventListener("click", load);
+// ==================== 赞助位管理逻辑（从 admin.html 迁移）====================
+let sponsorsLoaded = false;
+let SLOTS = [];
 
+function showMsg(el, text, ok) {
+  el.className = "msg " + (ok ? "ok" : "err");
+  el.textContent = text;
+  setTimeout(() => { el.className = "msg"; }, 4000);
+}
+
+function resetForm() {
+  document.getElementById("sponsor-form").reset();
+  document.getElementById("_edit").value = "";
+  document.getElementById("form-title").textContent = "➕ 新增赞助位";
+  document.getElementById("f-cta_text").value = "了解";
+  document.getElementById("f-sort_order").value = 0;
+  document.getElementById("f-active").value = "1";
+  document.getElementById("f-region").value = "all";
+  document.getElementById("f-slot_id").readOnly = false;
+}
+
+function editSlot(id) {
+  const s = SLOTS.find(x => x.slot_id === id);
+  if (!s) return;
+  document.getElementById("_edit").value = id;
+  document.getElementById("f-slot_id").value = s.slot_id;
+  document.getElementById("f-slot_id").readOnly = true;
+  document.getElementById("f-name").value = s.name || "";
+  document.getElementById("f-text").value = s.text || "";
+  document.getElementById("f-subtext").value = s.subtext || "";
+  document.getElementById("f-link_url").value = s.link_url || "";
+  document.getElementById("f-image_url").value = s.image_url || "";
+  document.getElementById("f-region").value = s.region || "all";
+  document.getElementById("f-cta_text").value = s.cta_text || "了解";
+  document.getElementById("f-start_date").value = s.start_date || "";
+  document.getElementById("f-end_date").value = s.end_date || "";
+  document.getElementById("f-sort_order").value = s.sort_order || 0;
+  document.getElementById("f-active").value = String(s.active);
+  document.getElementById("f-banner_html").value = s.banner_html || "";
+  document.getElementById("form-title").textContent = "✏ 编辑：" + id;
+  document.getElementById("form-title").scrollIntoView({behavior:"smooth"});
+}
+
+async function saveSlot(e) {
+  e.preventDefault();
+  const form = e.target;
+  const body = new URLSearchParams(new FormData(form));
+  const msgEl = document.getElementById("form-msg");
+  try {
+    const res = await fetch("/admin/sponsors", { method: "POST", body });
+    const j = await res.json();
+    if (j.ok) {
+      showMsg(msgEl, "保存成功，正在刷新列表…", true);
+      setTimeout(() => { loadSponsors(); loadSponsorStats(); }, 600);
+    } else {
+      showMsg(msgEl, "保存失败：" + (j.error || "未知错误"), false);
+    }
+  } catch (err) {
+    showMsg(msgEl, "请求失败：" + err, false);
+  }
+  return false;
+}
+
+async function toggleSlot(id) {
+  const res = await fetch(`/admin/sponsors/${encodeURIComponent(id)}/toggle`, { method: "POST" });
+  const j = await res.json();
+  if (j.ok) { loadSponsors(); loadSponsorStats(); }
+  else alert("操作失败：" + (j.error || ""));
+}
+
+async function deleteSlot(id) {
+  if (!confirm(`确认删除赞助位「${id}」？此操作不可恢复。`)) return;
+  const res = await fetch(`/admin/sponsors/${encodeURIComponent(id)}/delete`, { method: "POST" });
+  const j = await res.json();
+  if (j.ok) { loadSponsors(); loadSponsorStats(); }
+  else alert("删除失败：" + (j.error || ""));
+}
+
+function renderSlotsTable(slots) {
+  const tbody = document.getElementById("slots-body");
+  if (!slots || !slots.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无赞助位，在下方表单添加</td></tr>';
+    return;
+  }
+  tbody.innerHTML = slots.map(s => `<tr data-id="${escapeHtml(s.slot_id)}">
+    <td>${escapeHtml(s.name || '—')}<br><span style="font-size:11px;color:var(--text-dim)">${escapeHtml((s.text || '').slice(0, 40))}</span></td>
+    <td><span class="slot-id">${escapeHtml(s.slot_id)}</span></td>
+    <td>${escapeHtml(s.region || 'all')}</td>
+    <td><span class="pill ${s.active ? 'on' : 'off'}">${s.active ? '投放中' : '已暂停'}</span></td>
+    <td style="font-size:12px;color:var(--text-dim)">
+      ${escapeHtml(s.start_date || '—')} ~ ${escapeHtml(s.end_date || '长期')}
+    </td>
+    <td>
+      <button class="btn sm" onclick="toggleSlot('${escapeHtml(s.slot_id)}')">${s.active ? '暂停' : '启用'}</button>
+      <button class="btn sm" onclick="editSlot('${escapeHtml(s.slot_id)}')">编辑</button>
+      <button class="btn sm danger" onclick="deleteSlot('${escapeHtml(s.slot_id)}')">删除</button>
+    </td>
+  </tr>`).join("");
+}
+
+async function loadSponsors() {
+  try {
+    // 使用 /admin/sponsors/list API（新增）获取赞助位列表
+    const res = await fetch("/admin/sponsors/list", { headers: { "Accept": "application/json" } });
+    if (!res.ok) throw new Error(res.status);
+    const j = await res.json();
+    SLOTS = j.slots || [];
+    renderSlotsTable(SLOTS);
+    sponsorsLoaded = true;
+  } catch (e) {
+    document.getElementById("slots-body").innerHTML =
+      '<tr><td colspan="6" class="empty-state">加载失败，请刷新重试</td></tr>';
+  }
+}
+
+async function loadSponsorStats() {
+  try {
+    const res = await fetch("/admin/stats");
+    const j = await res.json();
+    const body = document.getElementById("sp-stats-body");
+    let totalImp = 0, totalClick = 0;
+    (j.sponsors || []).forEach(s => {
+      totalImp += s.impressions || 0;
+      totalClick += s.clicks || 0;
+    });
+    document.getElementById("sp-stat-pv").textContent = (j.pageviews || 0).toLocaleString();
+    document.getElementById("sp-stat-imp").textContent = totalImp.toLocaleString();
+    document.getElementById("sp-stat-click").textContent = totalClick.toLocaleString();
+    document.getElementById("sp-stat-ctr").textContent =
+      totalImp ? (totalClick / totalImp * 100).toFixed(2) + "%" : "—";
+
+    if (!(j.sponsors || []).length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty-state">暂无数据</td></tr>';
+      return;
+    }
+    body.innerHTML = j.sponsors.map(s => {
+      const imp = s.impressions || 0, clk = s.clicks || 0;
+      const ctr = imp ? (clk / imp * 100).toFixed(2) + "%" : "—";
+      return `<tr><td>${escapeHtml(s.name || '—')}</td><td><span class="slot-id">${escapeHtml(s.slot_id)}</span></td>
+        <td>${imp.toLocaleString()}</td><td>${clk.toLocaleString()}</td><td>${ctr}</td></tr>`;
+    }).join("");
+  } catch (e) {
+    document.getElementById("sp-stats-body").innerHTML =
+      '<tr><td colspan="5" class="empty-state">统计加载失败</td></tr>';
+  }
+}
+
+// 编辑时锁定 slot_id（新增时解锁）
+document.getElementById("f-slot_id").addEventListener("focus", function() {
+  if (!document.getElementById("_edit").value) this.readOnly = false;
+});
+
+// ==================== 初始化 ====================
+document.getElementById("refresh-btn").addEventListener("click", () => {
+  if (currentTab === 'monitor') loadMonitor();
+  else { loadSponsors(); loadSponsorStats(); }
+});
+
+// 启动流量监控
 skeleton();
-load();
-// 监控需近实时，60s 自动刷新（区别于首页 6h）
-setInterval(load, 60 * 1000);
+loadMonitor();
+// 监控需近实时，60s 自动刷新
+setInterval(() => { if (currentTab === 'monitor') loadMonitor(); }, 60 * 1000);
 </script>
 </body>
 </html>

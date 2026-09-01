@@ -42,8 +42,9 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}</title>
+<title>{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}</title>
 <meta name="description" content="{{ site_desc }}">
+<meta name="keywords" content="{{ 'AI trends,HuggingFace,open-source models,arXiv,machine learning,deep learning,LLM,AI news' if is_en else 'AI热点,HuggingFace,开源模型,arXiv,机器学习,深度学习,大模型,AI新闻' }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -53,14 +54,16 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}">
+<meta property="og:title" content="{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}">
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png">{% endif %}
 <!-- Twitter Card -->
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}">
 <meta name="twitter:description" content="{{ site_desc }}">
+{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image.png">{% endif %}
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
@@ -325,7 +328,12 @@
   "@type": "WebSite",
   "name": {{ site_name | tojson }},
   "description": {{ site_desc | tojson }},
-  "url": {{ (canonical or '') | tojson }}
+  "url": {{ (canonical or '') | tojson }},
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": {{ ((base_url or '') ~ '/search?q={search_term_string}') | tojson }},
+    "query-input": "required name=search_term_string"
+  }
 }
 </script>
 <script type="application/ld+json">
@@ -357,7 +365,7 @@
     <h1>🤖 {{ site_name }}</h1>
     <div class="search-box">
       <span>🔍</span>
-      <input id="search-input" type="text" placeholder="{{ 'Search trends / authors…' if is_en else '搜索热点 / 作者…' }}" autocomplete="off">
+      <input id="search-input" type="text" placeholder="{{ 'Search trends / authors…' if is_en else '搜索热点 / 作者…' }}" autocomplete="off" aria-label="{{ 'Search' if is_en else '搜索' }}">
       <kbd>/</kbd>
     </div>
     <div class="header-right">
@@ -374,8 +382,8 @@
 <!-- 联盟广告槽：自建 top-banner 不存在时由 JS 填充 AdSense / 百度联盟 -->
 <div class="ads-slot empty" id="ads-top"></div>
 
-<div class="controls">
-  <div class="cat-bar" id="cat-bar">
+<nav class="controls" aria-label="{{ 'Category and sort filters' if is_en else '分类与排序' }}">
+  <div class="cat-bar" id="cat-bar" role="tablist">
   {% if initial_dimensions %}
   {# ===== SSR 首帧分类条（爬虫可见，首帧即有标签；JS 启动后按实时数据接管） ===== #}
   {% set active_cat = requested_cat if requested_cat and requested_cat != 'all' else 'all' %}
@@ -399,7 +407,7 @@
       <button data-sort="new">{{ '🕒 Newest' if is_en else '🕒 最新' }}</button>
     </div>
   </div>
-</div>
+</nav>
 
 <main><div class="list" id="list">
 {% if seo_enabled and initial_terms %}
@@ -609,6 +617,59 @@ function syncURL() {
   history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
 }
 
+// ==================== 埋点：用户行为事件追踪（v3）====================
+// 批量缓冲 + sendBeacon 上报，避免阻塞用户交互。
+// 会话 ID 由 localStorage 持久化，跨页面串联同一用户轨迹。
+const Analytics = (function() {
+  const SESSION_KEY = "aitw_sid";
+  let sessionId = "";
+  try {
+    sessionId = localStorage.getItem(SESSION_KEY);
+    if (!sessionId) {
+      sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem(SESSION_KEY, sessionId);
+    }
+  } catch (e) { sessionId = "anon"; }
+
+  let buffer = [];
+  let timer = null;
+  const FLUSH_INTERVAL = 5000;   // 5s 自动 flush
+  const MAX_BUFFER = 20;         // 满 20 条立即 flush
+
+  function flush() {
+    if (!buffer.length) return;
+    const payload = JSON.stringify({
+      events: buffer.splice(0),
+      session_id: sessionId,
+      path: location.pathname,
+    });
+    // 优先 sendBeacon（页面卸载也可靠），降级 fetch keepalive
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon("/api/event", new Blob([payload], {type: "application/json"}));
+    } else {
+      fetch("/api/event", {
+        method: "POST", body: payload,
+        headers: {"Content-Type": "application/json"},
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }
+
+  function track(eventType, eventData) {
+    buffer.push({event_type: eventType, event_data: eventData || null});
+    if (buffer.length >= MAX_BUFFER) flush();
+    else if (!timer) timer = setTimeout(flush, FLUSH_INTERVAL);
+  }
+
+  // 页面卸载时强制 flush
+  window.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flush();
+  });
+  window.addEventListener("beforeunload", flush);
+
+  return { track, flush };
+})();
+
 // ==================== 语言切换 ====================
 const langBtn = document.getElementById("lang-btn");
 const hfLink = document.getElementById("hf-link");
@@ -649,7 +710,9 @@ function applyLang(renderData = true) {
   if (renderData) render();
 }
 langBtn.addEventListener("click", () => {
+  const fromLang = LANG;
   LANG = LANG === "zh" ? "en" : "zh";
+  Analytics.track("lang_switch", {from: fromLang, to: LANG});
   try { localStorage.setItem("aitw_lang", LANG); } catch (e) {}
   syncURL();
   applyLang(false);
@@ -681,6 +744,8 @@ paintThemeBtn();
 function goSearch(q) {
   q = (q || "").trim();
   if (!q) return;   // 空 query 不跳转，停留在首页
+  Analytics.track("search", {query: q, lang: LANG});
+  Analytics.flush();   // 即将跳转，立即 flush
   window.location.href = "/search?q=" + encodeURIComponent(q) + "&lang=" + LANG;
 }
 searchInput.addEventListener("keydown", (e) => {
@@ -873,7 +938,9 @@ function renderCatBar() {
 }
 catBar.addEventListener("click", e => {
   const b = e.target.closest(".cat-pill"); if (!b) return;
+  const prevCat = currentCat;
   currentCat = b.dataset.cat;
+  if (prevCat !== currentCat) Analytics.track("cat_filter", {from: prevCat, to: currentCat, view: currentView});
   syncURL(); render();
 });
 
@@ -883,9 +950,11 @@ const viewSeg = document.getElementById("view-seg");
 viewSeg.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.view === currentView) return;
+  const prevView = currentView;
   document.querySelectorAll("#view-seg button").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
   currentView = b.dataset.view;
+  Analytics.track("view_switch", {from: prevView, to: currentView});
   try { localStorage.setItem("aitw_view", currentView); } catch (err) {}
   currentCat = "all";        // 两个视图的分类成员口径不同
   _wordDetailCache = {};   // 换视图清词展开缓存
@@ -897,9 +966,11 @@ document.querySelectorAll("#view-seg button").forEach(x =>
 sortSeg.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.sort === currentSort) return;
+  const prevSort = currentSort;
   document.querySelectorAll("#sort-seg button").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
   currentSort = b.dataset.sort;
+  Analytics.track("sort_switch", {from: prevSort, to: currentSort, view: currentView});
   syncURL(); setAllData([]); render();
   // 不在旧数据上临时套用新排序；等待服务端按新榜单排序并截断后再替换。
   fetchAll();
@@ -1041,6 +1112,7 @@ async function toggleWordExpand(term, btn) {
   const box = card && card.querySelector(".word-expand");
   if (!box) return;
   if (box.style.display !== "none") { box.style.display = "none"; return; }
+  Analytics.track("word_expand", {term: term});
   // 已缓存过：直接渲染
   if (_wordDetailCache[term]) { renderWordExpand(box, _wordDetailCache[term], term); box.style.display = "block"; return; }
   btn.disabled = true;
@@ -1345,7 +1417,20 @@ function saveScrollPosition() {
 // 覆盖动态渲染后的元素；点击（含键盘激活）即记录当前位置，链接随后自然跳转。
 document.addEventListener("click", e => {
   const a = e.target.closest('a[href^="/term/"]');
-  if (a) saveScrollPosition();
+  if (a) {
+    saveScrollPosition();
+    // 提取 term name from href: /term/<name>?...
+    const href = a.getAttribute("href") || "";
+    const termMatch = href.match(/^\/term\/([^?]+)/);
+    Analytics.track("word_detail", {term: termMatch ? decodeURIComponent(termMatch[1]) : "", view: currentView, sort: currentSort});
+    Analytics.flush();   // 即将跳转
+  }
+  // 外部链接点击追踪（target=_blank 的非 /term/ 链接）
+  const extA = e.target.closest('a[target="_blank"]');
+  if (extA && !extA.closest('a[href^="/term/"]')) {
+    const url = extA.getAttribute("href") || "";
+    Analytics.track("link_click", {url: url.slice(0, 300), context: currentView});
+  }
 });
 // bfcache 恢复（pageshow persisted）时浏览器已自动还原滚动位置，仅清理残留 key
 window.addEventListener("pageshow", e => {
@@ -1387,6 +1472,8 @@ function finalizeScrollRestore() {
 renderTopBanner();
 renderFooterSponsor();
 applyLang(false);          // 首屏已由 SSR 渲染真实词卡，此处只本地化静态文案，不要覆盖 list 为骨架屏
+// 埋点：记录首页加载（view/sort/cat/lang 状态）
+Analytics.track("page_view", {view: currentView, sort: currentSort, cat: currentCat, lang: LANG});
 // fetchAll 同步执行到首个 await 时，SSR 首屏 20 卡已渲染完成；
 // 返回场景下立即落位（不用等异步全量列表），全量 60 卡渲染后再校准并消费 key。
 const _fetchPromise = fetchAll({ initial: true });
