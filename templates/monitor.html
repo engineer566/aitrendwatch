@@ -752,6 +752,13 @@ function renderFunnel(d) {
 }
 
 // ==================== v3: 用户行为事件渲染 ====================
+const EVENT_TYPE_LABELS = {
+  "page_view": "📄 页面浏览", "click": "🖱️ 点击", "search": "🔍 搜索",
+  "word_expand": "📖 词展开", "word_detail": "🔗 词详情", "view_switch": "🔄 视图切换",
+  "lang_switch": "🌐 语言切换", "sort_switch": "📊 排序切换", "cat_filter": "🏷️ 分类筛选",
+  "link_click": "🔗 链接点击", "search_click": "🎯 搜索点击"
+};
+
 function renderEvents(d) {
   const row = document.getElementById("events-stats-row");
   const boxes = [
@@ -779,15 +786,9 @@ function renderEvents(d) {
     typeEl.innerHTML = '<div class="empty-state">暂无事件数据</div>';
   } else {
     const maxC = Math.max(...Object.values(byType), 1);
-    const typeLabels = {
-      "page_view": "📄 页面浏览", "click": "🖱️ 点击", "search": "🔍 搜索",
-      "word_expand": "📖 词展开", "word_detail": "🔗 词详情", "view_switch": "🔄 视图切换",
-      "lang_switch": "🌐 语言切换", "sort_switch": "📊 排序切换", "cat_filter": "🏷️ 分类筛选",
-      "link_click": "🔗 链接点击", "search_click": "🎯 搜索点击"
-    };
     typeEl.innerHTML = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, count]) =>
       `<div class="query-row">
-        <span class="query-text">${typeLabels[type] || type}</span>
+        <span class="query-text">${EVENT_TYPE_LABELS[type] || type}</span>
         <div class="query-bar-wrap"><div class="query-bar" style="width:${(count/maxC*100).toFixed(1)}%"></div></div>
         <span class="query-count num">${fmtNum(count)}</span>
       </div>`
@@ -837,7 +838,7 @@ function renderEvents(d) {
         }
         return `<tr>
           <td class="num" style="white-space:nowrap">${escapeHtml(r.ts || "")}</td>
-          <td><span class="country-badge">${typeLabels[r.event_type] || r.event_type}</span></td>
+          <td><span class="country-badge">${EVENT_TYPE_LABELS[r.event_type] || r.event_type}</span></td>
           <td>${detail || "—"}</td>
           <td class="mono" style="font-size:11px">${escapeHtml(r.path || "")}</td>
           <td><span class="country-badge">${flagEmoji(r.country)} ${escapeHtml(r.country)}</span></td>
