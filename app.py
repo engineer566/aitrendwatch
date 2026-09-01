@@ -7,6 +7,7 @@
 然后浏览器打开 http://127.0.0.1:5000
 """
 
+import io
 import os
 import re
 import json
@@ -1232,11 +1233,15 @@ def search_page():
         if not results and not word_hits:
             suggest = store.search_suggest(q[:20], limit=8)
 
+    search_canonical = _abs(_lang_url(
+        "/search" + ("?q=" + quote(q) if q else ""), lang)) if q else None
     return render_template(
         "search.html",
         q=q, lang=lang, terms=results, word_hits=word_hits,
         count=len(results), history_hits=history_hits,
         suggest=suggest, site_name=config.SITE_NAME,
+        base_url=_base_url(), canonical=search_canonical,
+        seo_enabled=_seo_enabled(),
         home_url=_lang_url("/", lang),
         lang_toggle_url=_lang_url(
             request.path + ("?q=" + quote(q) if q else ""),
@@ -1345,8 +1350,9 @@ def sitemap():
     if base:
         urls.append(base + "/")
         if _seo_enabled():
-            # 服务条款页（静态，常驻索引）
+            # 服务条款页 + HF 模型榜（常驻索引）
             urls.append(f"{base}/terms")
+            urls.append(f"{base}/hf")
             for slug in _sitemap_terms():
                 if not slug:
                     continue
@@ -1400,6 +1406,73 @@ def favicon_svg():
 def apple_touch_icon():
     """iOS 添加到主屏幕用的图标（此处复用 32px PNG，浏览器会自行缩放）。"""
     resp = Response(_FAVICON_PNG, mimetype="image/png")
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
+# OG 社交分享图（1200×630，Open Graph / Twitter Card 推荐尺寸）。
+# 纯 PIL 生成，无外部依赖；首次请求后进程内缓存。
+_OG_IMAGE_CACHE = {}
+
+@app.route("/og-image.png")
+def og_image():
+    """生成站点级 OG 社交分享图（1200×630）。
+
+    蓝色渐变底 + 白色站名 + 副标题，用于 Open Graph / Twitter Card。
+    进程内缓存避免重复渲染。
+    """
+    if "img" in _OG_IMAGE_CACHE:
+        png = _OG_IMAGE_CACHE["img"]
+    else:
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            W, H = 1200, 630
+            img = Image.new("RGB", (W, H), "#0f1117")
+            draw = ImageDraw.Draw(img)
+            # 渐变背景（左上蓝 → 右下紫）
+            for y in range(H):
+                r = int(15 + (79 - 15) * y / H)
+                g = int(17 + (60 - 17) * y / H)
+                b = int(23 + (180 - 23) * y / H)
+                draw.line([(0, y), (W, y)], fill=(r, g, b))
+            # 尝试加载系统字体，降级到默认
+            font_large = None
+            font_small = None
+            for fp in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                       "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+                       "/System/Library/Fonts/Helvetica.ttc"):
+                try:
+                    font_large = ImageFont.truetype(fp, 72)
+                    font_small = ImageFont.truetype(fp, 36)
+                    break
+                except (OSError, IOError):
+                    continue
+            if font_large is None:
+                font_large = ImageFont.load_default()
+                font_small = font_large
+            # 站名
+            site = config.SITE_NAME or "AITrendWatch"
+            bbox = draw.textbbox((0, 0), site, font=font_large)
+            tw = bbox[2] - bbox[0]
+            draw.text(((W - tw) // 2, 200), site, fill="#ffffff", font=font_large)
+            # 副标题
+            sub = "AI Trend Aggregator"
+            bbox2 = draw.textbbox((0, 0), sub, font=font_small)
+            sw = bbox2[2] - bbox2[0]
+            draw.text(((W - sw) // 2, 320), sub, fill="#8b91a3", font=font_small)
+            # 底部标语
+            tagline = "HuggingFace · arXiv · AI News"
+            bbox3 = draw.textbbox((0, 0), tagline, font=font_small)
+            tlw = bbox3[2] - bbox3[0]
+            draw.text(((W - tlw) // 2, 420), tagline, fill="#4f8cff", font=font_small)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            png = buf.getvalue()
+            _OG_IMAGE_CACHE["img"] = png
+        except ImportError:
+            # PIL 不可用 → 返回最小 1x1 PNG 占位
+            png = _FAVICON_PNG
+    resp = Response(png, mimetype="image/png")
     resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return resp
 

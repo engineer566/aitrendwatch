@@ -42,8 +42,9 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}</title>
+<title>{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}</title>
 <meta name="description" content="{{ site_desc }}">
+<meta name="keywords" content="{{ 'AI trends,HuggingFace,open-source models,arXiv,machine learning,deep learning,LLM,AI news' if is_en else 'AI热点,HuggingFace,开源模型,arXiv,机器学习,深度学习,大模型,AI新闻' }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -53,14 +54,16 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}">
+<meta property="og:title" content="{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}">
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png">{% endif %}
 <!-- Twitter Card -->
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="{{ site_name }} · {{ 'AI Trend Aggregator' if is_en else 'AI 热点聚合' }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}">
 <meta name="twitter:description" content="{{ site_desc }}">
+{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image.png">{% endif %}
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
@@ -325,7 +328,12 @@
   "@type": "WebSite",
   "name": {{ site_name | tojson }},
   "description": {{ site_desc | tojson }},
-  "url": {{ (canonical or '') | tojson }}
+  "url": {{ (canonical or '') | tojson }},
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": {{ ((base_url or '') ~ '/search?q={search_term_string}') | tojson }},
+    "query-input": "required name=search_term_string"
+  }
 }
 </script>
 <script type="application/ld+json">
@@ -357,7 +365,7 @@
     <h1>🤖 {{ site_name }}</h1>
     <div class="search-box">
       <span>🔍</span>
-      <input id="search-input" type="text" placeholder="{{ 'Search trends / authors…' if is_en else '搜索热点 / 作者…' }}" autocomplete="off">
+      <input id="search-input" type="text" placeholder="{{ 'Search trends / authors…' if is_en else '搜索热点 / 作者…' }}" autocomplete="off" aria-label="{{ 'Search' if is_en else '搜索' }}">
       <kbd>/</kbd>
     </div>
     <div class="header-right">
@@ -374,8 +382,8 @@
 <!-- 联盟广告槽：自建 top-banner 不存在时由 JS 填充 AdSense / 百度联盟 -->
 <div class="ads-slot empty" id="ads-top"></div>
 
-<div class="controls">
-  <div class="cat-bar" id="cat-bar">
+<nav class="controls" aria-label="{{ 'Category and sort filters' if is_en else '分类与排序' }}">
+  <div class="cat-bar" id="cat-bar" role="tablist">
   {% if initial_dimensions %}
   {# ===== SSR 首帧分类条（爬虫可见，首帧即有标签；JS 启动后按实时数据接管） ===== #}
   {% set active_cat = requested_cat if requested_cat and requested_cat != 'all' else 'all' %}
@@ -399,7 +407,7 @@
       <button data-sort="new">{{ '🕒 Newest' if is_en else '🕒 最新' }}</button>
     </div>
   </div>
-</div>
+</nav>
 
 <main><div class="list" id="list">
 {% if seo_enabled and initial_terms %}
