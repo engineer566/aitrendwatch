@@ -37,6 +37,7 @@ python -m pytest -q        # 全量，应全绿（当前 ~124 tests + 8 subtests
 | `test_case_insensitive.py` | `normalize_term` 大小写无关聚类、混合大小写 keywords 不分裂 |
 | `test_stopwords.py` | 通用热词停用词（抽词/聚合/HF 三入口过滤） |
 | `test_openclaw_hotword.py` | 词典外热词收录 + keywords churn 防护 + 热窗新鲜度加权（2026-09-02 新增） |
+| `test_keyword_case_match.py` | 需求 5：关键词大小写硬编码校验（`case_match_original` 命中原文取原文大小写 / 未命中保持 canonical / CJK 原样；`extract_keywords_dict` 返回与原文大小写一致的表面形式；`_news_row_canons` 聚合键仍 canonical 不分裂；dims LLM 抽词收口）（2026-09-02 新增） |
 | `test_display_en_preserve.py` | 英文展示名不因 LLM 限流轮次清空（2026-09-02 新增） |
 | `test_rise_display.py` | 词页 Rise 不显示 -1.00 占位（2026-09-02 新增） |
 | `test_hf_page.py` | `/hf` + `/api/hf`：三排序、pipeline 中文标签、双语 SSR |
