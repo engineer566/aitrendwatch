@@ -794,6 +794,18 @@ function dimLabel(dim) {
   return { icon: c.icon, lbl: LANG === "en" ? (c.label_en || c.label) : c.label, color: c.color };
 }
 
+// 分类条计数稳定化：首次加载完成前保持计数不变，避免 SSR(20条)→全量(100条)的数值跳变闪烁
+let _stableCatCounts = null;
+let _stableCatTotal = 0;
+let _catCountsLocked = false;
+
+function lockCatCounts() {
+  _catCountsLocked = true;
+}
+function unlockCatCounts() {
+  _catCountsLocked = false;
+}
+
 // 统一卡片流分类条：按实际可渲染的去重卡片计数，用后端 dimensionList 顺序展示。
 // words 视图：词卡可能跨领域（dims 数组），成员资格过滤——词涉及任一领域即计入该 pill；
 // news 视图：按单标签 dimension 计数；同一张卡在同一维度只计一次。
@@ -807,17 +819,29 @@ function renderCatBar() {
       counts[d] = (counts[d] || 0) + 1;
     });
   });
+  const total = allData.length;
+
+  // 首次加载阶段（SSR→全量过渡）锁定计数，避免数值跳变闪烁
+  if (_catCountsLocked && _stableCatCounts) {
+    // 保持上一次的稳定计数
+  } else {
+    _stableCatCounts = { ...counts };
+    _stableCatTotal = total;
+  }
+  const displayCounts = _stableCatCounts || counts;
+  const displayTotal = _stableCatTotal || total;
+
   // 后端枚举优先，同时补上数据中出现的未知维度，避免卡片可渲染但无对应标签。
-  const keys = [...order, ...Object.keys(counts).filter(k => !order.includes(k))]
-    .filter(k => counts[k]);
+  const keys = [...order, ...Object.keys(displayCounts).filter(k => !order.includes(k))]
+    .filter(k => displayCounts[k]);
   if (allData.length && !keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
   const selectedCat = allData.length ? currentCat : "all";
   let html = `<button class="cat-pill ${selectedCat==="all"?"active":""}" data-cat="all"
-    style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${allData.length}</span></button>`;
+    style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${displayTotal}</span></button>`;
   keys.forEach(k => {
     const m = dimLabel(k);
     html += `<button class="cat-pill ${selectedCat===k?"active":""}" data-cat="${k}"
-      style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${counts[k]}</span></button>`;
+      style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${displayCounts[k]}</span></button>`;
   });
   catBar.innerHTML = html;
 }
@@ -1189,7 +1213,8 @@ function readInitialTerms() {
   } catch (e) { return []; }
 }
 async function fetchAll({ initial = false } = {}) {
-  // 切语言/排序/视图时 abort 旧请求；序号检查还可防止旧响应在 abort 竞态中回写。
+  // 首次加载阶段锁定分类计数，避免 SSR(20条)→全量(100条)的数值跳变
+  if (initial) lockCatCounts();
   const seq = ++_fetchSeq;
   if (_fetchCtrl) { try { _fetchCtrl.abort(); } catch (e) {} }
   fetching = true;
@@ -1197,7 +1222,6 @@ async function fetchAll({ initial = false } = {}) {
   _fetchCtrl = ctrl;
   const hadSSR = initial && currentView === "words" && currentCat === "all";
   try {
-    // SSR 只作为同一排序结果的临时前缀；它不参与其他排序，也不会在切换后重复注入。
     if (hadSSR) {
       const ssr = readInitialTerms();
       if (ssr.length) {
@@ -1220,21 +1244,20 @@ async function fetchAll({ initial = false } = {}) {
       if (Array.isArray(d.dimension_list)) dimensionList = d.dimension_list;
       if (demoPill) demoPill.style.display = "none";
     } else if (!hadSSR) {
-      // 非 SSR 首屏且后端未就绪 → Mock 回退
       terms = MOCK_DATA().terms;
       if (demoPill) demoPill.style.display = "inline-flex";
     }
-    // SSR 命中但 /api/stream 失败：保留 SSR 数据，不回退 Mock。
     if (terms) {
       setAllData(terms);
       render();
     }
-    // 后台定时更新，不向前端展示更新时间（issue 4）。
     if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
   } finally {
     if (seq === _fetchSeq) {
       fetching = false;
       _fetchCtrl = null;
+      // 首次加载完成后解锁计数，允许后续正常更新
+      unlockCatCounts();
     }
   }
 }
