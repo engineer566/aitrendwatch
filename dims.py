@@ -180,11 +180,22 @@ RSS_SOURCES = [
     {"name": "Latent Space",   "feed": "https://www.latent.space/feed",                           "region": "国际", "default_dim": "政策与行业", "lang": "en"},
     {"name": "Ethan Mollick",  "feed": "https://www.oneusefulthing.org/feed",                     "region": "国际", "default_dim": "政策与行业", "lang": "en"},
     {"name": "Sebastian Raschka", "feed": "https://sebastianraschka.com/rss_feed.xml",            "region": "国际", "default_dim": "研究与论文", "lang": "en"},
+    # —— 更多英文权威媒体（IEEE Spectrum/MIT News/ZDNet AI/The Decoder/The Rundown，扩大英文报道基数）——
+    {"name": "IEEE Spectrum AI", "feed": "https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss", "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "MIT News AI",      "feed": "https://news.mit.edu/rss/topic/artificial-intelligence2",          "region": "国际", "default_dim": "研究与论文", "lang": "en"},
+    {"name": "ZDNet AI",         "feed": "https://www.zdnet.com/topic/artificial-intelligence/rss.xml",      "region": "国际", "default_dim": "政策与行业", "lang": "en"},
+    {"name": "The Decoder",      "feed": "https://the-decoder.com/feed/",                                  "region": "国际", "default_dim": "产品与应用", "lang": "en"},
+    {"name": "The Rundown AI",   "feed": "https://www.therundown.ai/feed",                                 "region": "国际", "default_dim": "产品与应用", "lang": "en"},
     # —— 无官方 RSS 的厂商 → Google News 聚合（official_url 为媒体域名，非文章直链）——
     {"name": "Anthropic (GN)", "feed": "https://news.google.com/rss/search?q=Anthropic+when:3d&hl=en-US&gl=US&ceid=US:en",  "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
     {"name": "Meta AI (GN)",   "feed": "https://news.google.com/rss/search?q=%22Meta+AI%22+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
     {"name": "OpenClaw (GN)",  "feed": "https://news.google.com/rss/search?q=OpenClaw+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "产品与应用", "is_gnews": True, "lang": "en"},
     {"name": "Open Source AI (GN)", "feed": "https://news.google.com/rss/search?q=%22open+source%22+AI+when:3d&hl=en-US&gl=US&ceid=US:en", "region": "国际", "default_dim": "模型与技术", "is_gnews": True, "lang": "en"},
+    {"name": "Google AI Blog", "feed": "https://ai.googleblog.com/feeds/posts/default", "region": "国际", "default_dim": "研究与论文", "lang": "en"},
+    {"name": "Apple ML", "feed": "https://machinelearning.apple.com/rss.xml", "region": "国际", "default_dim": "产品与应用", "lang": "en"},
+    {"name": "Meta AI Blog", "feed": "https://ai.meta.com/blog/rss/", "region": "国际", "default_dim": "模型与技术", "lang": "en"},
+    {"name": "HuggingFace Blog", "feed": "https://huggingface.co/blog/feed.xml", "region": "国际", "default_dim": "模型与技术", "lang": "en"},
+    {"name": "AssemblyAI", "feed": "https://www.assemblyai.com/blog/rss/", "region": "国际", "default_dim": "产品与应用", "lang": "en"},
     # —— 国内 AI 一手媒体（国内厂商无 RSS，用主流媒体官方 RSS 覆盖）——
     {"name": "量子位",     "feed": "https://www.qbitai.com/feed",   "region": "国内", "default_dim": "政策与行业", "lang": "zh"},
     {"name": "InfoQ中文",  "feed": "https://www.infoq.cn/feed",     "region": "国内", "default_dim": "政策与行业", "lang": "zh"},
@@ -486,7 +497,7 @@ def _reddit_points(title, dimension):
 # 国内源按媒体影响力给 floor；英文源统一 floor=20（覆盖面广、无单一权重锚点）。
 # 仅在 HN/Reddit 都未命中时启用，避免无社区信号的小维度卡全员并列。
 _SOURCE_WEIGHT = {
-    "量子位": 60, "InfoQ中文": 50, "极客公园": 45, "少数派": 40,
+    "量子位": 45, "InfoQ中文": 40, "极客公园": 35, "少数派": 30,
 }
 
 
@@ -615,7 +626,7 @@ def _trend_score(hn, reddit_score, reddit_comments, published, region, source, u
         recency = 1.0 / (math.log(age_days + 1) + 1)
         # 连续 fresh 因子：0d→2.5, 3d→1.60, 7d→1.15, 30d→1.00，近期卡显著放大、旧卡趋 1
         fresh_factor = 1.0 + 1.5 * math.exp(-age_days / 3.0)
-        weight = _SOURCE_WEIGHT.get(source, 30) if region == "国内" else 20
+        weight = _SOURCE_WEIGHT.get(source, 25) if region == "国内" else 28
         trend = weight * recency * fresh_factor * (1.0 - 0.7 * _buzz(url)) * 1000
     else:
         trend = community * decay * fresh_boost
