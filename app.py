@@ -661,12 +661,17 @@ def index():
         _initial_terms_for_ssr(sort=requested_sort, lang=lang)
         if _seo_enabled() and requested_view != "news" else []
     )
+    # 前端首屏分类条需要完整的维度顺序与计数，避免 SSR 阶段只出现部分维度就把其它标签“弄丢”。
+    initial_dimensions = _stream_dimension_list(initial_terms, "words") if initial_terms else []
+    initial_dimension_counts = _stream_dimension_counts(initial_terms, "words") if initial_terms else {}
     return render_template("index.html", sources=SOURCE_META,
                            sponsors=sponsors, site_name=config.SITE_NAME,
                            site_desc=SITE_DESC_EN if lang == "en" else SITE_DESC,
                            base_url=_base_url(), canonical=_abs(_lang_url("/", lang)),
                            seo_enabled=_seo_enabled(),
                            initial_terms=initial_terms,
+                           initial_dimensions=initial_dimensions,
+                           initial_dimension_counts=initial_dimension_counts,
                            ssr_term_qs=ssr_term_qs,
                            adsense_enabled=config.ADSENSE_ENABLED,
                            adsense_client=config.ADSENSE_CLIENT,

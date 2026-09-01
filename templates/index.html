@@ -462,6 +462,8 @@
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
 <script id="initial-terms-data" type="application/json">{{ initial_terms|tojson }}</script>
+<script id="initial-dimensions-data" type="application/json">{{ initial_dimensions|tojson }}</script>
+<script id="initial-dimension-counts-data" type="application/json">{{ initial_dimension_counts|tojson }}</script>
 <script>
 const ADSENSE_ENABLED = {{ adsense_enabled | tojson }};
 const ADSENSE_CLIENT = {{ adsense_client | tojson }};
@@ -832,16 +834,18 @@ function renderCatBar() {
   const displayTotal = _stableCatTotal || total;
 
   // 后端枚举优先，同时补上数据中出现的未知维度，避免卡片可渲染但无对应标签。
-  const keys = [...order, ...Object.keys(displayCounts).filter(k => !order.includes(k))]
-    .filter(k => displayCounts[k]);
+  // 标准维度（order 里有的）即使当前计数为 0 也要保留，防止首屏只出现部分维度就把其它标签“弄丢”。
+  const unknownKeys = Object.keys(displayCounts).filter(k => !order.includes(k) && displayCounts[k]);
+  const keys = [...order, ...unknownKeys].filter(k => displayCounts[k] || order.includes(k));
   if (allData.length && !keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
   const selectedCat = allData.length ? currentCat : "all";
   let html = `<button class="cat-pill ${selectedCat==="all"?"active":""}" data-cat="all"
     style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${displayTotal}</span></button>`;
   keys.forEach(k => {
     const m = dimLabel(k);
+    const cnt = displayCounts[k] || 0;
     html += `<button class="cat-pill ${selectedCat===k?"active":""}" data-cat="${k}"
-      style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${displayCounts[k]}</span></button>`;
+      style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${cnt}</span></button>`;
   });
   catBar.innerHTML = html;
 }
@@ -1212,6 +1216,22 @@ function readInitialTerms() {
     return uniqueCards(data);
   } catch (e) { return []; }
 }
+function readInitialDimensionList() {
+  try {
+    const el = document.getElementById("initial-dimensions-data");
+    const raw = el && el.textContent.trim();
+    const data = raw ? JSON.parse(raw) : [];
+    return Array.isArray(data) ? data : [];
+  } catch (e) { return []; }
+}
+function readInitialDimensionCounts() {
+  try {
+    const el = document.getElementById("initial-dimension-counts-data");
+    const raw = el && el.textContent.trim();
+    const data = raw ? JSON.parse(raw) : {};
+    return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
+  } catch (e) { return {}; }
+}
 async function fetchAll({ initial = false } = {}) {
   // 首次加载阶段锁定分类计数，避免 SSR(20条)→全量(100条)的数值跳变
   if (initial) lockCatCounts();
@@ -1226,7 +1246,18 @@ async function fetchAll({ initial = false } = {}) {
       const ssr = readInitialTerms();
       if (ssr.length) {
         setAllData(ssr);
-        if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
+        const ssrDims = readInitialDimensionList();
+        const ssrCounts = readInitialDimensionCounts();
+        if (ssrDims.length) {
+          dimensionList = ssrDims;
+        } else if (!dimensionList.length) {
+          dimensionList = Object.keys(DIMS_CATEGORY);
+        }
+        // 用后端给出的首屏维度计数作为稳定计数，避免 SSR(20条) 阶段就把未出现的维度过滤掉。
+        // all 标签的总数仍用实际卡片数，避免跨维度计数之和与列表可见数量不一致。
+        _stableCatCounts = (ssrCounts && Object.keys(ssrCounts).length)
+          ? { ...ssrCounts } : null;
+        _stableCatTotal = ssr.length;
       }
       render();
     } else if (!allData.length) {
@@ -1249,6 +1280,9 @@ async function fetchAll({ initial = false } = {}) {
     }
     if (terms) {
       setAllData(terms);
+      // 全量数据就位：先解锁计数再渲染，让分类条一次更新到全量口径（SSR 阶段保持稳定计数，
+      // 全量到达后更新，中间无多次跳变）；解锁放这里而非等 finally，否则这次 render 仍被锁定。
+      unlockCatCounts();
       render();
     }
     if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
@@ -1318,7 +1352,7 @@ function finalizeScrollRestore() {
 
 renderTopBanner();
 renderFooterSponsor();
-applyLang();          // 首屏按 LANG 本地化静态文案 + 设 <html lang> + 语言按钮 label
+applyLang(false);          // 首屏已由 SSR 渲染真实词卡，此处只本地化静态文案，不要覆盖 list 为骨架屏
 // fetchAll 同步执行到首个 await 时，SSR 首屏 20 卡已渲染完成；
 // 返回场景下立即落位（不用等异步全量列表），全量 60 卡渲染后再校准并消费 key。
 const _fetchPromise = fetchAll({ initial: true });

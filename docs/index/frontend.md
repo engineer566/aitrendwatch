@@ -5,13 +5,13 @@
 ## 通用机制
 
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。head 最前的主题初始化脚本（在 `<style>` 之前）同时给 `<html>` 设内联背景/文字色（`#f5f6f8`/`#1c2130` 或 `#0f1117`/`#e6e8ee`），避免亮色用户首帧「先暗后亮」闪烁；`#theme-btn` 切换时同步更新内联色（20260901 #12）。
-- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:472`）+ `t(k)` 翻译函数（`index.html:518`）+ `LANG` 状态（`index.html:533`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
-- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:463`）+ `<script id="initial-terms-data">`（`index.html:464`）。
+- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:474`）+ `t(k)` 翻译函数（`index.html:520`）+ `LANG` 状态（`index.html:535`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
+- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:463`）+ `<script id="initial-terms-data">`（`index.html:464`）+ `<script id="initial-dimensions-data">`（`index.html:465`）+ `<script id="initial-dimension-counts-data">`（`index.html:466`）。
 - **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:164,175,196,211`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:313,322`）。
 
 ---
 
-## templates/index.html  （1386 行）— 首页主单页（词视图为主）
+## templates/index.html  （1443 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -20,21 +20,22 @@
 | 样式 `<style>` | ~80–311 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
 | SEO ld+json | 313, 322 | 结构化数据 |
 | AdSense 脚本 | 341 | `adsbygoogle.js`（`adsense_enabled` 时） |
-| SSR 数据注入 | 463, 464 | sponsor-data / initial-terms-data（词卡） |
-| 主 JS `<script>` | 465–1379 | 全部前端逻辑 |
-| ├ i18n 定义 | 472 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
-| ├ `t(k)` | 518 | 翻译函数 |
-| ├ `LANG`/`currentView` 状态 | 531–536 | `currentView=words\|news`，URL/localStorage 记忆 |
-| ├ URL 状态恢复 | 563–597 | `?view=&cat=&sort=&lang=` 可分享 |
-| ├ 视图切换 seg | 832 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
-| ├ 词卡渲染 `renderWordCard` | 935 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
-| ├ 词卡展开 `toggleWordExpand` | 989 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
-| ├ `visibleData` | 1103 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
-| ├ `render` | 1119 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
-| ├ 数据拉取 `fetchAll` | 1191 | `fetchJSON("/api/stream?lang=&sort=&view=")` |
-| ├ AbortController | 1178 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
-| ├ 返回滚动恢复 | 1240–1305 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；后退/前进（back_forward）或经词条页「返回首页」链接（`scroll_back=1`）回首页时恢复——head 脚本（58，首帧前加 `scroll-restoring` 隐藏内容）→ SSR 首屏立即落位 → `/api/stream` 全量渲染后校准并 `finalizeScrollRestore` 消费 key + 清理 URL 标记，全程无顶部闪现；**词链接 `termHref`（923）携带当前非默认 view/sort/cat，词条页 `home_url` 回显（app.py:755）——返回后榜单状态不丢失（20260901 #7 边界修复）** |
-| └ Mock 数据 | 1311 | 后端不可用时的内置预览数据 |
+| SSR 数据注入 | 463–466 | sponsor-data / initial-terms-data（词卡） / initial-dimensions-data / initial-dimension-counts-data（维度元数据） |
+| 主 JS `<script>` | 467–1443 | 全部前端逻辑 |
+| ├ i18n 定义 | 474 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
+| ├ `t(k)` | 520 | 翻译函数 |
+| ├ `LANG`/`currentView` 状态 | 530–535 | `currentView=words\|news`，URL/localStorage 记忆 |
+| ├ URL 状态恢复 | 565–591 | `?view=&cat=&sort=&lang=` 可分享 |
+| ├ 视图切换 seg | 371 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
+| ├ 词卡渲染 `renderWordCard` | 963 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
+| ├ 词卡展开 `toggleWordExpand` | 1017 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
+| ├ `visibleData` | 1131 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
+| ├ `render` | 1147 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
+| ├ 数据拉取 `fetchAll` | 1235 | `fetchJSON("/api/stream?lang=&sort=&view=")`；全量就位先 `unlockCatCounts()` 再 render，分类条一次更新到全量计数 |
+| ├ AbortController | 1206 | `_fetchCtrl`，切语言/排序/视图时 abort 旧请求 |
+| ├ 返回滚动恢复 | 1307–1350 | 点击 `/term/` 链接前记 `window.scrollY` 到 sessionStorage（`aitw_last_scroll`）；后退/前进（back_forward）或经词条页「返回首页」链接（`scroll_back=1`）回首页时恢复——head 脚本（58，首帧前加 `scroll-restoring` 隐藏内容）→ SSR 首屏立即落位 → `/api/stream` 全量渲染后校准并 `finalizeScrollRestore`（1342）消费 key + 清理 URL 标记，全程无顶部闪现；**词链接 `termHref`（951）携带当前非默认 view/sort/cat，词条页 `home_url` 回显（app.py:755）——返回后榜单状态不丢失（20260901 #7 边界修复）** |
+| ├ 分类条 `renderCatBar` | 814 | 按后端 `dimensionList` 顺序渲染维度 pill；标准维度计数为 0 也保留，SSR 阶段用注入的维度计数稳定化 |
+| └ Mock 数据 | 1368 | 后端不可用时的内置预览数据 |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）。
 **渲染路由**：`/`（`app.py:633`）。
