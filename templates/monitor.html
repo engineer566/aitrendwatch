@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+<script>
+// 主题初始化：置于 <head> 最前，先于任何 CSS 与首帧渲染执行；
+// 同时给 <html> 设内联背景/文字色，避免亮色用户「先按暗色渲染再切亮」的加载闪烁
+(function () {
+  const saved = localStorage.getItem("aitw_theme");
+  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  const theme = saved || sys;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.backgroundColor = theme === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = theme === "light" ? "#1c2130" : "#e6e8ee";
+})();
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
 <script>
@@ -15,14 +27,6 @@
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>{{ site_name }} · 流量监控</title>
-<script>
-// 主题初始化须在 CSS 生效前执行，避免闪烁（key 与首页相同 → 主题跨页一致）
-(function () {
-  const saved = localStorage.getItem("aitw_theme");
-  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  document.documentElement.dataset.theme = saved || sys;
-})();
-</script>
 <style>
   /* ---- 设计 token（与首页 index.html 完全一致）---- */
   :root {
@@ -304,6 +308,8 @@ themeBtn.addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
   localStorage.setItem("aitw_theme", next);
+  document.documentElement.style.backgroundColor = next === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = next === "light" ? "#1c2130" : "#e6e8ee";
   paintThemeBtn();
 });
 paintThemeBtn();

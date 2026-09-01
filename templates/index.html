@@ -8,9 +8,30 @@
   '政策与行业': 'Policy & Industry',
   '其他': 'Other'
 } %}
+{# 与前端 DIMS_CATEGORY（JS）同口径的维度元数据：SSR 首帧渲染分类条用 #}
+{% set dim_meta = {
+  '模型与技术': {'icon':'🧠','color':'#4f8cff','label':'模型与技术','label_en':'Models & Tech'},
+  '产品与应用': {'icon':'📱','color':'#3ecf8e','label':'产品与应用','label_en':'Products & Apps'},
+  '研究与论文': {'icon':'📄','color':'#22d3ee','label':'研究与论文','label_en':'Research & Papers'},
+  '商业与投融资': {'icon':'💰','color':'#ffa940','label':'商业与投融资','label_en':'Business & Funding'},
+  '政策与行业': {'icon':'📰','color':'#8b91a3','label':'政策与行业','label_en':'Policy & Industry'},
+  '其他': {'icon':'✨','color':'#8b91a3','label':'其他','label_en':'Other'}
+} %}
 <!DOCTYPE html>
 <html lang="{{ 'en' if is_en else 'zh-CN' }}">
 <head>
+<script>
+// 主题初始化：置于 <head> 最前，先于任何 CSS 与首帧渲染执行；
+// 同时给 <html> 设内联背景/文字色，避免亮色用户「先按暗色渲染再切亮」的加载闪烁
+(function () {
+  const saved = localStorage.getItem("aitw_theme");
+  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  const theme = saved || sys;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.backgroundColor = theme === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = theme === "light" ? "#1c2130" : "#e6e8ee";
+})();
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
 <script>
@@ -43,14 +64,6 @@
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
-<script>
-// 主题初始化须在 CSS 生效前执行，避免闪烁
-(function () {
-  const saved = localStorage.getItem("aitw_theme");
-  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  document.documentElement.dataset.theme = saved || sys;
-})();
-</script>
 <script>
 // 返回首页场景：首帧绘制前隐藏内容，滚动恢复后再显示——避免「先见顶部 → 跳到原位置」的跳跃断裂感。
 // 判定与底部 restoreScrollPosition 同一口径：scroll_back=1（词条页返回按钮）或 back_forward（浏览器后退/前进）。
@@ -362,7 +375,19 @@
 <div class="ads-slot empty" id="ads-top"></div>
 
 <div class="controls">
-  <div class="cat-bar" id="cat-bar"></div>
+  <div class="cat-bar" id="cat-bar">
+  {% if initial_dimensions %}
+  {# ===== SSR 首帧分类条（爬虫可见，首帧即有标签；JS 启动后按实时数据接管） ===== #}
+  {% set active_cat = requested_cat if requested_cat and requested_cat != 'all' else 'all' %}
+  <button class="cat-pill {{ 'active' if active_cat == 'all' else '' }}" data-cat="all"
+    style="--pill-color:var(--accent)">{{ 'All' if is_en else '全部' }} <span class="cnt num">{{ initial_total }}</span></button>
+  {% for d in initial_dimensions %}
+  {% set m = dim_meta.get(d, {'icon':'•','color':'#8b91a3','label':d,'label_en':d}) %}
+  <button class="cat-pill {{ 'active' if active_cat == d else '' }}" data-cat="{{ d }}"
+    style="--pill-color:{{ m.color }}">{{ m.icon }} {{ m.label_en if is_en else m.label }} <span class="cnt num">{{ initial_dimension_counts.get(d, 0) }}</span></button>
+  {% endfor %}
+  {% endif %}
+  </div>
   <div class="sort-row">
     <div class="seg" id="view-seg">
       <button class="active" data-view="words">{{ '🔤 Words' if is_en else '🔤 热词' }}</button>
@@ -458,6 +483,9 @@
 
 <script id="sponsor-data" type="application/json">{{ sponsors|tojson }}</script>
 <script id="initial-terms-data" type="application/json">{{ initial_terms|tojson }}</script>
+<script id="initial-dimensions-data" type="application/json">{{ initial_dimensions|tojson }}</script>
+<script id="initial-dimension-counts-data" type="application/json">{{ initial_dimension_counts|tojson }}</script>
+<script id="initial-total-data" type="application/json">{{ initial_total|tojson }}</script>
 <script>
 const ADSENSE_ENABLED = {{ adsense_enabled | tojson }};
 const ADSENSE_CLIENT = {{ adsense_client | tojson }};
@@ -639,6 +667,8 @@ themeBtn.addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
   localStorage.setItem("aitw_theme", next);
+  document.documentElement.style.backgroundColor = next === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = next === "light" ? "#1c2130" : "#e6e8ee";
   paintThemeBtn();
 });
 paintThemeBtn();
@@ -788,6 +818,18 @@ function dimLabel(dim) {
   return { icon: c.icon, lbl: LANG === "en" ? (c.label_en || c.label) : c.label, color: c.color };
 }
 
+// 分类条计数稳定化：首次加载完成前保持计数不变，避免 SSR(20条)→全量(100条)的数值跳变闪烁
+let _stableCatCounts = null;
+let _stableCatTotal = 0;
+let _catCountsLocked = false;
+
+function lockCatCounts() {
+  _catCountsLocked = true;
+}
+function unlockCatCounts() {
+  _catCountsLocked = false;
+}
+
 // 统一卡片流分类条：按实际可渲染的去重卡片计数，用后端 dimensionList 顺序展示。
 // words 视图：词卡可能跨领域（dims 数组），成员资格过滤——词涉及任一领域即计入该 pill；
 // news 视图：按单标签 dimension 计数；同一张卡在同一维度只计一次。
@@ -801,17 +843,31 @@ function renderCatBar() {
       counts[d] = (counts[d] || 0) + 1;
     });
   });
+  const total = allData.length;
+
+  // 首次加载阶段（SSR→全量过渡）锁定计数，避免数值跳变闪烁
+  if (_catCountsLocked && _stableCatCounts) {
+    // 保持上一次的稳定计数
+  } else {
+    _stableCatCounts = { ...counts };
+    _stableCatTotal = total;
+  }
+  const displayCounts = _stableCatCounts || counts;
+  const displayTotal = _stableCatTotal || total;
+
   // 后端枚举优先，同时补上数据中出现的未知维度，避免卡片可渲染但无对应标签。
-  const keys = [...order, ...Object.keys(counts).filter(k => !order.includes(k))]
-    .filter(k => counts[k]);
+  // 标准维度（order 里有的）即使当前计数为 0 也要保留，防止首屏只出现部分维度就把其它标签“弄丢”。
+  const unknownKeys = Object.keys(displayCounts).filter(k => !order.includes(k) && displayCounts[k]);
+  const keys = [...order, ...unknownKeys].filter(k => displayCounts[k] || order.includes(k));
   if (allData.length && !keys.includes(currentCat) && currentCat !== "all") currentCat = "all";
   const selectedCat = allData.length ? currentCat : "all";
   let html = `<button class="cat-pill ${selectedCat==="all"?"active":""}" data-cat="all"
-    style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${allData.length}</span></button>`;
+    style="--pill-color:var(--accent)">${t("all")} <span class="cnt num">${displayTotal}</span></button>`;
   keys.forEach(k => {
     const m = dimLabel(k);
+    const cnt = displayCounts[k] || 0;
     html += `<button class="cat-pill ${selectedCat===k?"active":""}" data-cat="${k}"
-      style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${counts[k]}</span></button>`;
+      style="--pill-color:${m.color}">${m.icon} ${escapeHtml(m.lbl)} <span class="cnt num">${cnt}</span></button>`;
   });
   catBar.innerHTML = html;
 }
@@ -1182,21 +1238,60 @@ function readInitialTerms() {
     return uniqueCards(data);
   } catch (e) { return []; }
 }
+function readInitialDimensionList() {
+  try {
+    const el = document.getElementById("initial-dimensions-data");
+    const raw = el && el.textContent.trim();
+    const data = raw ? JSON.parse(raw) : [];
+    return Array.isArray(data) ? data : [];
+  } catch (e) { return []; }
+}
+function readInitialDimensionCounts() {
+  try {
+    const el = document.getElementById("initial-dimension-counts-data");
+    const raw = el && el.textContent.trim();
+    const data = raw ? JSON.parse(raw) : {};
+    return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
+  } catch (e) { return {}; }
+}
+function readInitialTotal() {
+  try {
+    const el = document.getElementById("initial-total-data");
+    const raw = el && el.textContent.trim();
+    const v = raw ? parseInt(raw, 10) : NaN;
+    return isFinite(v) && v > 0 ? v : 0;
+  } catch (e) { return 0; }
+}
 async function fetchAll({ initial = false } = {}) {
-  // 切语言/排序/视图时 abort 旧请求；序号检查还可防止旧响应在 abort 竞态中回写。
+  // 首次加载阶段锁定分类计数，避免 SSR(20条)→全量(100条)的数值跳变
+  if (initial) lockCatCounts();
   const seq = ++_fetchSeq;
   if (_fetchCtrl) { try { _fetchCtrl.abort(); } catch (e) {} }
   fetching = true;
   const ctrl = new AbortController();
   _fetchCtrl = ctrl;
-  const hadSSR = initial && currentView === "words" && currentCat === "all";
+  // 首屏 words 视图只要 SSR 有词卡就先用它渲染（无论是否带 cat 过滤），
+  // 避免带分类参数刷新时走骨架屏 + 全 0 计数 + active 变 all 的闪烁。
+  const hadSSR = initial && currentView === "words";
   try {
-    // SSR 只作为同一排序结果的临时前缀；它不参与其他排序，也不会在切换后重复注入。
     if (hadSSR) {
       const ssr = readInitialTerms();
       if (ssr.length) {
         setAllData(ssr);
-        if (!dimensionList.length) dimensionList = Object.keys(DIMS_CATEGORY);
+        const ssrDims = readInitialDimensionList();
+        const ssrCounts = readInitialDimensionCounts();
+        if (ssrDims.length) {
+          dimensionList = ssrDims;
+        } else if (!dimensionList.length) {
+          dimensionList = Object.keys(DIMS_CATEGORY);
+        }
+        // 用后端给出的全量维度计数作为稳定计数：首屏分类条即显示最终数值
+        // （all=全量总数、各维度=全量计数），全量列表到达后数字不再跳变。
+        // SSR 只渲染前 20 条列表，但计数是 100 条全量口径。
+        _stableCatCounts = (ssrCounts && Object.keys(ssrCounts).length)
+          ? { ...ssrCounts } : null;
+        const ssrTotal = readInitialTotal();
+        _stableCatTotal = ssrTotal > 0 ? ssrTotal : ssr.length;
       }
       render();
     } else if (!allData.length) {
@@ -1214,21 +1309,23 @@ async function fetchAll({ initial = false } = {}) {
       if (Array.isArray(d.dimension_list)) dimensionList = d.dimension_list;
       if (demoPill) demoPill.style.display = "none";
     } else if (!hadSSR) {
-      // 非 SSR 首屏且后端未就绪 → Mock 回退
       terms = MOCK_DATA().terms;
       if (demoPill) demoPill.style.display = "inline-flex";
     }
-    // SSR 命中但 /api/stream 失败：保留 SSR 数据，不回退 Mock。
     if (terms) {
       setAllData(terms);
+      // 全量数据就位：先解锁计数再渲染，让分类条一次更新到全量口径（SSR 阶段保持稳定计数，
+      // 全量到达后更新，中间无多次跳变）；解锁放这里而非等 finally，否则这次 render 仍被锁定。
+      unlockCatCounts();
       render();
     }
-    // 后台定时更新，不向前端展示更新时间（issue 4）。
     if (d && d.fetched_at) _lastFetchedAt = d.fetched_at;
   } finally {
     if (seq === _fetchSeq) {
       fetching = false;
       _fetchCtrl = null;
+      // 首次加载完成后解锁计数，允许后续正常更新
+      unlockCatCounts();
     }
   }
 }
@@ -1289,7 +1386,7 @@ function finalizeScrollRestore() {
 
 renderTopBanner();
 renderFooterSponsor();
-applyLang();          // 首屏按 LANG 本地化静态文案 + 设 <html lang> + 语言按钮 label
+applyLang(false);          // 首屏已由 SSR 渲染真实词卡，此处只本地化静态文案，不要覆盖 list 为骨架屏
 // fetchAll 同步执行到首个 await 时，SSR 首屏 20 卡已渲染完成；
 // 返回场景下立即落位（不用等异步全量列表），全量 60 卡渲染后再校准并消费 key。
 const _fetchPromise = fetchAll({ initial: true });

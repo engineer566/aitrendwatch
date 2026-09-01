@@ -1388,6 +1388,22 @@ def get_term_news(term, limit=50, lang="zh"):
         return []
 
     surfaces = _term_surfaces(canon)
+    # HF 模型词：补充 full_id 末段作为表面形式（与 refresh_words 中 _match_hf_term 同口径）
+    try:
+        conn_hf = _conn()
+        hf_row = conn_hf.execute(
+            "SELECT hf_json FROM terms WHERE term=?", (canon,)).fetchone()
+        conn_hf.close()
+        if hf_row and hf_row["hf_json"]:
+            hf_meta = json.loads(hf_row["hf_json"])
+            full_id = hf_meta.get("full_id", "")
+            if full_id:
+                # full_id 形如 "Qwen/Qwen3.8-27B"，末段是模型 display 名
+                last_seg = full_id.split("/")[-1]
+                if last_seg and last_seg.lower() not in [s.lower() for s in surfaces]:
+                    surfaces.append(last_seg)
+    except Exception:
+        pass
 
     def _like_literal(value):
         # SQL parameters prevent injection, but LIKE still treats %/_ as
