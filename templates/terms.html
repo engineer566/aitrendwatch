@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+// 主题初始化：置于 <head> 最前，先于任何 CSS 与首帧渲染执行；
+// 同时给 <html> 设内联背景/文字色，避免亮色用户「先按暗色渲染再切亮」的加载闪烁
+(function () {
+  const saved = localStorage.getItem("aitw_theme");
+  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  const theme = saved || sys;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.backgroundColor = theme === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = theme === "light" ? "#1c2130" : "#e6e8ee";
+})();
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
 <script>
@@ -27,13 +39,6 @@
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
-<script>
-(function () {
-  const saved = localStorage.getItem("aitw_theme");
-  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  document.documentElement.dataset.theme = saved || sys;
-})();
-</script>
 <style>
   :root {
     --bg: #0f1117; --bg-card: #1a1d27; --bg-hover: #232734; --border: #2a2f3c;

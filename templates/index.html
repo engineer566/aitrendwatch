@@ -11,6 +11,18 @@
 <!DOCTYPE html>
 <html lang="{{ 'en' if is_en else 'zh-CN' }}">
 <head>
+<script>
+// 主题初始化：置于 <head> 最前，先于任何 CSS 与首帧渲染执行；
+// 同时给 <html> 设内联背景/文字色，避免亮色用户「先按暗色渲染再切亮」的加载闪烁
+(function () {
+  const saved = localStorage.getItem("aitw_theme");
+  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  const theme = saved || sys;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.backgroundColor = theme === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = theme === "light" ? "#1c2130" : "#e6e8ee";
+})();
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
 <script>
@@ -43,14 +55,6 @@
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
-<script>
-// 主题初始化须在 CSS 生效前执行，避免闪烁
-(function () {
-  const saved = localStorage.getItem("aitw_theme");
-  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  document.documentElement.dataset.theme = saved || sys;
-})();
-</script>
 <script>
 // 返回首页场景：首帧绘制前隐藏内容，滚动恢复后再显示——避免「先见顶部 → 跳到原位置」的跳跃断裂感。
 // 判定与底部 restoreScrollPosition 同一口径：scroll_back=1（词条页返回按钮）或 back_forward（浏览器后退/前进）。
@@ -639,6 +643,8 @@ themeBtn.addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
   localStorage.setItem("aitw_theme", next);
+  document.documentElement.style.backgroundColor = next === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = next === "light" ? "#1c2130" : "#e6e8ee";
   paintThemeBtn();
 });
 paintThemeBtn();
