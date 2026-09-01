@@ -133,6 +133,31 @@ class HtmlEntityBoundaryTests(unittest.TestCase):
         self.assertEqual(cards[0]["url"],
                          "https://example.test/story?id=1&src=rss")
 
+    def test_gnews_parser_keeps_transit_link_and_strips_media_suffix(self):
+        # Google News item: <link> 是 GN 中转页（302 跳原文），
+        # <source url> 只是媒体域名。url 必须保留 GN 中转页，不能换成媒体域名
+        # （否则点击跳到媒体主页而非文章）；source 标注实际媒体名。
+        xml = """
+        <rss><channel><item>
+          <title>Scoop: OpenAI raises at $500B valuation - TechCrunch</title>
+          <link>https://news.google.com/rss/articles/CBMiB2F1dG9tb3Rp</link>
+          <source url="https://techcrunch.com">TechCrunch</source>
+          <pubDate>Wed, 26 Aug 2026 10:00:00 GMT</pubDate>
+        </item></channel></rss>
+        """
+        cards = dims._parse_rss(xml, {
+            "name": "OpenAI (GN)", "region": "国际", "default_dim": "产品与应用",
+            "lang": "en", "is_gnews": True,
+        })
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(
+            cards[0]["url"],
+            "https://news.google.com/rss/articles/CBMiB2F1dG9tb3Rp",
+        )
+        self.assertEqual(cards[0]["title"],
+                         "Scoop: OpenAI raises at $500B valuation")
+        self.assertEqual(cards[0]["source"], "TechCrunch")
+
     def test_bilingual_projection_decodes_legacy_cache_fields(self):
         raw = {
             "title": "Original &amp;#8217; title",

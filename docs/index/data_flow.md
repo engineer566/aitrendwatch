@@ -29,7 +29,7 @@
 | 极客公园 | geekpark.net/rss | 国内 | 产品发布 | zh | CDATA 标题 |
 | 少数派 | sspai.com/feed | 国内 | 产品发布 | zh | |
 
-**Google News 源**（`is_gnews=True`）：`<link>` 是中转页，`official_url` 取媒体域名；标题末尾 " - 媒体名" 被剥离（`dims.py:283`）。
+**Google News 源**（`is_gnews=True`）：`<link>` 是 GN 中转页（`/rss/articles/...`，302 跳转到原文），直接保留为 url；标题末尾 " - 媒体名" 被剥离，source 标注实际媒体名（`dims.py:280`）。
 
 ### HuggingFace 模型榜（`tracker.py:111`）
 - 端点：`HF_BASE="https://hf-mirror.com"`（官方 HF 本网络不可达，走镜像）。

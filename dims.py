@@ -278,26 +278,18 @@ def _parse_rss(xml_text, src):
         # arXiv link 常带 #abs=... 后缀，去掉
         url = url.split("#")[0]
         # Google News 聚合源：title 末尾常带 " - 媒体名"，去掉更干净；
-        # <link> 是 GN 中转页（非原文直链），<source url> 只是媒体域名。
-        # 用媒体域名 + title 末尾媒体名做 official_url（降级为报道方，非文章直链）。
+        # <link> 是 GN 中转页（/rss/articles/...），302 跳转到原文，
+        # 直接保留为 url；<source url> 只是媒体域名（跳到那是媒体主页，非文章）。
         if src.get("is_gnews"):
             # GN 标题形如 "Scoop: ... - Axios"，提取末尾媒体名
             src_name_m = re.search(r"\s-\s([^\-]+)$", title)
             media_name = src_name_m.group(1).strip() if src_name_m else ""
-            src_tag_m = re.search(r'<source[^>]*url="([^"]+)"', b, re.S)
-            media_domain = (decode_url_entities(src_tag_m.group(1).strip())
-                            if src_tag_m else "")
             # 去掉标题里的 " - 媒体名" 后缀
             if media_name and title.endswith(" - " + media_name):
                 title = title[: -(len(media_name) + 3)].strip()
-            # official_url 优先用媒体域名，便于用户溯源到报道方
-            if media_domain:
-                url = media_domain
             # source 标注成实际媒体名，而非 "Anthropic (GN)"
-            if media_name:
-                source_label = media_name
-            else:
-                source_label = src["name"]
+            source_label = media_name if media_name else src["name"]
+            # 保留原始 url（GN 中转页 302 跳转到原文），不替换成媒体域名
         else:
             source_label = src["name"]
 
