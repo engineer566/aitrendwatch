@@ -144,6 +144,20 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_click_query_date ON search_clicks(query, date);
             CREATE INDEX IF NOT EXISTS idx_click_date ON search_clicks(date);
+            -- v3: 通用用户行为事件表（埋点系统）
+            CREATE TABLE IF NOT EXISTS user_events (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,          -- page_view / click / search / word_expand / view_switch / lang_switch / sort_switch / cat_filter / link_click
+                event_data TEXT,                   -- JSON 附加数据（如 {term, url, from_view, ...}）
+                ip         TEXT,
+                country    TEXT,
+                session_id TEXT,                   -- 前端生成的会话 ID（localStorage），用于串联同一用户的行为轨迹
+                path       TEXT,                   -- 当前页面路径
+                ts         TEXT NOT NULL,           -- 完整时间戳 ISO
+                date       TEXT NOT NULL            -- YYYY-MM-DD，索引化便于按日聚合
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_date ON user_events(date);
+            CREATE INDEX IF NOT EXISTS idx_events_type_date ON user_events(event_type, date);
         """)
         conn.commit()
         _DB_OK = True
@@ -643,6 +657,146 @@ def search_suggest(prefix, limit=8):
         return [{"query": r["query"], "count": r["c"]} for r in rows]
     except Exception:
         return []
+
+
+# ---------- 通用用户行为事件（埋点系统 v3）----------
+_VALID_EVENT_TYPES = frozenset({
+    "page_view", "click", "search", "word_expand", "word_detail",
+    "view_switch", "lang_switch", "sort_switch", "cat_filter",
+    "link_click", "search_click",
+})
+
+
+def record_event(event_type, event_data=None, ip=None, country=None,
+                 session_id=None, path=None):
+    """记录一条用户行为事件到 user_events 表。
+
+    best-effort，失败静默（与 record_visit / record_pageview 同模式）。
+    event_type 必须在 _VALID_EVENT_TYPES 白名单内；event_data 为 dict/list
+    时序列化为 JSON 字符串，限长 2000 字符防撑库。
+    """
+    if not _DB_OK or not config.ANALYTICS_ENABLED:
+        return
+    et = (event_type or "").strip()
+    if et not in _VALID_EVENT_TYPES:
+        return
+    # event_data → JSON string
+    ed = None
+    if event_data is not None:
+        if isinstance(event_data, str):
+            ed = event_data[:2000]
+        else:
+            try:
+                ed = json.dumps(event_data, ensure_ascii=False)[:2000]
+            except Exception:
+                ed = None
+    now = datetime.datetime.now()
+    try:
+        with _db_lock:
+            conn = _conn()
+            conn.execute(
+                "INSERT INTO user_events(event_type, event_data, ip, country, "
+                "session_id, path, ts, date) VALUES(?,?,?,?,?,?,?,?)",
+                (et, ed, ip or "", country or "Unknown",
+                 session_id or "", path or "",
+                 now.isoformat(timespec="seconds"), now.date().isoformat()))
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+
+def record_events_batch(events, ip=None, country=None, session_id=None, path=None):
+    """批量写入用户行为事件。events 为 [{event_type, event_data?}, ...]。
+
+    单次事务写入多条，减少前端批量上报时的 DB 开销。best-effort，整批失败静默。
+    """
+    if not _DB_OK or not config.ANALYTICS_ENABLED or not events:
+        return
+    now = datetime.datetime.now()
+    ts = now.isoformat(timespec="seconds")
+    date = now.date().isoformat()
+    rows = []
+    for ev in events:
+        et = (ev.get("event_type") or "").strip()
+        if et not in _VALID_EVENT_TYPES:
+            continue
+        ed = ev.get("event_data")
+        if ed is not None:
+            if not isinstance(ed, str):
+                try:
+                    ed = json.dumps(ed, ensure_ascii=False)[:2000]
+                except Exception:
+                    ed = None
+            else:
+                ed = ed[:2000]
+        rows.append((et, ed, ip or "", country or "Unknown",
+                      session_id or "", path or "", ts, date))
+    if not rows:
+        return
+    try:
+        with _db_lock:
+            conn = _conn()
+            conn.executemany(
+                "INSERT INTO user_events(event_type, event_data, ip, country, "
+                "session_id, path, ts, date) VALUES(?,?,?,?,?,?,?,?)",
+                rows)
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+
+def event_stats(days=30):
+    """返回监控页用户事件统计：按类型计数 + 每日趋势 + 近期明细。
+
+    DB 不可用返回零值，与 monitor_stats() 同模式，绝不抛异常。
+    """
+    empty = {"total": 0, "by_type": {}, "daily": [], "recent": []}
+    if not _DB_OK:
+        return empty
+    try:
+        conn = _conn()
+        since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+        # 总量
+        agg = conn.execute(
+            "SELECT COUNT(*) AS c FROM user_events WHERE date >= ?",
+            (since,)).fetchone()
+        # 按类型分组
+        type_rows = conn.execute(
+            """SELECT event_type, COUNT(*) AS c FROM user_events
+               WHERE date >= ? GROUP BY event_type ORDER BY c DESC""",
+            (since,)).fetchall()
+        by_type = {r["event_type"]: r["c"] for r in type_rows}
+        # 每日趋势
+        daily_rows = conn.execute(
+            """SELECT date, COUNT(*) AS c FROM user_events
+               WHERE date >= ? GROUP BY date ORDER BY date ASC""",
+            (since,)).fetchall()
+        daily = [{"date": r["date"], "count": r["c"]} for r in daily_rows]
+        # 近期明细
+        recent_rows = conn.execute(
+            """SELECT event_type, event_data, ip, country, path, ts
+               FROM user_events ORDER BY id DESC LIMIT 50""").fetchall()
+        recent = []
+        for r in recent_rows:
+            ed = r["event_data"]
+            try:
+                ed = json.loads(ed) if ed else None
+            except Exception:
+                pass
+            recent.append({"event_type": r["event_type"], "event_data": ed,
+                           "ip": r["ip"], "country": r["country"] or "Unknown",
+                           "path": r["path"], "ts": r["ts"]})
+        conn.close()
+        return {
+            "total": agg["c"],
+            "by_type": by_type,
+            "daily": daily,
+            "recent": recent,
+        }
+    except Exception:
+        return empty
 
 
 # ---------- 降级回退 ----------

@@ -210,6 +210,18 @@
   .funnel-count { font-variant-numeric: tabular-nums; text-align: right; color: var(--text-dim); }
   .funnel-count strong { color: var(--text); font-weight: 600; }
 
+  /* ---- 事件类型条形列表（复用 query-row 视觉）---- */
+  .event-type-row { display: flex; align-items: center; gap: 10px; padding: 7px 0;
+                    border-bottom: 1px solid var(--border); }
+  .event-type-row:last-child { border-bottom: none; }
+  .event-type-label { flex: 0 0 120px; font-size: 13px; font-weight: 600;
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .event-type-bar-wrap { flex: 1; height: 8px; background: var(--bg-hover);
+                         border-radius: 4px; overflow: hidden; }
+  .event-type-bar { height: 100%; background: linear-gradient(90deg, var(--purple), var(--accent));
+                    border-radius: 4px; transition: width .3s; }
+  .event-type-count { font-size: 13px; font-weight: 600; min-width: 50px; text-align: right; }
+
   @media (max-width: 640px) {
     header { padding: 10px 16px; }
     main { padding: 0 16px; }
@@ -274,6 +286,21 @@
     <div id="search-top"></div>
     <h2 style="font-size:13px;margin-top:18px">近期搜索词 <span class="sub">最近 30 条</span></h2>
     <div id="search-recent"></div>
+  </div>
+
+  <!-- v3: 用户行为事件统计 -->
+  <div class="card">
+    <h2>📡 用户行为事件 <span class="sub" id="events-sub">近 30 天</span></h2>
+    <div class="stats-row" id="events-stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+      <div class="stat-box"><div class="label">总事件数</div><div class="value accent num" id="events-total">—</div></div>
+      <div class="stat-box"><div class="label">页面浏览</div><div class="value green num" id="events-pv">—</div></div>
+      <div class="stat-box"><div class="label">交互事件</div><div class="value purple num" id="events-interact">—</div></div>
+      <div class="stat-box"><div class="label">搜索事件</div><div class="value orange num" id="events-search">—</div></div>
+    </div>
+    <h2 style="font-size:13px;margin-top:18px">按类型分布 <span class="sub">事件计数</span></h2>
+    <div id="events-by-type"></div>
+    <h2 style="font-size:13px;margin-top:18px">近期事件明细 <span class="sub">最近 50 条</span></h2>
+    <div id="events-recent"></div>
   </div>
 
   <!-- v2: 搜索→点击漏斗（哪些搜索词真有转化） -->
@@ -450,6 +477,12 @@ function skeleton() {
     '<div class="sk sk-stat"></div>'.repeat(3);
   document.getElementById("funnel-list").innerHTML =
     '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
+  const evStatsRow = document.getElementById("events-stats-row");
+  if (evStatsRow) evStatsRow.innerHTML = '<div class="sk sk-stat"></div>'.repeat(4);
+  document.getElementById("events-by-type").innerHTML =
+    '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(6);
+  document.getElementById("events-recent").innerHTML =
+    '<div class="sk" style="height:14px;margin:7px 0"></div>'.repeat(8);
 }
 
 // ==================== 搜索统计渲染 ====================
@@ -543,6 +576,76 @@ function renderFunnel(d) {
   }).join("");
 }
 
+// ==================== v3: 用户行为事件渲染 ====================
+const EVENT_LABELS = {
+  page_view: "📄 页面浏览", click: "👆 点击", search: "🔍 搜索",
+  word_expand: "📂 词卡展开", word_detail: "🔗 查看热词",
+  view_switch: "🔄 视图切换", lang_switch: "🌐 语言切换",
+  sort_switch: "📊 排序切换", cat_filter: "🏷 分类筛选",
+  link_click: "🔗 外链点击", search_click: "🎯 搜索结果点击",
+};
+function renderEvents(d) {
+  // 概览 stat
+  const byType = d.by_type || {};
+  const pvCount = byType.page_view || 0;
+  const searchCount = byType.search || 0;
+  const interactCount = (d.total || 0) - pvCount - searchCount;
+  const ids = [
+    { id: "events-total", val: d.total },
+    { id: "events-pv", val: pvCount },
+    { id: "events-interact", val: interactCount },
+    { id: "events-search", val: searchCount },
+  ];
+  const row = document.getElementById("events-stats-row");
+  const labels = ["总事件数", "页面浏览", "交互事件", "搜索事件"];
+  const cls = ["accent", "green", "purple", "orange"];
+  if (row && ids.some(b => !document.getElementById(b.id))) {
+    row.innerHTML = ids.map((b, i) =>
+      `<div class="stat-box"><div class="label">${labels[i]}</div>` +
+      `<div class="value ${cls[i]} num" id="${b.id}">—</div></div>`
+    ).join("");
+  }
+  ids.forEach(b => {
+    const el = document.getElementById(b.id);
+    if (el) el.textContent = fmtNum(b.val);
+  });
+
+  // 按类型分布条形图
+  const typeEl = document.getElementById("events-by-type");
+  const entries = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) {
+    typeEl.innerHTML = '<div class="empty-state">暂无事件数据</div>';
+  } else {
+    const maxC = Math.max(...entries.map(x => x[1]), 1);
+    typeEl.innerHTML = entries.map(([et, c]) =>
+      `<div class="event-type-row">
+        <span class="event-type-label">${EVENT_LABELS[et] || escapeHtml(et)}</span>
+        <div class="event-type-bar-wrap"><div class="event-type-bar" style="width:${(c/maxC*100).toFixed(1)}%"></div></div>
+        <span class="event-type-count num">${fmtNum(c)}</span>
+      </div>`).join("");
+  }
+
+  // 近期明细表
+  const recentEl = document.getElementById("events-recent");
+  const recent = d.recent || [];
+  if (!recent.length) {
+    recentEl.innerHTML = '<div class="empty-state">暂无事件记录</div>';
+  } else {
+    recentEl.innerHTML = `<table>
+      <thead><tr><th>时间</th><th>类型</th><th>详情</th><th>地域</th><th>路径</th></tr></thead>
+      <tbody>${recent.map(r => {
+        const edStr = r.event_data ? (typeof r.event_data === "object" ? JSON.stringify(r.event_data) : String(r.event_data)) : "—";
+        return `<tr>
+          <td class="num">${escapeHtml(r.ts)}</td>
+          <td>${EVENT_LABELS[r.event_type] || escapeHtml(r.event_type)}</td>
+          <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(edStr)}">${escapeHtml(edStr.slice(0, 80))}</td>
+          <td><span class="country-badge">${flagEmoji(r.country)} ${escapeHtml(r.country)}</span></td>
+          <td class="mono">${escapeHtml(r.path || "")}</td>
+        </tr>`;
+      }).join("")}</tbody></table>`;
+  }
+}
+
 // ==================== 数据拉取 ====================
 const lastUpdateEl = document.getElementById("last-update");
 let loading = false;
@@ -551,10 +654,11 @@ async function load() {
   loading = true;
   lastUpdateEl.textContent = "加载中…";
   try {
-    const [visRes, searchRes, funnelRes] = await Promise.all([
+    const [visRes, searchRes, funnelRes, eventsRes] = await Promise.all([
       fetch("/monitor/api", { headers: { "Accept": "application/json" } }),
       fetch("/monitor/api/search", { headers: { "Accept": "application/json" } }),
       fetch("/monitor/api/search/funnel", { headers: { "Accept": "application/json" } }),
+      fetch("/monitor/api/events", { headers: { "Accept": "application/json" } }),
     ]);
     if (!visRes.ok) throw new Error(visRes.status);
     const d = await visRes.json();
@@ -562,12 +666,15 @@ async function load() {
     renderChart(d.daily);
     renderRegions(d.regions);
     renderRecent(d.recent);
-    // 搜索统计 + 漏斗独立拉取，失败不阻塞访问统计
+    // 搜索统计 + 漏斗 + 事件独立拉取，失败不阻塞访问统计
     try {
       if (searchRes.ok) renderSearchStats(await searchRes.json());
     } catch (e) {}
     try {
       if (funnelRes && funnelRes.ok) renderFunnel(await funnelRes.json());
+    } catch (e) {}
+    try {
+      if (eventsRes && eventsRes.ok) renderEvents(await eventsRes.json());
     } catch (e) {}
     lastUpdateEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN");
   } catch (e) {

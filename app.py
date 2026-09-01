@@ -1551,6 +1551,55 @@ def monitor_search_funnel_api():
     return jsonify(store.search_funnel(days, top_n))
 
 
+# ---------- 用户行为事件上报（埋点系统 v3）----------
+@app.route("/api/event", methods=["POST"])
+def api_event():
+    """接收前端批量事件上报。
+
+    Body JSON: {events: [{event_type, event_data?}, ...], session_id?, path?}
+    或单条: {event_type, event_data?, session_id?, path?}
+    返回 {ok: true, received: N}。best-effort，不阻塞前端。
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    cip = _client_ip()
+    cc = _client_country(cip)
+    sid = (body.get("session_id") or "").strip()[:64]
+    path = (body.get("path") or request.path).strip()[:200]
+    events = body.get("events")
+    if isinstance(events, list):
+        # 批量模式
+        cleaned = []
+        for ev in events[:50]:  # 单次最多 50 条，防滥用
+            et = (ev.get("event_type") or "").strip()
+            ed = ev.get("event_data")
+            cleaned.append({"event_type": et, "event_data": ed})
+        store.record_events_batch(cleaned, ip=cip, country=cc,
+                                  session_id=sid, path=path)
+        return jsonify({"ok": True, "received": len(cleaned)})
+    else:
+        # 单条模式
+        et = (body.get("event_type") or "").strip()
+        ed = body.get("event_data")
+        store.record_event(et, event_data=ed, ip=cip, country=cc,
+                           session_id=sid, path=path)
+        return jsonify({"ok": True, "received": 1})
+
+
+@app.route("/monitor/api/events")
+@admin_required
+def monitor_events_api():
+    """监控页用户事件统计：按类型计数 + 每日趋势 + 近期明细。"""
+    days = request.args.get("days", "30")
+    try:
+        days = max(1, min(int(days), 90))
+    except ValueError:
+        days = 30
+    return jsonify(store.event_stats(days))
+
+
 if __name__ == "__main__":
     print("=" * 50)
     print(" 热点聚合服务启动中...")
