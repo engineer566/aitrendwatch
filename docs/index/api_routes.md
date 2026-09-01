@@ -1,6 +1,6 @@
 # 路由索引
 
-> 全部 39 条路由（含 errorhandler），按功能分组。每条带 `app.py:行号` 便于跳读。
+> 全部 42 条路由（含 errorhandler），按功能分组。每条带 `app.py:行号` 便于跳读。
 > 配合 [INDEX.md](../INDEX.md) 使用。
 > 注：词维度重构（2026-08）后 `/api/trending` `/api/top` `/api/term/<name>` 三个旧
 > tracker JSON API 已删除（词聚合由 `/api/stream?view=words` 承担）。
@@ -13,9 +13,9 @@
 | `/hf` | GET | `hf_page` | `app.py:910` | **HuggingFace 独立排序页（开源动向）**：按趋势分/点赞/下载量排序，每卡带 pipeline_tag 主徽标 + tags/官方/社区/论文 | 服务端渲染双语（zh/en），排序/语言切换零 fetch；数据复用 tracker 缓存 |
 | `/term/<path:term_name>` | GET | `term_detail` | `app.py:712` | 通用热词聚合页（SEO 长尾）：任何词有页——相关报道聚合 + 词热度；HF 词额外含官方/社区/arXiv 区块 | 进程内 TTL 缓存；未找到 → 404 |
 | `/terms` | GET | `terms` | `app.py:768` | 服务条款页（中英双语） | 静态文案，`SITE_TERMS_UPDATED` 常量 |
-| `/admin/login` | GET,POST | `admin_login` | `app.py:1403` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身 |
-| `/admin` | GET | `admin_home` | `app.py:1427` | 赞助位管理后台 | 需 admin |
-| `/monitor` | GET | `monitor` | `app.py:1469` | 流量监控页 | 需 admin，只读 PV/UV/地域 |
+| `/admin/login` | GET,POST | `admin_login` | `app.py:1438` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身，登录后默认跳 `/monitor` |
+| `/admin` | GET | `admin_home` | `app.py:1462` | ~~赞助位管理后台~~ → 重定向到 `/monitor#sponsors` | 需 admin，合并后统一入口 |
+| `/monitor` | GET | `monitor` | `app.py:1512` | **统一管理后台**（流量监控 + 赞助位管理 Tab 切换） | 需 admin |
 
 ## 数据 API（JSON）
 
@@ -42,16 +42,19 @@
 |------|------|------|------|------|
 | `/health` | GET | `health` | `app.py:951` | 健康检查 |
 | `/api/click/<path:slot_id>` | GET | `sponsor_click` | `app.py:1346` | 赞助位点击计数 + 302 跳转 |
-| `/admin/stats` | GET | `admin_stats` | `app.py:1434` | 赞助位 30 天统计（需 admin） |
-| `/monitor/api` | GET | `monitor_api` | `app.py:1447` | 监控页数据（`?days=1..90`，需 admin） |
+| `/admin/stats` | GET | `admin_stats` | `app.py:1505` | 赞助位 30 天统计（需 admin） |
+| `/admin/sponsors/list` | GET | `admin_sponsors_list` | `app.py:1469` | 赞助位列表 JSON（供合并后 monitor 页 AJAX 加载，需 admin） |
+| `/monitor/api` | GET | `monitor_api` | `app.py:1518` | 监控页数据（`?days=1..90`，需 admin） |
+| `/monitor/api/search` | GET | `monitor_search_api` | `app.py:1529` | 搜索词统计（热门搜索 Top-N + 近期搜索，需 admin） |
+| `/monitor/api/search/funnel` | GET | `monitor_search_funnel_api` | `app.py:1545` | 搜索→点击漏斗（需 admin） |
 
 ### Admin 写操作（需 admin，POST）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:1406` | 新建/更新赞助位 |
-| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:1416` | 上下架切换 |
-| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:1425` | 删除赞助位 |
+| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:1477` | 新建/更新赞助位 |
+| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:1487` | 上下架切换 |
+| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:1496` | 删除赞助位 |
 
 ## SEO 路由
 
@@ -71,7 +74,7 @@
 
 ## 鉴权机制
 
-- `admin_required` 装饰器（`app.py:1356`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
+- `admin_required` 装饰器（`app.py:1419`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
 - token 来源优先级：`Authorization: Bearer` → `?token=` → `session["admin_token"]`。
 - `hmac.compare_digest` 防时序攻击；未登录页面请求 → 跳登录页（带 next），API 请求 → 401。
 - `/monitor` 与 `/admin` 共用同一 `admin_required`。

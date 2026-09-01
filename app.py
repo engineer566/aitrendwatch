@@ -1442,10 +1442,10 @@ def admin_login():
         token = (request.form.get("token") or "").strip()
         if token and hmac.compare_digest(token, config.ADMIN_TOKEN):
             session["admin_token"] = token
-            nxt = request.args.get("next") or "/admin"
+            nxt = request.args.get("next") or "/monitor"
             # 只允许站内相对路径回跳，防开放重定向
             if not nxt.startswith("/") or nxt.startswith("//"):
-                nxt = "/admin"
+                nxt = "/monitor"
             return redirect(nxt, code=302)
         return render_template("admin_login.html", error="令牌错误"), 401
     return render_template("admin_login.html", error=None)
@@ -1460,8 +1460,16 @@ def admin_logout():
 @app.route("/admin")
 @admin_required
 def admin_home():
+    """旧管理后台入口 → 重定向到合并后的 /monitor#sponsors。"""
+    return redirect("/monitor#sponsors", code=302)
+
+
+@app.route("/admin/sponsors/list")
+@admin_required
+def admin_sponsors_list():
+    """赞助位列表 JSON API（供合并后的 monitor 页面 AJAX 加载）。"""
     slots = store.list_slots(active_only=False)
-    return render_template("admin.html", slots=slots, site_name=config.SITE_NAME)
+    return jsonify({"ok": True, "slots": slots})
 
 
 @app.route("/admin/sponsors", methods=["POST"])
@@ -1498,7 +1506,7 @@ def admin_stats():
     return jsonify(store.stats_30d())
 
 
-# ---------- 流量监控页（仅管理员，只看访问量 + 独立 IP + 地域，不含广告）----------
+# ---------- 统一管理后台（流量监控 + 赞助位管理，Tab 切换）----------
 @app.route("/monitor")
 @admin_required
 def monitor():
