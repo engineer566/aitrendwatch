@@ -5,9 +5,9 @@
 ## 通用机制
 
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。head 最前的主题初始化脚本（在 `<style>` 之前）同时给 `<html>` 设内联背景/文字色（`#f5f6f8`/`#1c2130` 或 `#0f1117`/`#e6e8ee`），避免亮色用户首帧「先暗后亮」闪烁；`#theme-btn` 切换时同步更新内联色（20260901 #12）。
-- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:468`）+ `t(k)` 翻译函数（`index.html:514`）+ `LANG` 状态（`index.html:529`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
-- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:459`）+ `<script id="initial-terms-data">`（`index.html:460`）。
-- **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:159,170,191,206`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:309,318`）。
+- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:472`）+ `t(k)` 翻译函数（`index.html:518`）+ `LANG` 状态（`index.html:533`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
+- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:463`）+ `<script id="initial-terms-data">`（`index.html:464`）。
+- **SEO**：`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:164,175,196,211`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 也有 ld+json（`index.html:313,322`）。
 
 ---
 
