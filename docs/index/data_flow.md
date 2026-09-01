@@ -4,7 +4,7 @@
 
 ## 外部数据源
 
-### RSS 源（31 个，`dims.py:157` `RSS_SOURCES`，其中 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）
+### RSS 源（31 个，`dims.py:155` `RSS_SOURCES`，其中 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）
 
 并发抓取（`fetch_all_rss` `dims.py:331`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条；RSS 标题使用有界双层实体解码，URL 只解一层 XML entity。
 
@@ -43,11 +43,12 @@
 - 检索式：`_search_query_for(term)` 按模型名逐词 `all:` 全文检索。
 - 只在后台预热 + `get_term_detail` 同步调用（详情页慢根因）。
 
-### LLM（模型故障转移链，`dims.py:762` `_llm_classify_batch`）
+### LLM（模型故障转移链，`dims.py:786` `_llm_classify_batch`）
 - **故障转移链** `config.LLM_CHAIN`（默认 `glm-4.7-flash → glm-5.3-flash → deepseek-v4-flash`）：首档默认 GLM-4.7-Flash，每档连续 `LLM_FAILOVER_THRESHOLD`（默认 3）次失败顺链切下一档（单向熔断式，成功只清零计数不回退首档）；无 key 的 provider 档不烧重试、直接顺链跳过。当前档端点由 `config.llm_endpoint(model)` 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
 - **思考强度控制**（2026-08-31，针对 GLM-5.3-Flash）：GLM-5.2+ 的 thinking 不可关闭（`thinking.type=disabled` 会报错），只能经 `reasoning_effort` 调强度；`config.llm_reasoning_params(model)` 对 glm-5.2+ 返回 `{"reasoning_effort": LLM_REASONING_EFFORT}`（默认 low），glm-4.7/deepseek 返回 {}。low 减少 thinking token 挤占 max_tokens，降低 length 截断导致的 content 空/缺翻译。提示词同步加了防回显（翻译字段不得照抄原标题）、非空（翻译字段禁止空字符串）、数组长度与输入一致、禁 Markdown 代码块等规则。
+- **中英混杂防线**（2026-09-01，issue 11）：提示词显式要求「翻译必须完整、不得保留原文片段、禁止中英混杂输出」（title 与 summary 都要求）；批完整性检查再加硬编码兜底 `_is_mixed_translation`——中文原文翻英文残留任一 CJK、或英文原文翻中文长文本 ASCII 字母占比 >60%，该批按失败计（触发换档/换 provider 重试），不静默回退成原文标题。
 - 用途：维度打标（模型与技术/产品与应用/研究与论文/商业与投融资/政策与行业/其他）+ 双语翻译（title_zh/title_en/summary_zh/summary_en）+ **抽取关键词 keywords**（1-3 个高价值 AI 实体/技术词——具体模型/产品/公司名、核心技术、事件主体；禁止泛化词/纯形容词，词维度重构核心）。
-- **热词解释生成**（动态词典资产，`dims.py:1131` `explain_terms`）：供 `terms.refresh_words` 的 `term_explainer` 回调；面向普通访客的「定义 + 为什么值得关注」双语解释，携带代表报道标题作上下文；已有解释仅明显更优才返回新文本。失败降级返回空映射（详情页模板兜底）。
+- **热词解释生成**（动态词典资产，`dims.py:1185` `explain_terms`）：供 `terms.refresh_words` 的 `term_explainer` 回调；面向普通访客的「定义 + 为什么值得关注」双语解释，携带代表报道标题作上下文；已有解释仅明显更优才返回新文本。失败降级返回空映射（详情页模板兜底）。
 - **降级**（无 LLM key：`GLM_API_KEY` 与 `DEEPSEEK_API_KEY` 均未设）：用 RSS 源 `default_dim` 分类、双 slot 填原标题、summary_zh 取原标题前 30 字；**keywords 走 `terms.extract_keywords_dict` 词典匹配**。零 token 消耗。天然 Mock 机制，无需代码开关。
 - 瞬态容错：`_post` 对连接重置/超时 + HTTP 429/5xx + 错误体 1305（GLM 免费档过载）重试 3 次；永久错误直接抛 → `_llm_failure()` 计一次并顺链。
 - 批量调用：`enrich_with_llm(items)` 分批打标（6 条子批）。

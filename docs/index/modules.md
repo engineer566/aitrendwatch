@@ -75,7 +75,7 @@
 
 ---
 
-## dims.py  （1551 行）— 维度事件层（RSS + 热度 + LLM）
+## dims.py  （1607 行）— 维度事件层（RSS + 热度 + LLM）
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -84,23 +84,23 @@
 | 76–146 | 文件缓存（`cache/dims.json`） |
 | 147–343 | RSS 源定义 `RSS_SOURCES`（31 源）+ RSS 解析 + 抓取（`fetch_all_rss`@331） |
 | 345–654 | 社区热度增强（HN/Reddit/复合分/趋势分） |
-| 655–1196 | LLM 批量打标（680–756 故障转移状态；757–1036 `_llm_classify_batch`；1038–1077 `enrich_with_llm`；1079–1124 `_translate_terms`；1126–1189 `explain_terms` 热词解释生成/优化） |
-| 1197–1384 | 顶层聚合（`get_dims`/`get_news_cards`/`_fetch_dims_raw`） |
-| 1385–1553 | 后台预热线程 + 跨进程锁 + 定点刷新 |
+| 656–1264 | LLM 批量打标（685–783 故障转移状态 + `_is_mixed_translation` 混杂检查；786–1096 `_llm_classify_batch`；1097–1137 `enrich_with_llm`；1138–1184 `_translate_terms`；1185–1264 `explain_terms` 热词解释生成/优化） |
+| 1265–1452 | 顶层聚合（`get_dims`/`get_news_cards`/`_fetch_dims_raw`） |
+| 1453–1607 | 后台预热线程 + 跨进程锁 + 定点刷新 |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `get_dims(dimension=None, lang="zh")` | 1297 | 维度热词分组（只读缓存）；`/api/dims` |
-| `get_news_cards(lang="zh")` | 1331 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
-| `enrich_with_signals(items)` | 623 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
-| `start_background_dims_refresher()` | 1530 | 启动后台预热线程（app.py 启动时调） |
+| `get_dims(dimension=None, lang="zh")` | 1366 | 维度热词分组（只读缓存）；`/api/dims` |
+| `get_news_cards(lang="zh")` | 1400 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
+| `enrich_with_signals(items)` | 625 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
+| `start_background_dims_refresher()` | 1599 | 启动后台预热线程（app.py 启动时调） |
 
 ### 内部函数（按分区归组）
 - 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
 - RSS：`_norm_date`/`_strip_cdata`/`_parse_rss`/`fetch_one_rss`/`fetch_all_rss`
 - 热度：`_has_cjk`/`_clean_title`/`_hn_points`/`_reddit_points`/`_buzz`/`_age_hours`/`_time_decay`/`_composite_score`/`_trend_score`
-- LLM：`_active_llm`/`_llm_success`/`_llm_failure`（故障转移状态机）/`_llm_classify_batch`/`enrich_with_llm`/`_translate_terms`/`explain_terms`（热词双语解释生成/优化，供 terms.refresh_words 的 term_explainer 回调）/`_LLMTransientError`（瞬态错误类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）；`_llm_classify_batch` 的 payload 会经 `config.llm_reasoning_params` 给 GLM-5.2+ 附 `reasoning_effort`（默认 low 降思考强度），提示词已加防回显/非空/JSON-only 规则，keywords 抽取限高价值实体/概念（禁泛化词）
+- LLM：`_active_llm`/`_llm_success`/`_llm_failure`（故障转移状态机）/`_llm_classify_batch`/`enrich_with_llm`/`_translate_terms`/`explain_terms`（热词双语解释生成/优化，供 terms.refresh_words 的 term_explainer 回调）/`_LLMTransientError`（瞬态错误类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）/`_is_mixed_translation`（硬编码中英混杂检查，issue 11：中文翻译残留 CJK、或英文翻译 ASCII 字母占比 >60% 且长度 >15 → 该批按失败计换档）；`_llm_classify_batch` 的 payload 会经 `config.llm_reasoning_params` 给 GLM-5.2+ 附 `reasoning_effort`（默认 low 降思考强度），提示词已加防回显/非空/JSON-only/完整翻译禁中英混杂规则，keywords 抽取限高价值实体/概念（禁泛化词）
 - 聚合：`_to_card`/`_fetch_dims_raw`/`_project_card`
 - 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
 
