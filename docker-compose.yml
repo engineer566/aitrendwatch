@@ -1,6 +1,6 @@
 services:
   hot-aggregator:
-    image: aitrendwatch:1.8.0
+    image: aitrendwatch:runtime
     container_name: hot-aggregator
     restart: unless-stopped
     working_dir: /app

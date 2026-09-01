@@ -9,15 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
 
-# 先装依赖（利用 Docker 层缓存）
+# 只装依赖（利用 Docker 层缓存：requirements.txt 不变则此层不重跑）。
+# 代码不 COPY 进镜像——compose 用 bind mount 挂载源码（:ro），镜像只负责运行时依赖。
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# 复制代码
-COPY app.py ./
-COPY text_utils.py ./
-COPY stream_utils.py ./
-COPY templates ./templates
 
 # 暴露端口
 EXPOSE 5000
