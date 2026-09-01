@@ -1,6 +1,6 @@
 services:
   hot-aggregator:
-    image: python:3.13-slim
+    image: aitrendwatch:1.8.0
     container_name: aitrendwatch
     restart: unless-stopped
     working_dir: /app
