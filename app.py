@@ -701,6 +701,7 @@ def index():
                            initial_dimensions=initial_dimensions,
                            initial_dimension_counts=initial_dimension_counts,
                            initial_total=initial_total,
+                           requested_cat=requested_cat,
                            ssr_term_qs=ssr_term_qs,
                            adsense_enabled=config.ADSENSE_ENABLED,
                            adsense_client=config.ADSENSE_CLIENT,

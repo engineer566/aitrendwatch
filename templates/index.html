@@ -8,6 +8,15 @@
   '政策与行业': 'Policy & Industry',
   '其他': 'Other'
 } %}
+{# 与前端 DIMS_CATEGORY（JS）同口径的维度元数据：SSR 首帧渲染分类条用 #}
+{% set dim_meta = {
+  '模型与技术': {'icon':'🧠','color':'#4f8cff','label':'模型与技术','label_en':'Models & Tech'},
+  '产品与应用': {'icon':'📱','color':'#3ecf8e','label':'产品与应用','label_en':'Products & Apps'},
+  '研究与论文': {'icon':'📄','color':'#22d3ee','label':'研究与论文','label_en':'Research & Papers'},
+  '商业与投融资': {'icon':'💰','color':'#ffa940','label':'商业与投融资','label_en':'Business & Funding'},
+  '政策与行业': {'icon':'📰','color':'#8b91a3','label':'政策与行业','label_en':'Policy & Industry'},
+  '其他': {'icon':'✨','color':'#8b91a3','label':'其他','label_en':'Other'}
+} %}
 <!DOCTYPE html>
 <html lang="{{ 'en' if is_en else 'zh-CN' }}">
 <head>
@@ -366,7 +375,19 @@
 <div class="ads-slot empty" id="ads-top"></div>
 
 <div class="controls">
-  <div class="cat-bar" id="cat-bar"></div>
+  <div class="cat-bar" id="cat-bar">
+  {% if initial_dimensions %}
+  {# ===== SSR 首帧分类条（爬虫可见，首帧即有标签；JS 启动后按实时数据接管） ===== #}
+  {% set active_cat = requested_cat if requested_cat and requested_cat != 'all' else 'all' %}
+  <button class="cat-pill {{ 'active' if active_cat == 'all' else '' }}" data-cat="all"
+    style="--pill-color:var(--accent)">{{ 'All' if is_en else '全部' }} <span class="cnt num">{{ initial_total }}</span></button>
+  {% for d in initial_dimensions %}
+  {% set m = dim_meta.get(d, {'icon':'•','color':'#8b91a3','label':d,'label_en':d}) %}
+  <button class="cat-pill {{ 'active' if active_cat == d else '' }}" data-cat="{{ d }}"
+    style="--pill-color:{{ m.color }}">{{ m.icon }} {{ m.label_en if is_en else m.label }} <span class="cnt num">{{ initial_dimension_counts.get(d, 0) }}</span></button>
+  {% endfor %}
+  {% endif %}
+  </div>
   <div class="sort-row">
     <div class="seg" id="view-seg">
       <button class="active" data-view="words">{{ '🔤 Words' if is_en else '🔤 热词' }}</button>
@@ -1249,7 +1270,9 @@ async function fetchAll({ initial = false } = {}) {
   fetching = true;
   const ctrl = new AbortController();
   _fetchCtrl = ctrl;
-  const hadSSR = initial && currentView === "words" && currentCat === "all";
+  // 首屏 words 视图只要 SSR 有词卡就先用它渲染（无论是否带 cat 过滤），
+  // 避免带分类参数刷新时走骨架屏 + 全 0 计数 + active 变 all 的闪烁。
+  const hadSSR = initial && currentView === "words";
   try {
     if (hadSSR) {
       const ssr = readInitialTerms();
