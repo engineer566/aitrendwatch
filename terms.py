@@ -47,6 +47,11 @@ HOT_WINDOW_DAYS = 7             # 热度聚合窗口（天）
 # 长时间占锁阻塞 words.json 更新；按热度降序取前 N 个（最热优先），存量无解释词
 # 随后续刷新逐轮回填。默认 60 词 ≈ 5 批，单轮最多约 5-10 分钟。
 EXPLAIN_BATCH_MAX_WORDS = 60
+# 每轮热词翻译上限（词数，display_en）：2026-09-02 DeepSeek 用量事故——每轮把池内
+# 全部中文 display 词（当日观察 ~420 词 ≈ 35 次 LLM 调用/轮）无差别重译，是稳定用量
+# 放大器。改为有上限的增量翻译：缺 display_en 的词优先，预算有余才回译已有 en 的词
+# （允许更优翻译更新，见 test_display_en_preserve）。默认 100 词 ≈ 8-9 批/轮。
+TRANSLATE_BATCH_MAX_WORDS = 100
 
 
 def _hot_recency_weight(pub, today):
@@ -1142,17 +1147,28 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     # 词典外 LLM 抽取的中文词（债务融资/并购/自动驾驶卡车等）没有英文形态，
     # 英文页会显示中文热词。有 term_translator 时批量翻译；失败/无回调降级为空，
     # 前端回退 term（英文页仍有中文，但不阻塞）。
+    # 2026-09-02（DeepSeek 用量事故修复）：增量翻译 + 上限。缺 display_en 的新词
+    # 优先译；预算（TRANSLATE_BATCH_MAX_WORDS）有余才回译已有 en 的词（允许更优
+    # 翻译更新）——不再每轮全量重译池内全部中文词（当日观察 ~35 次 LLM 调用/轮）。
     if term_translator:
         try:
-            _needs = {}
+            _needs = []       # (canon, disp)：缺 display_en，优先翻译
+            _upgradable = []  # (canon, disp)：已有 display_en，预算内再优化
             for canon in kept:
                 _disp = (hf_terms.get(canon, {}).get("display")
                          or _display_of(canon, [canon]))
                 if _disp and re.search(r"[\u4e00-\u9fff]", _disp):
-                    _needs[canon] = _disp
-            if _needs:
-                _translated = term_translator(list(_needs.values())) or {}
-                for canon, disp in _needs.items():
+                    if (old.get(canon) or {}).get("display_en"):
+                        _upgradable.append((canon, _disp))
+                    else:
+                        _needs.append((canon, _disp))
+            _budget = TRANSLATE_BATCH_MAX_WORDS
+            _todo = _needs[:]
+            if len(_todo) < _budget:
+                _todo += _upgradable[:_budget - len(_todo)]
+            if _todo:
+                _translated = term_translator([disp for _, disp in _todo]) or {}
+                for canon, disp in _todo:
                     _en = _translated.get(disp)
                     if isinstance(_en, str) and _en.strip():
                         kept[canon]["display_en"] = _en.strip()[:80]

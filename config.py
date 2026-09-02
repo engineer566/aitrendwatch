@@ -54,6 +54,9 @@ CACHE_DIR = os.environ.get("CACHE_DIR", _cache_default)
 #
 # LLM_CHAIN：模型故障转移链，按序尝试；每档连续 LLM_FAILOVER_THRESHOLD 次失败后
 # 切下一档（单向熔断式转移，成功只清零计数、不回退首档）。首档即默认模型。
+# ⚠️ 2026-09-02 修复：故障转移只限「当轮逃生」——dims._dims_refresh_once 每轮
+# 刷新起始把链复位回链首，防止 GLM 一时不稳后 worker 整日钉死最贵档（当日两
+# worker 全逃逸 DeepSeek，4 轮刷新全量打 DeepSeek，余额 402 欠费）。
 # 默认链（2026-08-30 用户指定）：
 #   glm-4.7-flash（免费）→ glm-5.3-flash（2026-08 新旗舰，约 DeepSeek 1/3 价）
 #     → deepseek-v4-flash（最贵，仅前两档都失败才用）
