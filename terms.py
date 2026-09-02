@@ -47,6 +47,11 @@ HOT_WINDOW_DAYS = 7             # 热度聚合窗口（天）
 # 长时间占锁阻塞 words.json 更新；按热度降序取前 N 个（最热优先），存量无解释词
 # 随后续刷新逐轮回填。默认 60 词 ≈ 5 批，单轮最多约 5-10 分钟。
 EXPLAIN_BATCH_MAX_WORDS = 60
+# 每轮热词翻译上限（词数，display_en）：2026-09-02 DeepSeek 用量事故——每轮把池内
+# 全部中文 display 词（当日观察 ~420 词 ≈ 35 次 LLM 调用/轮）无差别重译，是稳定用量
+# 放大器。改为有上限的增量翻译：缺 display_en 的词优先，预算有余才回译已有 en 的词
+# （允许更优翻译更新，见 test_display_en_preserve）。默认 100 词 ≈ 8-9 批/轮。
+TRANSLATE_BATCH_MAX_WORDS = 100
 
 
 def _hot_recency_weight(pub, today):
@@ -596,11 +601,58 @@ def is_stopword(term):
     return bool(canon) and canon in _TERM_STOPWORDS
 
 
+def _ci_surface_in_text(surface, text):
+    """大小写不敏感定位表面形式在原文中的确切片段（None=未命中）。
+
+    ASCII 表面沿用词典抽词同口径词边界（前后不能是字母/数字）+ 版本后缀
+    防误匹配（"GPT-5.5" 不命中 gpt-5）；CJK 表面子串匹配。命中返回原文
+    中的确切大小写片段。
+    """
+    if not surface or not text:
+        return None
+    if any(ord(c) >= 128 for c in surface):
+        idx = text.casefold().find(surface.casefold())
+        return text[idx:idx + len(surface)] if idx >= 0 else None
+    m = re.search(
+        r"(?<![a-z0-9])" + re.escape(surface) + r"(?!\.\d)(?![a-z0-9])",
+        text, re.I)
+    return m.group(0) if m else None
+
+
+def case_match_original(keyword, text):
+    """硬编码校验（需求 5）：提取的关键词必须与原文大小写完全一致。
+
+    在原文（报道标题等）中大小写不敏感地查找关键词（含词典表面形式与
+    空格/连字符变体），命中则返回原文中的确切大小写片段；未命中返回原词
+    （关键词不在原文中，无从推导大小写，保持 canonical 形式）。纯 CJK
+    关键词无大小写概念，原样返回。作为 LLM 抽词与词典抽词的收口校验，
+    避免 normalize_term 的小写化把 "OpenClaw"/"GPT-5" 等大小写抹平。
+    """
+    if not keyword or not text:
+        return keyword
+    kw = str(keyword).strip()
+    text = str(text)
+    if not kw or not any(c.isascii() and c.isalpha() for c in kw):
+        return kw
+    cands, seen = [kw], {kw.casefold()}
+    for s in _term_surfaces(kw):
+        s = str(s or "").strip()
+        if s and all(ord(c) < 128 for c in s) and s.casefold() not in seen:
+            seen.add(s.casefold())
+            cands.append(s)
+    for cand in cands:
+        hit = _ci_surface_in_text(cand, text)
+        if hit is not None:
+            return hit
+    return kw
+
+
 def extract_keywords_dict(title):
     """词典匹配抽词（零 LLM 成本）。无 API key 时的降级路径 + 历史回填用。
 
     对标题（可传多段拼接文本）做：ASCII 表面形式词边界匹配 + CJK 子串匹配，
-    返回 canonical 词键列表，去重，上限 3 个；停用词（_TERM_STOPWORDS）不返回。
+    返回与原文大小写一致的表面形式列表（canonical 词键经 case_match_original
+    对齐原文大小写），去重，上限 3 个；停用词（_TERM_STOPWORDS）不返回。
     """
     if not title:
         return []
@@ -619,7 +671,8 @@ def extract_keywords_dict(title):
                 hits.append(canon)
                 break
     # 停用词不进词池（即使词典命中也过滤，如 "llm"）
-    return [c for c in hits if not is_stopword(c)][:3]
+    # 需求 5：硬编码大小写校验——返回与原文大小写一致的表面形式
+    return [case_match_original(c, text) for c in hits if not is_stopword(c)][:3]
 
 
 def _term_surfaces(canon):
@@ -760,7 +813,9 @@ def _news_row_canons(row):
         return kws
     text = " ".join(str(row[f] or "") for f in
                     ("title", "title_zh", "title_en"))
-    return set(extract_keywords_dict(text))
+    # extract_keywords_dict 现在返回与原文大小写一致的表面形式；
+    # 词聚合键仍需 canonical（大小写无关归并），此处归一回 canonical 键。
+    return {c for c in (normalize_term(k) for k in extract_keywords_dict(text)) if c}
 
 
 def _display_of(term, surfaces):
@@ -1092,17 +1147,28 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     # 词典外 LLM 抽取的中文词（债务融资/并购/自动驾驶卡车等）没有英文形态，
     # 英文页会显示中文热词。有 term_translator 时批量翻译；失败/无回调降级为空，
     # 前端回退 term（英文页仍有中文，但不阻塞）。
+    # 2026-09-02（DeepSeek 用量事故修复）：增量翻译 + 上限。缺 display_en 的新词
+    # 优先译；预算（TRANSLATE_BATCH_MAX_WORDS）有余才回译已有 en 的词（允许更优
+    # 翻译更新）——不再每轮全量重译池内全部中文词（当日观察 ~35 次 LLM 调用/轮）。
     if term_translator:
         try:
-            _needs = {}
+            _needs = []       # (canon, disp)：缺 display_en，优先翻译
+            _upgradable = []  # (canon, disp)：已有 display_en，预算内再优化
             for canon in kept:
                 _disp = (hf_terms.get(canon, {}).get("display")
                          or _display_of(canon, [canon]))
                 if _disp and re.search(r"[\u4e00-\u9fff]", _disp):
-                    _needs[canon] = _disp
-            if _needs:
-                _translated = term_translator(list(_needs.values())) or {}
-                for canon, disp in _needs.items():
+                    if (old.get(canon) or {}).get("display_en"):
+                        _upgradable.append((canon, _disp))
+                    else:
+                        _needs.append((canon, _disp))
+            _budget = TRANSLATE_BATCH_MAX_WORDS
+            _todo = _needs[:]
+            if len(_todo) < _budget:
+                _todo += _upgradable[:_budget - len(_todo)]
+            if _todo:
+                _translated = term_translator([disp for _, disp in _todo]) or {}
+                for canon, disp in _todo:
                     _en = _translated.get(disp)
                     if isinstance(_en, str) and _en.strip():
                         kept[canon]["display_en"] = _en.strip()[:80]
