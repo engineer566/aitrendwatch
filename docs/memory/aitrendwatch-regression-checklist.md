@@ -20,7 +20,7 @@ metadata:
 （降级断言即预期行为，零 token）：
 
 ```powershell
-python -m pytest -q        # 全量，应全绿（当前 ~124 tests + 8 subtests）
+python -m pytest -q        # 全量，应全绿（当前 168 tests + 8 subtests）
 ```
 
 覆盖矩阵（测试文件 → 回归点）：
@@ -30,6 +30,7 @@ python -m pytest -q        # 全量，应全绿（当前 ~124 tests + 8 subtests
 | `test_language.py` | 中英文路由：首页/词详情/搜索链接带 lang、`?lang=` 优先、localStorage 覆盖、SSR 卡片语言投影 |
 | `test_stream_consistency.py` | `/api/stream` words/news 统一流：排序-截断稳定性、维度计数、去重身份 |
 | `test_count_and_failover.py` | 2026-08-30 修复：计数/故障转移链状态机 |
+| `test_llm_cost_guard.py` | 2026-09-02 DeepSeek 用量事故修复：`_llm_cycle_reset` 每轮复位链首 / HTTP 402 归账户级限流 / `_llm_classify_batch` 逐条校验回填（好条目保留）/ `enrich_with_llm` 失败只重试坏条目（2026-09-02 新增） |
 | `test_dynamic_lexicon.py` | 词池即词典：解释批次生成/优化/熔断、静态词典不覆盖、无 key 降级 |
 | `test_term_explanation.py` | 详情页解释三级取词（静态 → terms 表 → 模板兜底恒非空） |
 | `test_term_news.py` | 词 → 关联报道：canonical/别名/标题边界匹配、按 hot 降序、同标题去重 |
