@@ -683,11 +683,14 @@ def _strip_llm_title_suffix(s):
 # ---------- 模型故障转移链状态 ----------
 # 进程级状态（gunicorn 每 worker 独立）：默认从链首 GLM-4.7-Flash 起，
 # 每档连续 LLM_FAILOVER_THRESHOLD 次失败顺链切换；成功清零计数但不回退首档。
+# 2026-09-02 起：_dims_refresh_once 每轮刷新起始把链复位到链首（见 _dims_refresh_once），
+# 故障转移只限「当轮逃生」——防止 GLM 一时不稳后 worker 整日钉死在 DeepSeek
+# （最贵档）：事故当天两 worker 先后逃逸后 4 轮定点刷新全量打 DeepSeek。
 # 实际刷新由 fcntl 跨进程锁串行化（同一时刻仅一个 worker 在调 LLM），
 # 因此进程内计数在大部分场景下等价于全局计数。
 _llm_lock = threading.Lock()
-_LLM_ACTIVE_IDX = 0   # 当前档在 LLM_CHAIN 的下标
-_LLM_FAILS = 0        # 当前档连续失败次数
+_LLM_ACTIVE_IDX = 0   # 当前档在 LLM_CHAIN 的下标（每轮刷新复位为 0）
+_LLM_FAILS = 0        # 当前档连续失败次数（每轮刷新复位为 0）
 _LLM_CYCLE_FAILS = 0  # 本刷新周期内累计失败次数（不限连续，_dims_refresh_once 复位）
 
 
@@ -755,6 +758,26 @@ def _llm_skip_provider(reason="账户级限流"):
         _LLM_FAILS = 0
         print(f"[dims][llm] {reason}，跳过 {cur} 剩余档 → "
               f"{LLM_CHAIN[_LLM_ACTIVE_IDX]}", flush=True)
+
+
+def _llm_cycle_reset():
+    """每轮 dims 刷新起始调用：把故障转移链复位回链首（GLM 免费/低价档）。
+
+    2026-09-02 事故修复：转移链原是进程级单向下沉（成功清零计数但不回退首档），
+    GLM 免费档一旦不稳，worker 逃逸到最贵档（deepseek）后整日不回收——当日两
+    worker 先后逃逸，4 轮定点刷新全量打 DeepSeek（日 ~300+ 次），账户余额被打穿
+    （HTTP 402 欠费）、站点 LLM 全面降级。改为每轮从链首起步：DeepSeek 只做
+    「当轮逃生舱」，成本影响被限制在 GLM 故障当轮内。
+    """
+    global _LLM_ACTIVE_IDX, _LLM_FAILS, _LLM_CYCLE_FAILS
+    with _llm_lock:
+        if _LLM_ACTIVE_IDX != 0:
+            print(f"[dims][llm] 周期复位: "
+                  f"{LLM_CHAIN[min(_LLM_ACTIVE_IDX, len(LLM_CHAIN) - 1)]} "
+                  f"→ {LLM_CHAIN[0]}", flush=True)
+        _LLM_ACTIVE_IDX = 0
+        _LLM_FAILS = 0
+        _LLM_CYCLE_FAILS = 0  # 周期内累计失败也只在本轮内生效
 
 
 def _is_mixed_translation(text, native_lang):
@@ -944,15 +967,23 @@ def _llm_classify_batch(batch):
                 if status == 429 or status >= 500:
                     last_err = e
                     continue
+                if status == 402:
+                    # 余额不足（Payment Required）：计费层拒绝，非瞬态。等同账户级
+                    # 限流——该 provider 整族不可用，按失败计并顺链跳过，避免对
+                    # 已欠费账户每轮反复白打（2026-09-02：DeepSeek 余额被烧穿 402）。
+                    raise _LLMAccountRateLimit(f"LLM 余额不足(402): {e}")
                 raise
         # 3 次都失败，抛最后错误（调用方降级）
         raise last_err if last_err else RuntimeError("LLM 调用失败")
 
-    # 调用 + 解析归入 try：成功 → 清零连续失败；异常 → 计一次失败（满阈值顺链切档）。
-    # 后续回填是纯本地逻辑，不在 try 内，避免把自身 bug 误算成模型故障转移。
+    # 调用 + 解析 + 逐条校验/回填归入 try：成功 → 清零连续失败；异常 → 计一次
+    # 失败（满阈值顺链切档）。
     # DeepSeek-V4 / GLM-4.7 是推理模型：max_tokens 同时覆盖 reasoning_content + content。
     # 双语 12 条标题+摘要正文约需 ~2k，但推理可能吃掉 5-8k，额度偏紧会 length 截断致 content 空。
     # max_tokens 拉到 20000 给推理留足余量；content 空且 finish=length 时再加一次。
+    # 2026-09-02 优化（DeepSeek 用量事故）：改为「逐条校验，过者即回填、坏者计数」——
+    # 缺翻译/混杂通常只涉及 1-3/6 条，不必整批丢弃重来；已回填条目保留 LLM 结果，
+    # 调用方只降级/重试坏条目（省近 1 倍调用量，见 enrich_with_llm）。
     try:
         content, finish = _post(20000, model, url, key)
         if (not content) and finish == "length":
@@ -964,10 +995,8 @@ def _llm_classify_batch(batch):
             raise RuntimeError(f"LLM 返回无 JSON 数组: {content[:100]}")
         parsed = json.loads(m.group(0))
 
-        # 批完整性检查：GLM 免费档超载时偶发返回「缺条目/缺翻译字段」的部分数组，
-        # 甚至把英文原标题原样抄进 title_zh（回显）而摘要留空。静默回退会让整批卡
-        # 变成英文原标题（中英文混杂的根因之一）。非母语标题与摘要任一缺失/为空
-        # 都视为该批失败——计故障转移次数，换档/换 provider 重试。
+        # 数组元素归一：LLM 偶发返回「数组的数组」（[idx,dim,t_zh,t_en,s_zh,s_en,kw]）
+        # 而非「对象的数组」，统一成 dict（_pby 按 idx 对齐）再回填，两种格式都能吃。
         _FIELDS = ("idx", "dimension", "title_zh", "title_en",
                    "summary_zh", "summary_en", "keywords")
         _pby = {}
@@ -976,10 +1005,16 @@ def _llm_classify_batch(batch):
                 _pby[p["idx"]] = p
             elif isinstance(p, list) and len(p) >= 7:
                 _pby[p[0]] = dict(zip(_FIELDS, p))
-        _missing = 0
+
+        # 逐条校验 + 回填：GLM 免费档超载时偶发返回「缺条目/缺翻译字段」的部分数组，
+        # 甚至把英文原标题原样抄进 title_zh（回显）而摘要留空（issue 11 中英混杂）；
+        # 静默回退会让卡变回英文原标题。非母语标题与摘要任一缺失/为空或语言混杂
+        # → 该条按坏计（整批仍按失败计，触发换档/换 provider），但好条目不白烧。
+        _missing = _mixed = 0
         for i, it in enumerate(batch):
             p = _pby.get(i) or {}
-            if it.get("lang", "en") == "zh":
+            native = it.get("lang", "en")
+            if native == "zh":
                 t_ok = bool((p.get("title_en") or "").strip())
                 s_ok = bool((p.get("summary_en") or "").strip())
             else:
@@ -987,37 +1022,87 @@ def _llm_classify_batch(batch):
                 s_ok = bool((p.get("summary_zh") or "").strip())
             if not (t_ok and s_ok):
                 _missing += 1
-        if _missing:
-            raise RuntimeError(
-                f"LLM 返回缺翻译条目 {_missing}/{len(batch)} 个，按失败计")
-
-        # 中英混杂检查（issue 11）：缺翻译检查抓不到「翻了一半」——LLM 可能把
-        # 英文原标题原样留在 title_zh、或把中文原标题原样留在 title_en。对非母语槽
-        # 再做语言一致性硬检查（_is_mixed_translation）：翻译仍以原文语言为主即判
-        # 混杂，按失败计（触发换档/换 provider 重试），不静默回退成原文标题。
-        _mixed = 0
-        for i, it in enumerate(batch):
-            p = _pby.get(i) or {}
-            native = it.get("lang", "en")
+                continue
             if native == "zh":
                 if (_is_mixed_translation(p.get("title_en", ""), "zh")
                         or _is_mixed_translation(p.get("summary_en", ""), "zh")):
                     _mixed += 1
+                    continue
             else:
                 if (_is_mixed_translation(p.get("title_zh", ""), "en")
                         or _is_mixed_translation(p.get("summary_zh", ""), "en")):
                     _mixed += 1
-        if _mixed:
+                    continue
+
+            # ---- 回填（维度/双标题/双摘要/关键词），逻辑与事故前一致 ----
+            dim = (p.get("dimension") or "").strip()
+            if dim not in DIMENSIONS:
+                dim = it["default_dim"]
+            it["dimension"] = dim
+
+            orig = decode_html_entities(it["title"])
+            it["title"] = orig
+            # 标题 slot：原生语言强制用 RSS 原标题（LLM 不改写原生标题，避免被加注释/截断）；
+            # 外文语言取 LLM 翻译，缺失才回退原标题（保底不崩）。
+            t_zh = decode_html_entities(p.get("title_zh") or "").strip()
+            t_en = decode_html_entities(p.get("title_en") or "").strip()
+            if native == "zh":
+                t_zh = orig
+                t_en = _strip_llm_title_suffix(t_en) or orig
+            else:
+                t_en = orig
+                t_zh = _strip_llm_title_suffix(t_zh) or orig
+            it["title_zh"] = t_zh[:200]
+            it["title_en"] = t_en[:200]
+
+            # 摘要 slot：原生 LLM 概括（空/废话→原标题前30字），外文取翻译（缺失→回退另一语摘要）
+            BAD = ("科技领域事件分类", "无", "暂无", "NA", "")
+            s_zh = decode_html_entities(p.get("summary_zh") or "").strip()
+            s_en = decode_html_entities(p.get("summary_en") or "").strip()
+            if native == "zh":
+                s_zh = s_zh if s_zh not in BAD else orig[:30]
+                s_en = s_en if s_en not in BAD else s_zh
+            else:
+                s_en = s_en if s_en not in BAD else orig[:30]
+                s_zh = s_zh if s_zh not in BAD else s_en
+            it["summary_zh"] = s_zh[:60]
+            it["summary_en"] = s_en[:80]
+
+            # 关键词：LLM 抽取 → normalize_term 归一；缺失/异常单独降级为词典匹配，
+            # 不拖累 dimension/翻译字段。每卡 cap 3。
+            kws_raw = p.get("keywords")
+            kws = []
+            if isinstance(kws_raw, list):
+                for k in kws_raw:
+                    ck = (terms_mod.normalize_term(k)
+                          if terms_mod else str(k).strip().lower())
+                    if ck and ck not in kws:
+                        kws.append(ck)
+            if not kws and terms_mod:
+                kws = terms_mod.extract_keywords_dict(it["title"])
+            # 需求 5：硬编码大小写校验——关键词必须与原文大小写完全一致
+            # （命中原文表面形式则取原文确切大小写；未命中保持 canonical）。
+            if terms_mod:
+                it["keywords"] = [terms_mod.case_match_original(k, it["title"])
+                                  for k in kws[:3]]
+            else:
+                it["keywords"] = kws[:3]
+        if _missing or _mixed:
+            _parts = []
+            if _missing:
+                _parts.append(f"缺翻译 {_missing}")
+            if _mixed:
+                _parts.append(f"混杂 {_mixed}")
             raise RuntimeError(
-                f"LLM 返回 {_mixed}/{len(batch)} 条中英混杂，按失败计")
+                f"LLM 返回 {'、'.join(_parts)}/{len(batch)} 条未通过校验，按失败计")
     except _LLMAccountRateLimit as e:
-        # 账户级限流：跳过当前 provider 剩余档位（同 key 全档受限），
+        # 账户级限流/余额不足：跳过当前 provider 剩余档位（同 key 全档受限），
         # 本批降级，下一批直接用下一个 provider。
         print(f"[dims][llm] 批次失败(账户级限流): {e}", flush=True)
         _llm_skip_provider()
         raise
     except Exception as e:
-        # 记录具体错误（含 provider 错误码/HTTP 状态，如 1302/1305/429），
+        # 记录具体错误（含 provider 错误码/HTTP 状态，如 1302/1305/402/429），
         # 供排查「翻译覆盖」问题时核对真实失败原因。
         print(f"[dims][llm] 批次失败: {type(e).__name__}: {e}", flush=True)
         _llm_failure()
@@ -1026,83 +1111,32 @@ def _llm_classify_batch(batch):
     # 成功批次日志（含当前档模型名）：GLM-5.3 等不回传 usage 缓存字段，
     # cache-hit 日志不会打印，必须有这行才能核对「哪个模型处理了哪些批次」。
     print(f"[dims][llm] 批次成功({model}): {len(batch)} 条", flush=True)
-
-    # LLM 偶发返回「数组的数组」而非「对象的数组」（即 [idx,dim,t_zh,t_en,s_zh,s_en,kw]），
-    # 统一归一成 dict 再回填，两种格式都能吃。
-    FIELDS = ("idx", "dimension", "title_zh", "title_en", "summary_zh", "summary_en",
-              "keywords")
-    norm = []
-    for p in parsed:
-        if isinstance(p, dict):
-            norm.append(p)
-        elif isinstance(p, list) and len(p) >= 7:
-            norm.append(dict(zip(FIELDS, p)))
-
-    # 回填到 batch（按 idx 对齐）
-    BAD = ("科技领域事件分类", "无", "暂无", "NA", "")
-    by_idx = {p.get("idx"): p for p in norm if isinstance(p, dict)}
-    for i, it in enumerate(batch):
-        p = by_idx.get(i) or {}
-        # 维度（中文枚举，canonical key）
-        dim = (p.get("dimension") or "").strip()
-        if dim not in DIMENSIONS:
-            dim = it["default_dim"]
-        it["dimension"] = dim
-
-        native = it.get("lang", "en")
-        orig = decode_html_entities(it["title"])
-        it["title"] = orig
-        # 标题 slot：原生语言强制用 RSS 原标题（LLM 不改写原生标题，避免被加注释/截断）；
-        # 外文语言取 LLM 翻译，缺失才回退原标题（保底不崩）。
-        t_zh = decode_html_entities(p.get("title_zh") or "").strip()
-        t_en = decode_html_entities(p.get("title_en") or "").strip()
-        if native == "zh":
-            t_zh = orig
-            t_en = _strip_llm_title_suffix(t_en) or orig
-        else:
-            t_en = orig
-            t_zh = _strip_llm_title_suffix(t_zh) or orig
-        it["title_zh"] = t_zh[:200]
-        it["title_en"] = t_en[:200]
-
-        # 摘要 slot：原生 LLM 概括（空/废话→原标题前30字），外文取翻译（缺失→回退另一语摘要）
-        s_zh = decode_html_entities(p.get("summary_zh") or "").strip()
-        s_en = decode_html_entities(p.get("summary_en") or "").strip()
-        if native == "zh":
-            s_zh = s_zh if s_zh not in BAD else orig[:30]
-            s_en = s_en if s_en not in BAD else s_zh
-        else:
-            s_en = s_en if s_en not in BAD else orig[:30]
-            s_zh = s_zh if s_zh not in BAD else s_en
-        it["summary_zh"] = s_zh[:60]
-        it["summary_en"] = s_en[:80]
-
-        # 关键词：LLM 抽取 → normalize_term 归一；缺失/异常单独降级为词典匹配，
-        # 不拖累 dimension/翻译字段。每卡 cap 3。
-        kws_raw = p.get("keywords")
-        kws = []
-        if isinstance(kws_raw, list):
-            for k in kws_raw:
-                ck = terms_mod.normalize_term(k) if terms_mod else str(k).strip().lower()
-                if ck and ck not in kws:
-                    kws.append(ck)
-        if not kws and terms_mod:
-            kws = terms_mod.extract_keywords_dict(it["title"])
-        # 需求 5：硬编码大小写校验——关键词必须与原文大小写完全一致
-        # （命中原文表面形式则取原文确切大小写；未命中保持 canonical）。
-        if terms_mod:
-            it["keywords"] = [terms_mod.case_match_original(k, it["title"])
-                              for k in kws[:3]]
-        else:
-            it["keywords"] = kws[:3]
     return batch
 
 
+def _item_missing_llm_out(it):
+    """条目是否还没有 LLM 产出（非母语标题/摘要槽仍为空）。
+
+    供 enrich_with_llm 在子批失败后区分「已回填的好条目」与「未通过校验的坏条目」：
+    坏条目降级 + 收进末尾重试集；好条目不重发（省近 1 倍调用量）。
+    """
+    if it.get("lang", "en") == "zh":
+        return not ((it.get("title_en") or "").strip()
+                    and (it.get("summary_en") or "").strip())
+    return not ((it.get("title_zh") or "").strip()
+                and (it.get("summary_zh") or "").strip())
+
+
 def enrich_with_llm(items):
-    """对所有事件做 LLM 打标。分批调用，单批失败 → 该批降级到 default_dim。
+    """对所有事件做 LLM 打标。分批调用，单批失败 → 坏条目降级到 default_dim。
 
     为减少单批整体失败（网络抖动导致 12 条全降级），每批内分两个子批
     （6 条一组）分别调 LLM；子批失败仅该子批降级，不影响另一半。
+
+    2026-09-02 优化（DeepSeek 用量事故）：_llm_classify_batch 失败时已通过
+    校验的条目会保留回填结果——这里只把仍缺 LLM 产出的坏条目降级 + 重试，
+    不再整批 6 条重来（当日 205 次 DeepSeek 调用里约 76 次因 1-3/6 条混杂被
+    整批作废并重试，是调用量近 2 倍的放大器）。
     """
     # Normalize before the LLM attempt so the no-key/error fallback cannot
     # re-persist the legacy encoded title unchanged.
@@ -1110,7 +1144,7 @@ def enrich_with_llm(items):
         it["title"] = decode_html_entities(it.get("title") or "")
 
     SUB = max(1, LLM_BATCH // 2)  # 子批大小（默认 6）
-    retry_subs = []  # 主循环失败的子批：末尾重试一次（链可能已切到可用档）
+    retry_items = []  # 主循环失败的坏条目：末尾重试一次（链可能已切到可用档）
     for start in range(0, len(items), LLM_BATCH):
         batch = items[start:start + LLM_BATCH]
         for sub_start in range(0, len(batch), SUB):
@@ -1118,9 +1152,12 @@ def enrich_with_llm(items):
             try:
                 _llm_classify_batch(sub)
             except Exception:
-                # LLM 不可用：该子批降级——双 slot 都填原标题（无翻译），保证热词仍可展示；
-                # keywords 走词典匹配（零 LLM 成本，保证无 key 时词池仍有数据、可测）
-                for it in sub:
+                # LLM 不可用/部分条目未通过校验：只降级仍缺 LLM 产出的条目——
+                # 双 slot 都填原标题（无翻译），保证热词仍可展示；
+                # keywords 走词典匹配（零 LLM 成本，保证无 key 时词池仍有数据、可测）。
+                # 已回填的好条目保留 LLM 结果，不进重试集。
+                bad = [it for it in sub if _item_missing_llm_out(it)]
+                for it in bad:
                     it["dimension"] = it["default_dim"]
                     it["title_zh"] = it["title"][:200]
                     it["title_en"] = it["title"][:200]
@@ -1128,12 +1165,12 @@ def enrich_with_llm(items):
                     it["summary_en"] = it["title"][:30]
                     it["keywords"] = (terms_mod.extract_keywords_dict(it["title"])
                                       if terms_mod else [])
-                retry_subs.append(sub)
+                retry_items.extend(bad)
     # 主循环后重试：GLM 429 多为散落单发，主循环内链可能已因累计失败逃到
     # deepseek——重试能找回这批翻译；仍失败则保持降级（不再逐批计故障转移）。
-    for sub in retry_subs:
+    for start in range(0, len(retry_items), LLM_BATCH):
         try:
-            _llm_classify_batch(sub)
+            _llm_classify_batch(retry_items[start:start + LLM_BATCH])
         except Exception:
             pass
     return items
@@ -1509,8 +1546,10 @@ def _dims_refresh_once():
     try:
         try:
             with _cross_proc_lock(DIMS_REFRESH_LOCKFILE):
-                global _LLM_CYCLE_FAILS
-                _LLM_CYCLE_FAILS = 0  # 每周期复位：累计失败只在本刷新内生效
+                # 每轮刷新起始把故障转移链复位回链首（GLM 低价档）——故障转移
+                # 只限当轮逃生，防 GLM 一时不稳后整日钉死最贵档（2026-09-02
+                # DeepSeek 用量事故：两 worker 全逃逸、4 轮全量打 DeepSeek）。
+                _llm_cycle_reset()
                 data = _fetch_dims_raw()
                 if data.get("ok"):
                     # 全量卡（all_cards）只在本刷新管道内用（持久化 + 词聚合），

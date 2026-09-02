@@ -113,11 +113,11 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 - `_cross_proc_lock` (`tracker.py:476`) 用 `fcntl.flock` 跨进程锁，整个容器只有一个 worker 在抓。
 - 失败兜底：读旧缓存文件；旧缓存也无 → 内存兜底。
 
-### dims 层  （`dims.py:1597` `start_background_dims_refresher`）
+### dims 层  （`dims.py:1643` `start_background_dims_refresher`）
 - 独立 daemon 线程，独立跨进程锁 `cache/.dims.refresh.lock`。
-- `_dims_refresh_once` (`dims.py:1500`)：拉 31 个 RSS 源（含 4 个 Google News 关键词源） → HN/Reddit 复合热度 → LLM 批量打标（故障转移链）+ 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库 → **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
-- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (1,7,13,19)`（`config.py:118`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1550`) 算下次刷新倒计时。
-- `_persist_to_history` (`dims.py:1481`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
+- `_dims_refresh_once` (`dims.py:1544`)：拉 31 个 RSS 源（含 4 个 Google News 关键词源） → HN/Reddit 复合热度 → LLM 批量打标（故障转移链；**2026-09-02 起每轮起始 `_llm_cycle_reset` 复位回链首**，DeepSeek 只做当轮逃生舱）+ 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库 → **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
+- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (1,7,13,19)`（`config.py:121`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1596`) 算下次刷新倒计时。
+- `_persist_to_history` (`dims.py:1525`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
 
 ### 启动时机
 `app.py:47-49` 模块加载时即 `start_background_refresher()` + `start_background_dims_refresher()`。每个 worker 进程各起线程，靠 fcntl 锁去重。
