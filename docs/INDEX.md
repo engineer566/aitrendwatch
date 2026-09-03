@@ -23,11 +23,11 @@ aitrendwatch/
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.8.0）
 ├── templates/      # 8 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1603 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪，header 含 🤗 HF 入口，页尾悬浮回到顶部按钮）
-│   ├── hf.html            # HuggingFace 独立排序页（416 行：趋势/点赞/下载排序 + pipeline 标签，开源动向）
+│   ├── index.html         # 首页主单页（1621 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪，header 含 🤗 HF 入口，页尾悬浮回到顶部按钮）
+│   ├── hf.html            # HuggingFace 独立排序页（434 行：趋势/点赞/下载排序 + pipeline 标签，开源动向）
 │   ├── terms.html         # 服务条款页（383 行）
-│   ├── term_detail.html   # 通用热词聚合页（361 行：相关报道聚合 + HF 区块 + 词解释）
-│   ├── search.html        # 搜索结果页（566 行：含热词命中卡区）
+│   ├── term_detail.html   # 通用热词聚合页（379 行：相关报道聚合 + HF 区块 + 词解释）
+│   ├── search.html        # 搜索结果页（584 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（353 行，已废弃，合并到 monitor.html）
 │   ├── admin_login.html   # 管理员登录（68 行）
 │   └── monitor.html       # 统一管理后台：流量监控 + 赞助位管理 Tab 切换（1052 行）
