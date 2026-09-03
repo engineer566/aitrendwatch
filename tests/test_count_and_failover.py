@@ -190,9 +190,10 @@ class LLMFailoverSkipTests(unittest.TestCase):
                 dims._llm_classify_batch(self._batch())
         self.assertEqual(dims._LLM_ACTIVE_IDX, 0)
 
-    def test_incomplete_batch_counts_as_failure(self):
+    def test_incomplete_batch_counts_as_quality_failure(self):
         # GLM 免费档超载会返回缺条目/缺翻译字段的部分数组；缺失翻译必须按
-        # 失败计（触发故障转移换档），不能静默回退成英文原标题。
+        # 质量失败计（2026-09-03 起：质量失败与 provider 故障分离，走高阈值
+        # 质量熔断、不再触发 3 次快速换档），不能静默回退成英文原标题。
         dims = self.dims
         content = ('[{"idx":0,"dimension":"模型与技术","title_zh":"测试标题",'
                    '"title_en":"Test title","summary_zh":"","summary_en":"",'
@@ -201,16 +202,20 @@ class LLMFailoverSkipTests(unittest.TestCase):
                              "finish_reason": "stop"}]}
         dims._LLM_ACTIVE_IDX = 0
         dims._LLM_FAILS = 0
+        dims._LLM_QUALITY_FAILS = 0
+        dims._LLM_QUALITY_CYCLE_FAILS = 0
         with patch.object(dims.requests, "post", return_value=_FakeResp(body)):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dims._LLMQualityError):
                 dims._llm_classify_batch([{"title": "T%d" % i, "source": "S",
                                            "lang": "en"} for i in range(6)])
-        # 6 卡只回 1 条 → 缺 5 条 → 计一次失败（连续 3 次即切档）
-        self.assertEqual(dims._LLM_FAILS, 1)
+        # 6 卡只回 1 条 → 缺 5 条 → 质量失败计数 +1（可用性失败计数不动）
+        self.assertEqual(dims._LLM_FAILS, 0)
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 1)
 
-    def test_echoed_title_with_empty_summary_counts_as_failure(self):
+    def test_echoed_title_with_empty_summary_counts_as_quality_failure(self):
         # GLM 超载时会把英文原标题原样抄进 title_zh 且摘要留空；摘要缺失
-        # 同样必须按失败计，否则中文语境静默出现英文标题。
+        # 同样必须按质量失败计（2026-09-03 起不走快速换档），否则中文语境
+        # 静默出现英文标题。
         dims = self.dims
         entries = []
         for i in range(6):
@@ -222,12 +227,15 @@ class LLMFailoverSkipTests(unittest.TestCase):
                              "finish_reason": "stop"}]}
         dims._LLM_ACTIVE_IDX = 0
         dims._LLM_FAILS = 0
+        dims._LLM_QUALITY_FAILS = 0
+        dims._LLM_QUALITY_CYCLE_FAILS = 0
         with patch.object(dims.requests, "post", return_value=_FakeResp(body)):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dims._LLMQualityError):
                 dims._llm_classify_batch([{"title": "English title %d" % i,
                                            "source": "S", "lang": "en"}
                                           for i in range(6)])
-        self.assertEqual(dims._LLM_FAILS, 1)
+        self.assertEqual(dims._LLM_FAILS, 0)
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 1)
 
     def test_skip_provider_from_mid_chain(self):
         dims = self.dims

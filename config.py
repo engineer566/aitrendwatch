@@ -74,6 +74,21 @@ LLM_FAILOVER_THRESHOLD = max(1, int(os.environ.get("LLM_FAILOVER_THRESHOLD", "3"
 # 保证一个周期内 GLM 明显不稳时快速逃到 deepseek，翻译覆盖优先于免费额度）。
 LLM_CYCLE_ESCAPE = max(1, int(os.environ.get("LLM_CYCLE_ESCAPE", "4") or 4))
 
+# LLM_QUALITY_*：质量失败熔断阈值（2026-09-03）。混杂/缺翻译/JSON 内容问题 =
+# 「质量失败」，与 provider 不可用（429/5xx/1302/402/超时）分开计数——零星
+# 1-2/6 混杂不再快速换档（换档救不了质量：DeepSeek 被拒率同样 ~50%，只会把
+# 账单抬到 3 倍价档）；GLM-5.3 只要 provider 在线就整轮主扛，DeepSeek 只在
+# GLM 真故障时兜底。仅当质量连续 LLM_QUALITY_FAILOVER_THRESHOLD 次（系统性
+# 回显/乱码）或周期累计 LLM_QUALITY_CYCLE_ESCAPE 次时才顺链换档兜底。
+LLM_QUALITY_FAILOVER_THRESHOLD = max(
+    1, int(os.environ.get("LLM_QUALITY_FAILOVER_THRESHOLD", "6") or 6))
+LLM_QUALITY_CYCLE_ESCAPE = max(
+    1, int(os.environ.get("LLM_QUALITY_CYCLE_ESCAPE", "12") or 12))
+# LLM_REPAIR_ROUNDS：打标子批坏条目「二次提示」修正轮数（2026-09-03 用户要求）——
+# 首轮未通过校验（缺翻译/混杂）的条目，带上次失败原因与槽位喂回当前档模型继续
+# 修正，最多 LLM_REPAIR_ROUNDS 轮；提升 GLM-5.3 通过率、减少回显降级与换档。
+LLM_REPAIR_ROUNDS = max(0, int(os.environ.get("LLM_REPAIR_ROUNDS", "2") or 2))
+
 # LLM_REASONING_EFFORT：GLM-5.2+ 推理模型的思考强度（thinking 不可关闭，只能调强度）。
 # GLM-5.3-Flash 的 thinking.type 传 disabled 会直接报错，只能通过 reasoning_effort
 # 控制：low=轻度推理（结构化翻译/分类足够，最快最省）、high=增强推理、max=深度推理。
