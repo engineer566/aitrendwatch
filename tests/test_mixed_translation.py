@@ -131,6 +131,8 @@ class BatchMixedCheckTests(unittest.TestCase):
         self.dims._LLM_ACTIVE_IDX = 0
         self.dims._LLM_FAILS = 0
         self.dims._LLM_CYCLE_FAILS = 0
+        self.dims._LLM_QUALITY_FAILS = 0
+        self.dims._LLM_QUALITY_CYCLE_FAILS = 0
 
     def _en_batch(self):
         return [{"title": "OpenAI Releases GPT-5 with Advanced Reasoning %d" % i,
@@ -152,10 +154,12 @@ class BatchMixedCheckTests(unittest.TestCase):
                 % (i, i, i))
         with patch.object(dims.requests, "post",
                           return_value=_FakeResp(_body(entries))):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dims._LLMQualityError):
                 dims._llm_classify_batch(self._en_batch())
-        # 混杂按失败计：连续失败计数 +1（满阈值才换档）
-        self.assertEqual(dims._LLM_FAILS, 1)
+        # 混杂属质量失败（2026-09-03）：不触发快速换档（_LLM_FAILS 不动），
+        # 只走高阈值质量熔断计数（_LLM_QUALITY_FAILS +1，连续 6 次才换档）
+        self.assertEqual(dims._LLM_FAILS, 0)
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 1)
 
     def test_chinese_summary_mixed_with_english_is_failure(self):
         # 英文源：title_zh 已翻译，但 summary_zh 仍是英文 → 同样按失败计
@@ -171,9 +175,11 @@ class BatchMixedCheckTests(unittest.TestCase):
                 % (i, i))
         with patch.object(dims.requests, "post",
                           return_value=_FakeResp(_body(entries))):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dims._LLMQualityError):
                 dims._llm_classify_batch(self._en_batch())
-        self.assertEqual(dims._LLM_FAILS, 1)
+        # 混杂属质量失败（2026-09-03）：_LLM_FAILS 不动，质量熔断计数 +1
+        self.assertEqual(dims._LLM_FAILS, 0)
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 1)
 
     def test_zh_native_cjk_remaining_in_en_slot_is_mixed_failure(self):
         # 中文源：title_en 仍残留中文 → 混杂 → 按失败计
@@ -193,9 +199,11 @@ class BatchMixedCheckTests(unittest.TestCase):
                 % (i, i, i))
         with patch.object(dims.requests, "post",
                           return_value=_FakeResp(_body(entries))):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dims._LLMQualityError):
                 dims._llm_classify_batch(batch)
-        self.assertEqual(dims._LLM_FAILS, 1)
+        # 混杂属质量失败（2026-09-03）：_LLM_FAILS 不动，质量熔断计数 +1
+        self.assertEqual(dims._LLM_FAILS, 0)
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 1)
 
     def test_clean_bilingual_translations_pass_mixed_check(self):
         # 干净的双语翻译：混杂检查不误伤，正常回填

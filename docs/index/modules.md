@@ -46,7 +46,7 @@
 
 ---
 
-## config.py  （161 行）— 配置集中地
+## config.py  （176 行）— 配置集中地
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -55,28 +55,28 @@
 | 18–20 | 管理后台令牌 `ADMIN_TOKEN` |
 | 22–27 | 站点信息 `SITE_NAME`/`BASE_URL`/`CONTACT_EMAIL` |
 | 29–50 | 数据存储路径 + GeoIP + 缓存目录 |
-| 52–115 | LLM 提供方（模型故障转移链 `LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`LLM_CYCLE_ESCAPE` + 思考强度 `LLM_REASONING_EFFORT` + `llm_endpoint()`/`llm_reasoning_params()`；2026-09-02：链每轮刷新复位回链首的说明——DeepSeek 只做当轮逃生舱） |
-| 116–124 | dims 定点预热 `DIMS_REFRESH_HOURS` |
-| 125–132 | 分析开关 |
-| 133–140 | SEO 开关 |
-| 141–150 | 第三方广告（AdSense/百度联盟） |
-| 151–154 | 赞助位展示 |
-| 155–161 | `ensure_data_dir()` |
+| 52–134 | LLM 提供方（模型故障转移链 `LLM_CHAIN`@67/`LLM_FAILOVER_THRESHOLD`@71/`LLM_CYCLE_ESCAPE`@75 + **质量/可用性分离熔断 `LLM_QUALITY_FAILOVER_THRESHOLD`@83/`LLM_QUALITY_CYCLE_ESCAPE`@85 + 坏条目二次提示轮数 `LLM_REPAIR_ROUNDS`@90（2026-09-03）** + 思考强度 `LLM_REASONING_EFFORT`@98 + `llm_endpoint()`@111/`llm_reasoning_params()`@119；链每轮刷新复位回链首——DeepSeek 只做当轮逃生舱） |
+| 135–139 | dims 定点预热 `DIMS_REFRESH_HOURS`@136 |
+| 140–147 | 分析开关 |
+| 148–155 | SEO 开关 |
+| 156–165 | 第三方广告（AdSense/百度联盟） |
+| 166–169 | 赞助位展示 |
+| 170–176 | `ensure_data_dir()` |
 
 ### 公开函数
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `_as_bool(v, default)` | 126 | 字符串→布尔 |
-| `ensure_data_dir()` | 156 | 建 `DATA_DIR`（容器 /app/data，本地 ./data） |
-| `llm_endpoint(model)` | 93 | 模型 ID → (url, api_key)：deepseek-* → DeepSeek，其余 → 智谱 BigModel |
-| `llm_reasoning_params(model)` | 101 | 模型 ID → 思考强度参数 dict：glm-5.2+ 返回 `{"reasoning_effort": ...}`，glm-4.7/deepseek 返回 {}（不传未知参数） |
+| `_as_bool(v, default)` | 141 | 字符串→布尔 |
+| `ensure_data_dir()` | 171 | 建 `DATA_DIR`（容器 /app/data，本地 ./data） |
+| `llm_endpoint(model)` | 111 | 模型 ID → (url, api_key)：deepseek-* → DeepSeek，其余 → 智谱 BigModel |
+| `llm_reasoning_params(model)` | 119 | 模型 ID → 思考强度参数 dict：glm-5.2+ 返回 `{"reasoning_effort": ...}`，glm-4.7/deepseek 返回 {}（不传未知参数） |
 
 ### 关键常量
-`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`LLM_CHAIN`（默认 `glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash`）、`LLM_FAILOVER_THRESHOLD=3`、`LLM_CYCLE_ESCAPE=4`、`LLM_REASONING_EFFORT=low`（可选 low/high/max，仅 glm-5.2+ 生效）、`DEEPSEEK_API_KEY`/`DEEPSEEK_URL`、`GLM_API_KEY`/`GLM_URL`（智谱 BigModel 免费档，高峰 429/1305 过载）、`DIMS_REFRESH_HOURS=(1,7,13,19)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
+`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`LLM_CHAIN`（默认 `glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash`）、`LLM_FAILOVER_THRESHOLD=3`、`LLM_CYCLE_ESCAPE=4`、`LLM_QUALITY_FAILOVER_THRESHOLD=6`/`LLM_QUALITY_CYCLE_ESCAPE=12`/`LLM_REPAIR_ROUNDS=2`（2026-09-03：质量失败与 provider 故障分离 + 坏条目二次提示轮数）、`LLM_REASONING_EFFORT=low`（可选 low/high/max，仅 glm-5.2+ 生效）、`DEEPSEEK_API_KEY`/`DEEPSEEK_URL`、`GLM_API_KEY`/`GLM_URL`（智谱 BigModel 免费档，高峰 429/1305 过载）、`DIMS_REFRESH_HOURS=(1,7,13,19)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
 
 ---
 
-## dims.py  （1651 行）— 维度事件层（RSS + 热度 + LLM）
+## dims.py  （1795 行）— 维度事件层（RSS + 热度 + LLM）
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -85,28 +85,28 @@
 | 76–146 | 文件缓存（`cache/dims.json`） |
 | 147–348 | RSS 源定义 `RSS_SOURCES`（36 源）+ RSS 解析 + 抓取（`fetch_all_rss`@329） |
 | 345–654 | 社区热度增强（HN/Reddit/复合分/趋势分） |
-| 656–1307 | LLM 批量打标（672–806 故障转移状态：`_active_llm`@697/`_llm_success`@705/`_llm_failure`@712/`_llm_skip_provider`@745 + **`_llm_cycle_reset`@763（2026-09-02：每轮刷新起始链复位回链首）** + `_is_mixed_translation`@783 混杂检查；807–1117 `_llm_classify_batch`（2026-09-02：逐条校验回填——好条目保留 LLM 结果、坏条目才按失败计，不再整批丢弃重来）；1118–1179 `_item_missing_llm_out`@1118 + `enrich_with_llm`@1131（失败只降级/重试坏条目）；1180–1226 `_translate_terms`；1227–1307 `explain_terms` 热词解释生成/优化） |
-| 1308–1506 | 顶层聚合（`_to_card`@1308 / `_fetch_dims_raw`@1343 / `_project_card`@1383 / `get_dims`@1408 / `get_news_cards`@1442） |
-| 1507–1651 | 后台预热线程 + 跨进程锁 + 定点刷新（`_dims_refresh_once`@1544 起始 `_llm_cycle_reset`） |
+| 660–1451 | LLM 批量打标（663–838 异常类与故障转移状态机：`_LLMTransientError`/`_LLMAccountRateLimit`/`_LLMQualityError`@676（2026-09-03 质量失败类）+ `_llm_quality_failure`@766（质量/可用性分离高阈值熔断：连续 6/周期累计 12 才换档）+ `_llm_cycle_reset`@817（每轮刷新起始复位链首）；840–958 逐条校验+回填 `_llm_apply_output`@864（好条目保留、坏条目记 `_llm_fail` 原因）；959–1236 `_llm_classify_batch`（2026-09-02 逐条校验 + 2026-09-03 坏条目「二次提示」修正 repair pass（LLM_REPAIR_ROUNDS 轮，带失败原因喂回当前档）+ 质量失败不快速换档、429/5xx/402 才换档）；1237–1308 `_item_missing_llm_out`@1237 + `enrich_with_llm`@1250（质量失败不重试、provider 故障才收进末尾重试）；1309–1360 `_translate_terms`；1361–1451 `explain_terms` 热词解释生成/优化） |
+| 1452–1650 | 顶层聚合（`_to_card`@1452 / `_fetch_dims_raw`@1487 / `_project_card` / `get_dims`@1552 / `get_news_cards`@1586） |
+| 1651–1795 | 后台预热线程 + 跨进程锁 + 定点刷新（`_cross_proc_lock`@1651 / `_persist_to_history`@1669 / `_dims_refresh_once`@1688 起始 `_llm_cycle_reset` / `_seconds_until_next_refresh_hour`@1740 / `start_background_dims_refresher`@1787） |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `get_dims(dimension=None, lang="zh")` | 1408 | 维度热词分组（只读缓存）；`/api/dims` |
-| `get_news_cards(lang="zh")` | 1442 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
+| `get_dims(dimension=None, lang="zh")` | 1552 | 维度热词分组（只读缓存）；`/api/dims` |
+| `get_news_cards(lang="zh")` | 1586 | news 卡列表（读缓存 + 历史库）；`/api/stream` |
 | `enrich_with_signals(items)` | 623 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
-| `start_background_dims_refresher()` | 1643 | 启动后台预热线程（app.py 启动时调） |
+| `start_background_dims_refresher()` | 1787 | 启动后台预热线程（app.py 启动时调） |
 
 ### 内部函数（按分区归组）
 - 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
 - RSS：`_norm_date`/`_strip_cdata`/`_parse_rss`/`fetch_one_rss`/`fetch_all_rss`
 - 热度：`_has_cjk`/`_clean_title`/`_hn_points`/`_reddit_points`/`_buzz`/`_age_hours`/`_time_decay`/`_composite_score`/`_trend_score`
-- LLM：`_active_llm`/`_llm_success`/`_llm_failure`（故障转移状态机）/`_llm_skip_provider`/`_llm_cycle_reset`（每轮刷新复位回链首）/`_llm_classify_batch`/`enrich_with_llm`/`_translate_terms`/`explain_terms`（热词双语解释生成/优化，供 terms.refresh_words 的 term_explainer 回调）/`_LLMTransientError`（瞬态错误类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）/`_is_mixed_translation`（硬编码中英混杂检查，issue 11：中文翻译残留 CJK、或英文翻译 ASCII 字母占比 >60% 且长度 >15 → 该批按失败计换档）；`_llm_classify_batch` 的 payload 会经 `config.llm_reasoning_params` 给 GLM-5.2+ 附 `reasoning_effort`（默认 low 降思考强度），提示词已加防回显/非空/JSON-only/完整翻译禁中英混杂规则，keywords 抽取限高价值实体/概念（禁泛化词）；**需求 5**：LLM 抽词结果回填前过 `terms_mod.case_match_original` 硬编码大小写校验——关键词必须与原文大小写完全一致（命中原文表面形式取原文确切大小写，未命中保持 canonical）；**2026-09-02（DeepSeek 用量事故修复）**：`_llm_classify_batch` 逐条校验回填（好条目保留结果、坏条目按失败计，HTTP 402 余额不足归为账户级限流 `_LLMAccountRateLimit`），`enrich_with_llm` 失败只降级/重试坏条目
+- LLM：`_active_llm`/`_llm_success`/`_llm_failure`（可用性失败状态机）/`_llm_quality_failure`（质量失败高阈值熔断）/`_llm_skip_provider`/`_llm_cycle_reset`（每轮刷新复位回链首）/`_llm_classify_batch`/`_llm_apply_output`（逐条校验回填）/`enrich_with_llm`/`_translate_terms`/`explain_terms`（热词双语解释生成/优化，供 terms.refresh_words 的 term_explainer 回调）/`_LLMTransientError`/`_LLMAccountRateLimit`/`_LLMQualityError`（异常类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）/`_is_mixed_translation`（硬编码中英混杂检查，issue 11：中文翻译残留 CJK、或英文翻译 ASCII 字母占比 >60% 且长度 >15 → 该条按坏计）；`_llm_classify_batch` 的 payload 会经 `config.llm_reasoning_params` 给 GLM-5.2+ 附 `reasoning_effort`（默认 low 降思考强度），提示词已加防回显/非空/JSON-only/完整翻译禁中英混杂规则，keywords 抽取限高价值实体/概念（禁泛化词）；**需求 5**：LLM 抽词结果回填前过 `terms_mod.case_match_original` 硬编码大小写校验——关键词必须与原文大小写完全一致；**2026-09-02（DeepSeek 用量事故修复）**：逐条校验回填 + 每轮复位链首 + HTTP 402 归账户级限流；**2026-09-03（DeepSeek 费用仍异常修复）**：质量失败（混杂/缺翻译/JSON）与 provider 故障（429/5xx/超时）分离计数——零星 1-2/6 混杂不再快速换档（换档救不了质量，只把账单抬到 3 倍价档），坏条目经「二次提示」（带失败原因喂回当前档，`LLM_REPAIR_ROUNDS` 轮）修正，GLM-5.3 只要在线就整轮主扛、DeepSeek 只兜底
 - 聚合：`_to_card`/`_fetch_dims_raw`/`_project_card`
 - 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`（每轮起始 `_llm_cycle_reset`）/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
 
 ### 模块级常量
-`RSS_SOURCES`（36 源，`dims.py:155`，含 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`LLM_REASONING_EFFORT`（自 config 导入）、`_LLM_ACTIVE_IDX`/`_LLM_FAILS`/`_LLM_CYCLE_FAILS`（故障转移进程级状态，每轮 `_llm_cycle_reset` 复位）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
+`RSS_SOURCES`（36 源，`dims.py:155`，含 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`LLM_QUALITY_FAILOVER_THRESHOLD`/`LLM_QUALITY_CYCLE_ESCAPE`/`LLM_REPAIR_ROUNDS`（自 config 导入）、`_LLM_ACTIVE_IDX`/`_LLM_FAILS`/`_LLM_CYCLE_FAILS`/`_LLM_QUALITY_FAILS`/`_LLM_QUALITY_CYCLE_FAILS`（故障转移进程级状态：可用性与质量分开计数，每轮 `_llm_cycle_reset` 复位）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）。
 
 ---
 

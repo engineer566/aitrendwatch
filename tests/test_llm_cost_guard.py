@@ -76,6 +76,8 @@ class LLMCycleResetTests(unittest.TestCase):
         self.dims._LLM_ACTIVE_IDX = 0
         self.dims._LLM_FAILS = 0
         self.dims._LLM_CYCLE_FAILS = 0
+        self.dims._LLM_QUALITY_FAILS = 0
+        self.dims._LLM_QUALITY_CYCLE_FAILS = 0
 
     def test_cycle_reset_returns_chain_to_head(self):
         # 模拟整日事故状态：worker 已逃逸到最贵档（末档 deepseek）
@@ -118,6 +120,8 @@ class LLM402AccountLevelTests(unittest.TestCase):
         self.dims._LLM_ACTIVE_IDX = 0
         self.dims._LLM_FAILS = 0
         self.dims._LLM_CYCLE_FAILS = 0
+        self.dims._LLM_QUALITY_FAILS = 0
+        self.dims._LLM_QUALITY_CYCLE_FAILS = 0
 
     def test_402_is_account_level_and_skips_provider_family(self):
         dims = self.dims
@@ -163,6 +167,8 @@ class LLMPartialFillTests(unittest.TestCase):
         self.dims._LLM_ACTIVE_IDX = 0
         self.dims._LLM_FAILS = 0
         self.dims._LLM_CYCLE_FAILS = 0
+        self.dims._LLM_QUALITY_FAILS = 0
+        self.dims._LLM_QUALITY_CYCLE_FAILS = 0
 
     def _clean_entry(self, i):
         return ('{"idx":%d,"dimension":"模型与技术",'
@@ -173,8 +179,9 @@ class LLMPartialFillTests(unittest.TestCase):
                 % (i, i))
 
     def test_mixed_sub_batch_keeps_good_items_filled(self):
-        # 6 条里 1 条混杂（idx5 title_zh 仍是英文）：整批按失败计（计数+1），
-        # 但前 5 条已回填 LLM 结果，坏条目不回填——enrich 只重试坏条目。
+        # 6 条里 1 条混杂（idx5 title_zh 仍是英文）：属质量失败（_LLM_QUALITY_FAILS
+        # +1，2026-09-03 起不触发快速换档），前 5 条已回填、坏条目不回填——
+        # 经二次提示修正（mock 固定返回同一坏内容）后仍失败才 raise。
         dims = self.dims
         entries = [self._clean_entry(i) for i in range(6)]
         entries[5] = ('{"idx":5,"dimension":"模型与技术",'
@@ -185,10 +192,11 @@ class LLMPartialFillTests(unittest.TestCase):
         batch = [_en_item(i) for i in range(6)]
         with patch.object(dims.requests, "post",
                           return_value=_FakeResp(_body(entries))):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dims._LLMQualityError):
                 dims._llm_classify_batch(batch)
-        # 缺翻译/混杂按失败计：连续失败计数 +1（满阈值才换档）
-        self.assertEqual(dims._LLM_FAILS, 1)
+        # 质量失败：可用性失败计数不动，质量熔断计数 +1
+        self.assertEqual(dims._LLM_FAILS, 0)
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 1)
         # 前 5 条（通过校验）已回填
         for it in batch[:5]:
             self.assertTrue((it.get("title_zh") or "").strip())
@@ -233,6 +241,102 @@ class LLMPartialFillTests(unittest.TestCase):
         for it in items:
             self.assertTrue((it.get("title_zh") or "").strip())
             self.assertTrue((it.get("summary_zh") or "").strip())
+
+    def test_repair_pass_second_prompt_fixes_bad_item(self):
+        # 首轮 1 条混杂 → 二次提示（带失败原因）只重发坏条目 → 修正成功：
+        # 批次整体成功、不换档、调用只多 1 次（2026-09-03 用户要求）。
+        dims = self.dims
+        clean = [self._clean_entry(i) for i in range(6)]
+        bad = list(clean)
+        bad[5] = ('{"idx":5,"dimension":"模型与技术",'
+                  '"title_zh":"OpenAI Releases GPT-5 with Advanced Reasoning 5",'
+                  '"title_en":"OpenAI Releases GPT-5 5",'
+                  '"summary_zh":"OpenAI 发布 GPT-5。",'
+                  '"summary_en":"OpenAI released GPT-5.","keywords":["gpt-5"]}')
+        calls = []
+
+        def _fake_post(url, headers=None, json=None, timeout=None):
+            content = json["messages"][1]["content"]
+            calls.append(content)
+            if len(calls) == 1:
+                return _FakeResp(_body(bad))    # 首轮：idx5 混杂
+            return _FakeResp(_body(clean))      # 二次提示：全部修正
+
+        batch = [_en_item(i) for i in range(6)]
+        with patch.object(dims.requests, "post", side_effect=_fake_post):
+            dims._llm_classify_batch(batch)
+        # 主调用 1 次 + 二次提示 1 次；第二段 user 消息带失败原因
+        self.assertEqual(len(calls), 2)
+        self.assertIn("上次未通过: 混杂", calls[1])
+        # 修正成功：整批回填、质量/可用性失败计数都为零（不换档）
+        self.assertEqual(dims._LLM_FAILS, 0)
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 0)
+        self.assertEqual(dims._LLM_ACTIVE_IDX, 0)
+        for it in batch:
+            self.assertTrue((it.get("title_zh") or "").strip())
+            self.assertTrue((it.get("summary_zh") or "").strip())
+
+    def test_quality_failure_does_not_fast_failover(self):
+        # 零星质量失败（连续 2 次 < 6 阈值）：不换档、可用性计数不动（2026-09-03）
+        dims = self.dims
+        clean = [self._clean_entry(i) for i in range(6)]
+        bad = list(clean)
+        bad[3] = ('{"idx":3,"dimension":"模型与技术",'
+                  '"title_zh":"OpenAI Releases GPT-5 with Advanced Reasoning 3",'
+                  '"title_en":"OpenAI Releases GPT-5 3",'
+                  '"summary_zh":"OpenAI 发布 GPT-5。",'
+                  '"summary_en":"OpenAI released GPT-5.","keywords":["gpt-5"]}')
+        body = _body(bad)
+        with patch.object(dims.requests, "post",
+                          return_value=_FakeResp(body)):
+            for _ in range(2):
+                with self.assertRaises(dims._LLMQualityError):
+                    dims._llm_classify_batch([_en_item(i) for i in range(6)])
+        self.assertEqual(dims._LLM_ACTIVE_IDX, 0)          # 仍在链首
+        self.assertEqual(dims._LLM_FAILS, 0)               # 可用性计数不动
+        self.assertEqual(dims._LLM_QUALITY_FAILS, 2)       # 质量熔断计数 +2
+
+    def test_quality_failover_after_six_consecutive(self):
+        # 系统性质量恶化（连续 6 次整批混杂）→ 质量熔断才换档兜底
+        dims = self.dims
+        clean = [self._clean_entry(i) for i in range(6)]
+        bad = list(clean)
+        bad[0] = ('{"idx":0,"dimension":"模型与技术",'
+                  '"title_zh":"OpenAI Releases GPT-5 with Advanced Reasoning 0",'
+                  '"title_en":"OpenAI Releases GPT-5 0",'
+                  '"summary_zh":"OpenAI 发布 GPT-5。",'
+                  '"summary_en":"OpenAI released GPT-5.","keywords":["gpt-5"]}')
+        body = _body(bad)
+        with patch.object(dims.requests, "post",
+                          return_value=_FakeResp(body)):
+            for _ in range(6):
+                with self.assertRaises(dims._LLMQualityError):
+                    dims._llm_classify_batch([_en_item(i) for i in range(6)])
+        # 连续 6 次质量失败 → 顺链切到 glm-5.3（第 2 档）
+        self.assertEqual(
+            self.config.LLM_CHAIN[dims._LLM_ACTIVE_IDX], "glm-5.3-flash")
+
+    def test_repair_rounds_are_bounded(self):
+        # 坏条目二次提示最多 LLM_REPAIR_ROUNDS 轮：固定坏响应 → 1 主 + 2 修正 = 3 次调用
+        dims = self.dims
+        clean = [self._clean_entry(i) for i in range(6)]
+        bad = list(clean)
+        bad[2] = ('{"idx":2,"dimension":"模型与技术",'
+                  '"title_zh":"OpenAI Releases GPT-5 with Advanced Reasoning 2",'
+                  '"title_en":"OpenAI Releases GPT-5 2",'
+                  '"summary_zh":"OpenAI 发布 GPT-5。",'
+                  '"summary_en":"OpenAI released GPT-5.","keywords":["gpt-5"]}')
+        n_posts = [0]
+
+        def _fake_post(url, headers=None, json=None, timeout=None):
+            n_posts[0] += 1
+            return _FakeResp(_body(bad))   # 每次都返回同样的坏内容
+
+        with patch.object(dims.requests, "post", side_effect=_fake_post):
+            with self.assertRaises(dims._LLMQualityError):
+                dims._llm_classify_batch([_en_item(i) for i in range(6)])
+        # 1 次主调用 + 2 轮二次提示（LLM_REPAIR_ROUNDS=2），不再无限重试
+        self.assertEqual(n_posts[0], 3)
 
     @classmethod
     def tearDownClass(cls):

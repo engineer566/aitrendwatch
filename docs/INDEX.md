@@ -12,8 +12,8 @@ AI 热点聚合单页应用：Flask 后端聚合 36 个 RSS 源（含 4 个 Goog
 ```
 aitrendwatch/
 ├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1689 行）
-├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度（161 行）
-├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1651 行）
+├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度 + 质量/可用性分离阈值 + 二次提示轮数（176 行）
+├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1795 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
 ├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1775 行，新增；rise 用近 7 天滑动窗口报道数环比；需求 5：抽词关键词经 case_match_original 对齐原文大小写；2026-09-02：display_en 增量翻译上限 TRANSLATE_BATCH_MAX_WORDS）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP + 用户行为事件（819 行）
@@ -61,7 +61,7 @@ aitrendwatch/
 |------|------|------|---------------------------------------|------|
 | `app.py` | 1689 | Flask 入口、路由、8 直连源抓取、词详情装配 | 40 个路由 view 函数（含 `admin_sponsors_list`）+ `_word_detail` + `_explain_fallback` + `_hf_models_for` | tracker, dims, terms, config, store, stream_utils |
 | `config.py` | 158 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
-| `dims.py` | 1651 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（2026-09-02：链每轮复位 + 逐条校验回填 + 402 账户级限流） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
+| `dims.py` | 1795 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（09-02：链每轮复位/逐条校验/402 账户级；09-03：质量失败与 provider 故障分离 + 坏条目二次提示修正） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
 | `terms.py` | 1775 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典）+ 热窗新鲜度加权 + 关键词大小写校验 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict`, `case_match_original` | config, sqlite3, news_store, text_utils |
 | `store.py` | 819 | 赞助位/统计/GeoIP/用户行为事件 SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country`, `record_event`, `record_events_batch`, `event_stats` | config, sqlite3 |
