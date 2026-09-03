@@ -1329,6 +1329,11 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 display = hf_display
             elif surface_display:
                 display = surface_display
+            elif _is_dictionary_governed(canon):
+                # 词典权威词（品牌/缩写/收录词）：展示名以词典规则为准。顺带修正
+                # 存量脏 display——早期 pretty 兜底曾把 SaaS/DevOps 顶成 Saas/Devops，
+                # 词典规则（_display_of(canon, [])）对 governed 词恒命中词典/缩写表。
+                display = _display_of(canon, [])
             else:
                 display = old_display or _display_of(canon, [])
             display_zh = o.get("display_zh") or _display_zh_of(canon)

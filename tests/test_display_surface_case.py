@@ -171,6 +171,29 @@ class DisplaySurfaceCaseTests(unittest.TestCase):
         for canon in governed_false:
             self.assertFalse(self.terms._is_dictionary_governed(canon), canon)
 
+    # ---- 7. 词典权威词存量脏 display 修正（SaaS→Saas / DevOps→Devops）----
+
+    def test_dict_governed_legacy_dirty_display_fixed_by_lexicon(self):
+        # 早期 pretty 兜底曾把 SaaS/DevOps 顶成 Saas/Devops 并落库存量；
+        # 词典权威词 display 以词典规则（_UPPER_ACRONYMS）为准，随刷新修正。
+        conn = sqlite3.connect(self.db_path)
+        for term, dirty in (("SaaS", "Saas"), ("DevOps", "Devops")):
+            conn.execute("INSERT INTO terms (term, display, origin) "
+                         "VALUES (?,?,?)", (term, dirty, "news"))
+        conn.commit()
+        conn.close()
+        self.news_store.upsert_cards([
+            self._card("https://saas.example/1",
+                       "SaaS Platform Raises Funding Round",
+                       ["saas"]),
+            self._card("https://devops.example/1",
+                       "DevOps Pipeline Automation Trends",
+                       ["devops"]),
+        ])
+        self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
+        self.assertEqual(self._term_display("SaaS"), "SaaS")
+        self.assertEqual(self._term_display("DevOps"), "DevOps")
+
 
 if __name__ == "__main__":
     unittest.main()
