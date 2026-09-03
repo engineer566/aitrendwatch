@@ -818,6 +818,56 @@ def _news_row_canons(row):
     return {c for c in (normalize_term(k) for k in extract_keywords_dict(text)) if c}
 
 
+# display_overrides（来自 terms_canonical.json，最高优先级）。模块级常量：
+# _display_of 与 _is_dictionary_governed（词典权威词展示名判定）共用——词典权威词
+# （GPT-5/ChatGPT/OpenClaw 等）的展示名以本表为准，不被标题表面偶然大小写干扰。
+_OVERRIDES = {
+    "agents.md": "AGENTS.md",
+    "agi": "AGI",
+    "amd": "AMD",
+    "aqua": "AQuA",
+    "chatgpt": "ChatGPT",
+    "cot": "CoT",
+    "cuda": "CUDA",
+    "glm": "GLM",
+    "gpt-4o": "GPT-4o",
+    "gpt-5": "GPT-5",
+    "ipo": "IPO",
+    "llm": "LLM",
+    "lora": "LoRA",
+    "mcp": "MCP",
+    "moe": "MoE",
+    "openclaw": "OpenClaw",
+    "rag": "RAG",
+    "rlhf": "RLHF",
+    "tts": "TTS",
+    "xai": "xAI"
+}
+
+# lexicon_display（来自 terms_canonical.json，品牌名/产品名展示名）。模块级常量
+# （同上）：OpenAI/Hugging Face/DeepSeek 等词典收录词的展示名由本表决定。
+_LEXICON_DISPLAY = {
+    "agents.md": "AGENTS.md",
+    "alibaba": "Alibaba",
+    "anthropic": "Anthropic",
+    "apple-intelligence": "Apple Intelligence",
+    "baidu": "Baidu",
+    "bytedance": "ByteDance",
+    "deepseek": "DeepSeek",
+    "google": "Google",
+    "google-deepmind": "Google DeepMind",
+    "huawei": "Huawei",
+    "huggingface": "Hugging Face",
+    "meta-ai": "Meta AI",
+    "microsoft": "Microsoft",
+    "nvidia": "NVIDIA",
+    "openai": "OpenAI",
+    "ross-harness": "ROSS Harness",
+    "tencent": "Tencent",
+    "tsinghua": "Tsinghua"
+}
+
+
 def _display_of(term, surfaces):
     """从命中表面形式里挑展示名：优先含大写的最长形式，否则按规则美化。"""
     best = ""
@@ -830,54 +880,10 @@ def _display_of(term, surfaces):
     _upper_vals = set(_UPPER_ACRONYMS.values())
     if term in _upper_vals:
         return term
-    # display_overrides（来自 terms_canonical.json，最高优先级）
-    _OVERRIDES = {
-        "agents.md": "AGENTS.md",
-        "agi": "AGI",
-        "amd": "AMD",
-        "aqua": "AQuA",
-        "chatgpt": "ChatGPT",
-        "cot": "CoT",
-        "cuda": "CUDA",
-        "glm": "GLM",
-        "gpt-4o": "GPT-4o",
-        "gpt-5": "GPT-5",
-        "ipo": "IPO",
-        "llm": "LLM",
-        "lora": "LoRA",
-        "mcp": "MCP",
-        "moe": "MoE",
-        "openclaw": "OpenClaw",
-        "rag": "RAG",
-        "rlhf": "RLHF",
-        "tts": "TTS",
-        "xai": "xAI"
-    }
     if term in _OVERRIDES:
         return _OVERRIDES[term]
     if term.lower() in _OVERRIDES:
         return _OVERRIDES[term.lower()]
-    # lexicon_display（来自 terms_canonical.json，品牌名/产品名展示名）
-    _LEXICON_DISPLAY = {
-        "agents.md": "AGENTS.md",
-        "alibaba": "Alibaba",
-        "anthropic": "Anthropic",
-        "apple-intelligence": "Apple Intelligence",
-        "baidu": "Baidu",
-        "bytedance": "ByteDance",
-        "deepseek": "DeepSeek",
-        "google": "Google",
-        "google-deepmind": "Google DeepMind",
-        "huawei": "Huawei",
-        "huggingface": "Hugging Face",
-        "meta-ai": "Meta AI",
-        "microsoft": "Microsoft",
-        "nvidia": "NVIDIA",
-        "openai": "OpenAI",
-        "ross-harness": "ROSS Harness",
-        "tencent": "Tencent",
-        "tsinghua": "Tsinghua"
-    }
     if term in _LEXICON_DISPLAY:
         return _LEXICON_DISPLAY[term]
     if term.lower() in _LEXICON_DISPLAY:
@@ -889,6 +895,20 @@ def _display_of(term, surfaces):
     pretty = " ".join(p.upper() if p in UPPER else p.capitalize() for p in parts)
     pretty = pretty.replace("Gpt ", "GPT-").replace("Gpt", "GPT")
     return pretty
+
+
+def _is_dictionary_governed(canon):
+    """词展示名是否由词典规则决定（品牌/缩写/收录词）。
+
+    词典权威词（OpenAI/GLM/xAI/Hugging Face 及 _LEXICON 收录词等）的展示名
+    以词典规范化规则为准，不应被标题表面的偶然大小写干扰；词典外词
+    （如 WorkBuddy 这类新产品名）的展示名优先采用报道标题中的原文形态
+    （经 case_match_original 修正后），而不是 capitalize 美化兜底。
+    """
+    return (canon in _LEXICON
+            or canon in _UPPER_ACRONYMS.values()
+            or canon in _OVERRIDES or canon.lower() in _OVERRIDES
+            or canon in _LEXICON_DISPLAY or canon.lower() in _LEXICON_DISPLAY)
 
 
 def _display_zh_of(term):
@@ -991,10 +1011,19 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     agg = {}  # canon → {mentions, hot_score, urls:set, dims:Counter, top:[...], latest_pub, earliest_pub, pubs:set, cur_cnt, cur_score, cur_signal}
     cur_urls = {c.get("official_url") or c.get("title", "") for c in all_cards}
     cur_signal_by_url = {}
+    # 需求5 改进：收集当轮卡 keywords 的表面形式（LLM/词典抽词经 case_match_original
+    # 对齐原文大小写后的形态，如 "WorkBuddy"），作为词典外词 display 的原文大小写来源。
+    cur_kw_surfaces = {}  # canon → set(表面形式)
     for c in all_cards:
         u = c.get("official_url") or c.get("title", "")
         cur_signal_by_url[u] = (c.get("hn_points", 0) or 0) * 10 + \
             (c.get("reddit_score", 0) or 0) + (c.get("reddit_comments", 0) or 0) * 0.5
+        for _k in (c.get("keywords") or []):
+            _k = str(_k or "").strip()
+            if _k:
+                _ck = normalize_term(_k)
+                if _ck:
+                    cur_kw_surfaces.setdefault(_ck, set()).add(_k)
 
     # 全量历史库扫描用流式游标（for r in cur 逐行取，不用 fetchall 物化整表）。
     # news_cards 随每轮刷新逐轮累积（只增不减），fetchall 会把整表压进内存，
@@ -1268,9 +1297,40 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
             rarity = 1.0 / (1.0 + math.log(1 + a["mentions"]))
             novelty = round(fresh * rarity, 4)
 
-            # display 演进：优先 HF 展示名/旧展示名/新构造
-            display = (hf_terms.get(canon, {}).get("display")
-                       or o.get("display") or _display_of(canon, []))
+            # display 演进：优先 HF 展示名；词典外词优先原文表面形态（需求5 改进：
+            # WorkBuddy 不被 capitalize 美化抹成 Workbuddy——表面来源①当轮卡 keywords
+            # ②top news 标题大小写不敏感命中的原文片段，存量词无当轮报道也能修复）；
+            # 其余保留旧展示名或词典/美化构造。
+            hf_display = hf_terms.get(canon, {}).get("display")
+            old_display = o.get("display")
+            surface_display = ""
+            if not hf_display and not _is_dictionary_governed(canon):
+                def _proper(s):
+                    # 含大写且含小写（排除全大写标题党形态如 "WORKBUDDY"）
+                    return (any(c.isupper() for c in s)
+                            and any(c.islower() for c in s))
+                for _s in (cur_kw_surfaces.get(canon) or ()):
+                    if _proper(_s) and len(_s) > len(surface_display):
+                        surface_display = _s
+                if not surface_display:
+                    for _n in (a.get("top") or [])[:3]:
+                        for _f in ("title_zh", "title_en", "title"):
+                            _t = str(_n.get(_f) or "")
+                            if not _t:
+                                continue
+                            try:
+                                _hit = case_match_original(canon, _t)
+                            except Exception:
+                                _hit = canon
+                            if (_hit != canon and _proper(_hit)
+                                    and len(_hit) > len(surface_display)):
+                                surface_display = _hit
+            if hf_display:
+                display = hf_display
+            elif surface_display:
+                display = surface_display
+            else:
+                display = old_display or _display_of(canon, [])
             display_zh = o.get("display_zh") or _display_zh_of(canon)
 
             # display_en：本轮翻译有结果才覆盖；翻译失败/未命中时保留旧值，
