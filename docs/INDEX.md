@@ -15,7 +15,7 @@ aitrendwatch/
 ├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度 + 质量/可用性分离阈值 + 二次提示轮数（176 行）
 ├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1795 行）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
-├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1775 行，新增；rise 用近 7 天滑动窗口报道数环比；需求 5：抽词关键词经 case_match_original 对齐原文大小写；2026-09-02：display_en 增量翻译上限 TRANSLATE_BATCH_MAX_WORDS）
+├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，1840 行，新增；rise 用近 7 天滑动窗口报道数环比；需求 5：抽词关键词经 case_match_original 对齐原文大小写；需求 5 改进：词典外词 display 优先原文表面形态（WorkBuddy 不再显示 Workbuddy），词典权威词存量脏 display 随刷新回归词典规则（Saas→SaaS）；2026-09-02：display_en 增量翻译上限 TRANSLATE_BATCH_MAX_WORDS）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP + 用户行为事件（819 行）
 ├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列，落库前 canonical 归一 + churn 防护）（433 行）
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
@@ -23,11 +23,11 @@ aitrendwatch/
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.8.0）
 ├── templates/      # 8 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1603 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪，header 含 🤗 HF 入口，页尾悬浮回到顶部按钮）
-│   ├── hf.html            # HuggingFace 独立排序页（416 行：趋势/点赞/下载排序 + pipeline 标签，开源动向）
+│   ├── index.html         # 首页主单页（1621 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪，header 含 🤗 HF 入口，页尾悬浮回到顶部按钮）
+│   ├── hf.html            # HuggingFace 独立排序页（434 行：趋势/点赞/下载排序 + pipeline 标签，开源动向）
 │   ├── terms.html         # 服务条款页（383 行）
-│   ├── term_detail.html   # 通用热词聚合页（361 行：相关报道聚合 + HF 区块 + 词解释）
-│   ├── search.html        # 搜索结果页（566 行：含热词命中卡区）
+│   ├── term_detail.html   # 通用热词聚合页（379 行：相关报道聚合 + HF 区块 + 词解释）
+│   ├── search.html        # 搜索结果页（584 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（353 行，已废弃，合并到 monitor.html）
 │   ├── admin_login.html   # 管理员登录（68 行）
 │   └── monitor.html       # 统一管理后台：流量监控 + 赞助位管理 Tab 切换（1052 行）
@@ -63,7 +63,7 @@ aitrendwatch/
 | `config.py` | 158 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
 | `dims.py` | 1795 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（09-02：链每轮复位/逐条校验/402 账户级；09-03：质量失败与 provider 故障分离 + 坏条目二次提示修正） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
-| `terms.py` | 1775 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典）+ 热窗新鲜度加权 + 关键词大小写校验 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict`, `case_match_original` | config, sqlite3, news_store, text_utils |
+| `terms.py` | 1840 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典）+ 热窗新鲜度加权 + 关键词大小写校验 + 词典外词 display 保留原文大小写（词典权威词存量脏值随刷新回归词典规则） | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict`, `case_match_original` | config, sqlite3, news_store, text_utils |
 | `store.py` | 819 | 赞助位/统计/GeoIP/用户行为事件 SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country`, `record_event`, `record_events_batch`, `event_stats` | config, sqlite3 |
 | `news_store.py` | 433 | 事件卡历史库 SQLite（含 keywords 列 + churn 防护） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
 | `stream_utils.py` | 70 | 统一信息流卡片身份、去重、维度成员与计数 | `card_identity`, `dedupe_cards`, `dimension_members`, `dimension_counts`, `dimension_list` | — |

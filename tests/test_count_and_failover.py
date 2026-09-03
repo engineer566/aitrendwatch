@@ -85,9 +85,12 @@ class CountConsistencyTests(unittest.TestCase):
         self.news_store.upsert_cards(cards)
         self.terms._refresh_words_inner(cards, [], fetched_at=1750000000)
         words, _ = self.terms.get_word_cards("hot", "zh", limit=60)
-        by_term = {w.get("term"): w.get("news_cnt") for w in words}
+        # 键用 canonical id：词典外词 display 自需求5 改进起采用标题原文大小写
+        # 形态（"ABot-Recon"），不再等于 capitalize 美化兜底 "Abot Recon"，故
+        # 计数一致性断言不应耦合 display 字符串。
+        by_id = {w.get("id"): w.get("news_cnt") for w in words}
         # 关键词 1 + 标题命中 1 = 2，与详情页关联口径一致
-        self.assertEqual(by_term.get("Abot Recon"), 2)
+        self.assertEqual(by_id.get("abot-recon"), 2)
         self.assertEqual(
             len(self.terms.get_term_news("abot-recon", limit=50)), 2)
 
