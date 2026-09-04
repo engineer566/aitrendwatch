@@ -5,64 +5,67 @@
 ## 通用机制
 
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。head 最前的主题初始化脚本（在 `<style>` 之前）同时给 `<html>` 设内联背景/文字色（`#f5f6f8`/`#1c2130` 或 `#0f1117`/`#e6e8ee`），避免亮色用户首帧「先暗后亮」闪烁；`#theme-btn` 切换时同步更新内联色（20260901 #12）。
-- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:504`）+ `t(k)` 翻译函数（`index.html:550`）+ `LANG` 状态（`index.html:563`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
-- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">`（`index.html:492`）+ `<script id="initial-terms-data">`（`index.html:493`）+ `<script id="initial-dimensions-data">`（`index.html:494`）+ `<script id="initial-dimension-counts-data">`（`index.html:495`）。
-- **SEO**：全站统一 meta 标签体系（title/description/keywords/OG/Twitter Card/og:image）；`term_detail.html` 含最多 4 段 `application/ld+json` 结构化数据（`term_detail.html:164,175,196,211`：DefinedTerm + ItemList 通用词；SoftwareApplication + ScholarlyArticle 仅 HF 词）；`index.html` 有 WebSite+SearchAction + ItemList ld+json（`index.html:325,339`）；`hf.html` 有 CollectionPage + ItemList ld+json（`hf.html:216,228`）；搜索页 `noindex,follow` 防重复索引。所有页面引用 `/og-image.png` 社交分享图。
+- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:516`，2026-09-05 P3 起含 `hot_note`/`hot_news_note`/`footer_l4` 热度口径 key）+ `t(k)` 翻译函数（`index.html:568`）+ `LANG` 状态（`index.html:583`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
+- **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">` + `<script id="initial-terms-data">` + `<script id="initial-dimensions-data">` + `<script id="initial-dimension-counts-data">`（~492 起，词卡 SSR 首屏）。
+- **SEO（2026-09-05 P1~P5 后）**：全站统一 meta 体系为 title/description/OG/Twitter Card/og:image（**`<meta name="keywords">` 已全站移除**，P5）；`index.html`/`term_detail.html`/`hf.html` head 在 `seo_enabled` 且 BASE_URL 已设时输出 **hreflang zh↔en + x-default→en**（主语言英文，P4，`index.html:61`/`term_detail.html:46`/`hf.html:71`）；canonical 仍自指当前显式语言变体；`term_detail.html` 含最多 4 段 `application/ld+json`（DefinedTerm@197 + ItemList@210 通用词；SoftwareApplication@231 + ScholarlyArticle 仅 HF 词）；`index.html` WebSite@338 + ItemList@352；`hf.html` CollectionPage@223 + ItemList；搜索页 `noindex,follow` 防重复索引。所有页面引用 `/og-image.png` 社交分享图。
 
 ---
 
-## templates/index.html  （1621 行）— 首页主单页（词视图为主）
+## templates/index.html  （1640 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
 | 主题初始化 JS | 14 | 读 localStorage 设 data-theme + `<html>` 内联背景/文字色（防首帧闪烁，head 最前） |
-| 返回滚动恢复 head 脚本 | 82–86 | 首帧前加 `scroll-restoring` 隐藏内容（back_forward 恢复路径） |
-| 🤗 HF 入口（header 右侧 `#hf-link`） | 355 | 与语言/主题按钮同排的 `.btn` 链接；href/title 由前端 `updateHfLink()`（676）跟随 `LANG` 动态生成，语言切换即时同步 |
-| 样式 `<style>` | ~80–311 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
-| SEO ld+json | 325, 339 | 结构化数据 |
-| AdSense 脚本 | 359 | `adsbygoogle.js`（`adsense_enabled` 时） |
-| 视图切换 seg | 400 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
-| SSR 数据注入 | 492–495 | sponsor-data / initial-terms-data（词卡） / initial-dimensions-data / initial-dimension-counts-data（维度元数据） |
-| 主 JS `<script>` | 496–1564 | 全部前端逻辑 |
-| ├ i18n 定义 | 504 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn） |
-| ├ `t(k)` | 550 | 翻译函数 |
-| ├ `LANG`/`currentView` 状态 | 563 | `currentView=words\|news`，URL/localStorage 记忆 |
-| ├ 埋点 `Analytics` | 623 | 埋点系统 v3（任务 9）：`track(eventType, eventData)`（658）→ `POST /api/event`（批量兼容），白名单事件类型；词卡展开/查看热词/视图切换/语言切换/排序切换/维度筛选/搜索 全链路埋点 |
-| ├ `updateHfLink` | 676 | HF 入口链接跟随 LANG |
-| ├ URL 状态恢复 | ~580–620 | `?view=&cat=&sort=&lang=` 可分享 |
-| ├ 分类条 `renderCatBar` | 901 | 按后端 `dimensionList` 顺序渲染维度 pill；标准维度计数为 0 也保留，SSR 阶段用注入的维度计数稳定化 |
-| ├ 词链接 `termHref` | 1044 | 携带当前非默认 view/sort/cat（20260901 #7 边界修复） |
-| ├ 词卡渲染 `renderWordCard` | 1056 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道 + `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致） |
-| ├ 词卡展开 `toggleWordExpand` | 1110 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
-| ├ news 卡 `renderCard` | 1153 | 逐条新闻视图卡片渲染 |
-| ├ `visibleData` | 1225 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
-| ├ `render` | 1241 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
-| ├ `_fetchCtrl` | 1300 | 当前 /api/stream 请求的 AbortController，切语言/排序/视图时 abort 旧请求 |
-| ├ 数据拉取 `fetchAll` | 1337 | `fetchJSON("/api/stream?lang=&sort=&view=")`；全量就位先 `unlockCatCounts()` 再 render，分类条一次更新到全量计数 |
-| ├ 返回滚动恢复 `finalizeScrollRestore` | 1461 | 消费 `aitw_last_scroll` key + 清理 URL 标记（`scroll_back=1`），校准落位；配套 head 脚本（82）+ 词条页 `home_url` 回显（app.py:756） |
-| └ Mock 数据 | 1488 | 后端不可用时的内置预览数据 |
-| 悬浮回到顶部按钮（需求 6 改进：文字 + 箭头 + 移动端安全区/节流；2026-09-04 需求 3：文案统一英文） | 1564–1619 | 页尾 3 块：`.back-top` 样式（1564–1590，fixed 右下胶囊形，文字 + ↑ 箭头 span（`.bt-arrow`），CSS 变量主题自适应，hover 高亮；≤560px 收窄并叠加 `env(safe-area-inset-*)` 安全区）+ 按钮元素（1592–1596，aria-label 与可见文案固定英文「Back to top」——2026-09-04 需求 3：中英文页一致，不再随 `is_en` 切中文；箭头 span `aria-hidden`）+ IIFE 脚本（1598–1619，`matchMedia` 窄屏阈值 250 / 宽屏 400，rAF 节流滚动加 `.show`，点击 `scrollTo` 平滑回顶；独立作用域不与既有 JS 冲突） |
+| 返回滚动恢复 head 脚本 | ~82–86 | 首帧前加 `scroll-restoring` 隐藏内容（back_forward 恢复路径） |
+| hreflang 语言变体 | 61 | zh↔en + x-default→en（P4，`seo_enabled` 且 BASE_URL 已设时输出） |
+| 🤗 HF 入口（header 右侧 `#hf-link`） | ~363 | 与语言/主题按钮同排的 `.btn` 链接；href/title 由前端 `updateHfLink()` 跟随 `LANG` 动态生成，语言切换即时同步 |
+| 样式 `<style>` | ~88–319 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
+| SEO ld+json | 338, 352 | WebSite + ItemList 结构化数据 |
+| 热度口径标注（P3） | i18n `footer_l4`/`hot_note`/`hot_news_note`（535/560）+ JS footer 行（719）+ SSR word-meta title + footer 静态口径行 | 🔥 数字带 title 口径说明（词热度 vs 报道热度分开），可见脚注 SSR/JS 双路径 |
+| 来源标注（P5） | SSR 词卡 top（~441）/ JS 词卡 top + 展开列表（~1077/1141） | 报道条目显示来源 `.src`；展开列表日期改 `.pm` |
+| 视图切换 seg | ~408 | 「🔤热词 / 📰逐条新闻」，`#view-seg` |
+| SSR 数据注入 | ~500–505 | sponsor-data / initial-terms-data（词卡） / initial-dimensions-data / initial-dimension-counts-data（维度元数据） |
+| 主 JS `<script>` | ~508–1598 | 全部前端逻辑 |
+| ├ i18n 定义 | 516 | `I18N` zh/en 双版本（含 view_words/view_news/more_btn/hot_note 等） |
+| ├ `t(k)` | 568 | 翻译函数 |
+| ├ `LANG`/`currentView` 状态 | 583 | `currentView=words\|news`，URL/localStorage 记忆 |
+| ├ 埋点 `Analytics` | ~635 | 埋点系统 v3（任务 9）：`track(eventType, eventData)` → `POST /api/event`（批量兼容），白名单事件类型；词卡展开/查看热词/视图切换/语言切换/排序切换/维度筛选/搜索 全链路埋点 |
+| ├ `updateHfLink` | 694 | HF 入口链接跟随 LANG |
+| ├ URL 状态恢复 | ~598–640 | `?view=&cat=&sort=&lang=` 可分享 |
+| ├ 分类条 `renderCatBar` | ~919 | 按后端 `dimensionList` 顺序渲染维度 pill；标准维度计数为 0 也保留，SSR 阶段用注入的维度计数稳定化 |
+| ├ 词链接 `termHref` | 1062 | 携带当前非默认 view/sort/cat（20260901 #7 边界修复） |
+| ├ 词卡渲染 `renderWordCard` | 1074 | 词名链详情页 + origin 徽标 + hot/rise/novelty + top-3 报道（含来源 `.src`，P5）+ `.word-actions`（「展开更多」按钮条件出现，「查看热词」恒为 `word-detail-link link-btn official` 带框样式，两态一致）；🔥 带热度口径 title（P3） |
+| ├ 词卡展开 `toggleWordExpand` | 1128 | 按需拉 `/api/word/<term>` 全量报道，独立 AbortController |
+| ├ news 卡 `renderCard` | 1172 | 逐条新闻视图卡片渲染 |
+| ├ `visibleData` | 1244 | words 视图成员资格分类过滤；news 视图保留服务端排序 |
+| ├ `render` | 1260 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
+| ├ `_fetchCtrl` | ~1318 | 当前 /api/stream 请求的 AbortController，切语言/排序/视图时 abort 旧请求 |
+| ├ 数据拉取 `fetchAll` | 1356 | `fetchJSON("/api/stream?lang=&sort=&view=")`；全量就位先 `unlockCatCounts()` 再 render，分类条一次更新到全量计数 |
+| ├ 返回滚动恢复 `finalizeScrollRestore` | 1480 | 消费 `aitw_last_scroll` key + 清理 URL 标记（`scroll_back=1`），校准落位；配套 head 脚本（~82）+ 词条页 `home_url` 回显（app.py:816） |
+| └ Mock 数据 | ~1507 | 后端不可用时的内置预览数据 |
+| 悬浮回到顶部按钮（需求 6 改进：文字 + 箭头 + 移动端安全区/节流；2026-09-04 需求 3：文案统一英文） | ~1583–1638 | 页尾 3 块：`.back-top` 样式 + 按钮元素（aria-label 与可见文案固定英文「Back to top」）+ IIFE 脚本（`matchMedia` 窄屏阈值 250 / 宽屏 400，rAF 节流滚动加 `.show`，点击 `scrollTo` 平滑回顶） |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）、`/api/event`（埋点上报，任务 9）。
-**渲染路由**：`/`（`app.py:658`）。
+**渲染路由**：`/`（`app.py:661`）。
 **SSR 首屏**：`initial_terms` 注入词卡（词名 + top-3 报道，爬虫可见），随后异步拉 `/api/stream?view=words` 全量替换。
 
 ---
 
-## templates/hf.html  （434 行）— HuggingFace 独立排序页（开源动向）
+## templates/hf.html  （438 行）— HuggingFace 独立排序页（开源动向）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
 | pipeline_tag → 中文标签映射 | 9–31 | `pipe_emoji` / `pipe_zh` + `pipe_label` 宏：主徽标用可读名称（文生图/文本生成…）而非原始 key |
 | 主题初始化 JS | 38 | 读 localStorage 设 data-theme + `<html>` 内联背景/文字色（防首帧闪烁，head 最前） |
+| hreflang 语言变体 | 71 | zh↔en + x-default→en（P4） |
 | 样式 `<style>` | 82–211 | 暗色默认 + light 覆盖 + 排序 pill / 模型卡 / 响应式 |
-| SEO ld+json | 216, 228 | CollectionPage + ItemList（模型榜 Top-20，爬虫可见） |
+| SEO ld+json | 223, ~235 | CollectionPage + ItemList（模型榜 Top-20，爬虫可见） |
 | 排序切换 pill | 261–266 | `?sort=trending\|likes\|downloads` 普通链接（服务端切换，零 fetch）+ 缓存更新时间 |
 | 模型卡列表 | 270–307 | 排名 / 🤗 开源模型徽标 / pipeline_tag 主徽标 / tags / 趋势分·点赞·下载 / 官方 + 社区链接 / 相关论文 |
 | 主 JS `<script>` | 315–357 | 主题切换 / 搜索跳转 `/search` / 更新时间渲染 |
 
-**引用 API**：无（服务端 `_hf_models_for`（`app.py:925`）装配后 SSR；数据与 `/api/hf` 同一来源）。
-**渲染路由**：`/hf`（`app.py:947`）。
+**引用 API**：无（服务端 `_hf_models_for`（`app.py:951`）装配后 SSR；数据与 `/api/hf` 同一来源）。
+**渲染路由**：`/hf`（`app.py:973`）。
 **数据源**：`tracker.get_model_cards`（trending 文件缓存）→ 冷启动回退 `tracker.get_terms`（自带快速兜底，只抓 HF ~1s）；likes/downloads 在内存重排。
 
 ---
@@ -79,24 +82,27 @@
 | 切换 JS | 365 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:805`）。
+**渲染路由**：`/terms`（`app.py:831`）。
 
 ---
 
-## templates/term_detail.html  （379 行）— 通用热词聚合页
+## templates/term_detail.html  （424 行）— 通用热词聚合页
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
 | 主题初始化 JS | 5 | 读 localStorage 设 data-theme + `<html>` 内联背景/文字色（防首帧闪烁，head 最前） |
-| 词头（名称/来源徽标/热度/环比/报道数） | ~237–244 | `word.term` 通用字段 |
-| 词解释块（💡 双语） | ~245–248 | `{% if word.term.explain %}` 条件渲染，样式 `.term-explain`（109）。服务端三级取词（静态词典 → terms 表 LLM 解释 → 数据化模板兜底），恒非空，每个热词页都有解释 |
-| 词元信息行 term-meta | ~250–257 | hot/rise/报道数/首次出现 |
-| HF 区块（官方/社区/论文/标签，条件渲染） | ~257–284 | `{% if word.hf %}`，live 数据 `word.hf_detail` |
-| 相关报道列表（SSR，SEO 主体） | ~286–302 | `word.news` 聚合卡 |
-| SEO ld+json | 164, 175, 196, 211 | 四个块：DefinedTerm（164）/ ItemList（175）/ SoftwareApplication（196）/ ScholarlyArticle（211）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
+| hreflang 语言变体 | 46 | zh↔en + x-default→en（P4，`seo_enabled` 且 BASE_URL 已设时输出） |
+| robots indexable 分支 | ~52–71 | **P1**：`indexable=False`（薄词条/词池外 HF 回退）→ `noindex,nofollow`，页面照常渲染 |
+| 词头（名称/来源徽标/热度/环比/报道数） | ~268–275 | `word.term` 通用字段；🔥 带热度口径 title（P3） |
+| 词解释块（💡 双语） | ~276–279 | `{% if word.term.explain %}` 条件渲染，样式 `.term-explain`（109）。服务端三级取词（静态词典 → terms 表 LLM 解释 → 数据化模板兜底），恒非空，每个热词页都有解释 |
+| 词元信息行 term-meta + 热度口径脚注 | ~281–292 | hot/rise/报道数/首次出现；`.term-note`（288）可见口径说明（P3） |
+| 近 7 天活跃度趋势 | ~295–315 | **P2**：纯 HTML/CSS 柱状迷你图（`word.trend` 按日序列，≥2 点且 max>0 才渲染，柱 title 带精确值） |
+| HF 区块（官方/社区/论文/标签，条件渲染） | ~318–346 | `{% if word.hf %}`，live 数据 `word.hf_detail` |
+| 相关报道列表（SSR，SEO 主体） | ~348–364 | `word.news` 聚合卡（标题链原文 + 来源 `.src` + 日期 `.pm`；🔥 带报道口径 title，P3） |
+| SEO ld+json | 197, 210, 231, ~247 | 四个块：DefinedTerm（197）/ ItemList（210）/ SoftwareApplication（231）/ ScholarlyArticle（~247）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
 
-**引用 API**：无（服务端 `_word_detail`（`app.py:134`）同步装配，进程内 TTL 缓存）。
-**渲染路由**：`/term/<name>`（`app.py:749`）。
+**引用 API**：无（服务端 `_word_detail`（`app.py:134`）同步装配，进程内 TTL 缓存；`/api/word` 共用并附 `trend` 字段）。
+**渲染路由**：`/term/<name>`（`app.py:760`；indexable 判定 `terms.term_row_indexable`@1971）。
 **数据源**：词池 `terms` 表命中（任何词有页）→ 报道聚合；未命中回退 HF live；再无 → 404。
 
 ---
@@ -108,7 +114,7 @@
 
 ---
 
-## templates/search.html  （584 行）— 搜索结果页（含热词命中）
+## templates/search.html  （583 行）— 搜索结果页（含热词命中）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -117,7 +123,7 @@
 | 建议补全 | ~305+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1228`）、SSR `word_hits` 由 `_do_search`（`app.py:1179`）返回（2026-09-04 需求 1：news 命中在评分排序后按归一化标题去重，镜像报道只留评分高者）。
+**渲染路由**：`/search`（`app.py:1261`）、SSR `word_hits` 由 `_do_search`（`app.py:1212`）返回（2026-09-04 需求 1：news 命中在评分排序后按归一化标题去重，镜像报道只留评分高者）。
 
 ---
 
@@ -128,7 +134,7 @@
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1531`）。
+**渲染路由**：`/admin/login`（`app.py:1569`）。
 
 ---
 

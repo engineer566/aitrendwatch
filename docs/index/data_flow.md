@@ -185,7 +185,9 @@ WAL 模式。DB 不可用 → `_DB_OK=False` 全程静默降级返空。
 | `DIMS_REFRESH_HOURS` | 1,7,13,19 | 定点刷新时刻（Asia/Shanghai） |
 | `ANALYTICS_ENABLED` | true | 分析开关 |
 | `SEO_ENABLED` | true | 关 → 不输出 canonical/OG/JSON-LD，robots 禁止索引 |
-| `SITEMAP_MAX_URLS` | 200 | sitemap 上限 |
+| `TERM_INDEX_MIN_NEWS` | 2 | **2026-09-05 P1**：词条可索引最低关联报道数（低于门槛 → 详情页 noindex + 不进 sitemap；HF 词带 hf_json 不受限） |
+| `TERM_INDEX_MIN_HOT` | 0 | **2026-09-05 P1**：词条可索引最低热度（cur_hot，默认 0=仅靠报道数门槛） |
+| `SITEMAP_MAX_URLS` | 200 | sitemap 上限（**主语言 en：首页/词条/hf 只交 `?lang=en` 变体，词条仅达标词**，2026-09-05 P4） |
 | `TERM_DETAIL_CACHE_TTL` | 1800 | 详情页进程内缓存秒 |
 | `ADSENSE_ENABLED` | false | Google AdSense |
 | `ADSENSE_CLIENT` | "" | ca-pub-xxx |
