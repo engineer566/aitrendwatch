@@ -911,6 +911,21 @@ def _is_dictionary_governed(canon):
             or canon in _LEXICON_DISPLAY or canon.lower() in _LEXICON_DISPLAY)
 
 
+def _surface_upper_trusted(surface, title):
+    """全大写表面（如赛事缩写 GOAI）是否可信为原文写法（需求5 改进 2）。
+
+    含小写字母的表面（WorkBuddy/GoAI 等）恒可信；全大写表面（GOAI 等真
+    缩写）只有当所在标题并非整体全大写时才可信——标题含小写字母或 CJK
+    （如 "GOAI复赛评审正式启动"、"GOAI Announces Finalists…"）说明该全大写
+    形态是该词在原文中的真实写法；整条全大写的标题党标题
+    （"IROBOT LAUNCHES NEW ROBOT…"）里的全大写形态不作 display。
+    """
+    if any(c.islower() for c in surface):
+        return True
+    return (any(c.islower() for c in title)
+            or any(ord(c) >= 128 for c in title))
+
+
 def _display_zh_of(term):
     """词典里该词的第一个 CJK 表面形式作为中文别名，无则 ""。"""
     for f in _LEXICON.get(term, []):
@@ -1012,18 +1027,20 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     cur_urls = {c.get("official_url") or c.get("title", "") for c in all_cards}
     cur_signal_by_url = {}
     # 需求5 改进：收集当轮卡 keywords 的表面形式（LLM/词典抽词经 case_match_original
-    # 对齐原文大小写后的形态，如 "WorkBuddy"），作为词典外词 display 的原文大小写来源。
-    cur_kw_surfaces = {}  # canon → set(表面形式)
+    # 对齐原文大小写后的形态，如 "WorkBuddy"/"GOAI"），并记录所在标题，供全大写
+    # 表面可信度判定（整条全大写的标题党标题中的全大写不算原文写法）。
+    cur_kw_surfaces = {}  # canon → {表面形式: set(所在标题)}
     for c in all_cards:
         u = c.get("official_url") or c.get("title", "")
         cur_signal_by_url[u] = (c.get("hn_points", 0) or 0) * 10 + \
             (c.get("reddit_score", 0) or 0) + (c.get("reddit_comments", 0) or 0) * 0.5
+        _card_title = str(c.get("title") or "")
         for _k in (c.get("keywords") or []):
             _k = str(_k or "").strip()
             if _k:
                 _ck = normalize_term(_k)
                 if _ck:
-                    cur_kw_surfaces.setdefault(_ck, set()).add(_k)
+                    cur_kw_surfaces.setdefault(_ck, {}).setdefault(_k, set()).add(_card_title)
 
     # 全量历史库扫描用流式游标（for r in cur 逐行取，不用 fetchall 物化整表）。
     # news_cards 随每轮刷新逐轮累积（只增不减），fetchall 会把整表压进内存，
@@ -1305,13 +1322,12 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
             old_display = o.get("display")
             surface_display = ""
             if not hf_display and not _is_dictionary_governed(canon):
-                def _proper(s):
-                    # 含大写且含小写（排除全大写标题党形态如 "WORKBUDDY"）
-                    return (any(c.isupper() for c in s)
-                            and any(c.islower() for c in s))
-                for _s in (cur_kw_surfaces.get(canon) or ()):
-                    if _proper(_s) and len(_s) > len(surface_display):
-                        surface_display = _s
+                for _s, _titles in (cur_kw_surfaces.get(canon) or {}).items():
+                    # 全大写表面需所在标题非整体全大写才可信（GOAI 缩写 vs 标题党 IROBOT）
+                    if any(_surface_upper_trusted(_s, _t)
+                           for _t in (_titles or {""})):
+                        if len(_s) > len(surface_display):
+                            surface_display = _s
                 if not surface_display:
                     for _n in (a.get("top") or [])[:3]:
                         for _f in ("title_zh", "title_en", "title"):
@@ -1322,7 +1338,8 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                                 _hit = case_match_original(canon, _t)
                             except Exception:
                                 _hit = canon
-                            if (_hit != canon and _proper(_hit)
+                            if (_hit != canon
+                                    and _surface_upper_trusted(_hit, _t)
                                     and len(_hit) > len(surface_display)):
                                 surface_display = _hit
             if hf_display:

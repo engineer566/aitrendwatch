@@ -8,7 +8,9 @@
 3. 存量旧 display（"Workbuddy"）被原文大小写表面升级为 "WorkBuddy"。
 4. 词典权威词（OpenAI/Hugging Face 等）不被标题表面偶然大小写污染（仍 "OpenAI" /
    "Hugging Face"）。
-5. 全大写标题党形态（"IROBOT"）不入选为 display。
+5. 整条全大写的标题党标题（"IROBOT LAUNCHES NEW ROBOT…"）中的全大写形态不入选
+   display；但标题非整体全大写时的全大写缩写（中文标题 "GOAI复赛评审正式启动"、
+   英文标题 "GOAI Announces…"）是真实写法，display 保留 "GOAI"。
 6. _is_dictionary_governed 判定覆盖：词典词 True / 词典外词 False。
 """
 
@@ -149,16 +151,35 @@ class DisplaySurfaceCaseTests(unittest.TestCase):
         self.terms.refresh_words([card], [], fetched_at=self.FIXED_TS)
         self.assertEqual(self._term_display("huggingface"), "Hugging Face")
 
-    # ---- 5. 全大写标题党形态不入选 ----
+    # ---- 5. 标题党整条全大写不入选；真实全大写缩写（GOAI）保留 ----
 
     def test_all_caps_headline_surface_not_used_as_display(self):
-        # 标题全大写 "IROBOT" 是标题党形态（无小写），不得作为 display。
+        # 整条标题全大写 "IROBOT LAUNCHES NEW ROBOT" 是标题党形态（标题无小写/无
+        # CJK），其中的全大写 "IROBOT" 不得作为 display（回落美化兜底 Irobot）。
         self.news_store.upsert_cards([self._card(
             "https://irobot.example/1", "IROBOT LAUNCHES NEW ROBOT",
             ["irobot"])])
         self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
         self.assertIsNotNone(self._term_display("irobot"))
         self.assertNotIn(self._term_display("irobot"), ("IROBOT",))
+
+    def test_all_caps_acronym_kept_when_title_has_lowercase_or_cjk(self):
+        # GOAI 是赛事全大写缩写：中文标题 "GOAI复赛评审正式启动" 非整体全大写
+        # （含 CJK）→ "GOAI" 是原文真实写法，display 必须保留，而不是美化 "Goai"。
+        self.news_store.upsert_cards([self._card(
+            "https://goai.example/1", "GOAI复赛评审正式启动", ["goai"])])
+        self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
+        self.assertEqual(self._term_display("goai"), "GOAI")
+
+    def test_all_caps_acronym_kept_in_mixed_case_english_title(self):
+        # 英文标题含小写字母（非整条全大写）时的全大写缩写同样可信：
+        # "GOAI Announces Finalists…" → display "GOAI"。
+        self.news_store.upsert_cards([self._card(
+            "https://goai.example/2",
+            "GOAI Announces Finalists for World AI Open Source Contest",
+            ["goai"])])
+        self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
+        self.assertEqual(self._term_display("goai"), "GOAI")
 
     # ---- 6. _is_dictionary_governed 判定 ----
 
