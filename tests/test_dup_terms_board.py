@@ -168,10 +168,12 @@ class DupTermsBoardTests(unittest.TestCase):
         # （hugging-face 18 篇形态 + huggingface 21 篇形态）。
         for i in range(3):
             self._insert_card(f"https://hf.example/legacy-hyphen-{i}",
-                              f"Hugging Face news {i}", ["hugging-face"])
+                              f"Hyphen report {i}: Hugging Face model milestone",
+                              ["hugging-face"])
         for i in range(4):
             self._insert_card(f"https://hf.example/canon-{i}",
-                              f"HuggingFace news {i}", ["huggingface"])
+                              f"Canon report {i}: HuggingFace release day",
+                              ["huggingface"])
         self._insert_card("https://hf.example/surface",
                           "Hugging Face launches leaderboard",
                           ["Hugging Face"])   # 词典抽词保留的原文表面
