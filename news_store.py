@@ -16,6 +16,13 @@ official_url 去重 upsert，保留首次发现时间，score/trend/hot 每次�
   news_cards —— 每条新闻一行，url 为自然主键。
     首次发现存 first_seen_at / first_published；后续刷新只更新 score/trend/hot
     等动态字段，保留 first_seen_at 不变（历史溯源）。
+    2026-09-04（需求 1：同一词条下相同的报道）：主键 url 写库前经
+    text_utils.normalize_url_key 归一（HTML 实体单层解码 + 去 #fragment +
+    去 utm_* 参数）——同一篇文章的 &amp;/&、带/不带片段、带/不带 utm 的
+    url 变体落成同一行，不再产生物理孪生行；upsert 批次内按归一键去重，
+    并自愈存量孪生行（保留一行：优先归一键行/数据更全者，keywords 并集、
+    first_seen_at 取更早，其余行删除——terms 扫描不过滤 active，删除才能
+    根治计数膨胀与双显）。
 """
 
 import os
@@ -26,7 +33,8 @@ import threading
 import datetime
 
 import config
-from text_utils import decode_html_entities, decode_url_entities
+from text_utils import (decode_html_entities, decode_url_entities,
+                        normalize_url_key)
 
 _DB_OK = False                 # DB 是否可用（init 后置 True）
 _db_lock = threading.Lock()    # 串行化写（SQLite 写锁）
@@ -69,6 +77,9 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_news_dim ON news_cards(dimension);
         """)
         _migrate(conn)
+        # 需求 1 自愈：历史版本写入的 &amp;/&、utm 变体孪生行在启动时合并一次，
+        # 避免旧库在下次刷新前继续双显/双计数。
+        _heal_dup_urls(conn)
         conn.commit()
         conn.close()
         _DB_OK = True
@@ -122,17 +133,30 @@ def upsert_cards(cards):
       保留 first_seen_at，刷新 last_refresh_at，置 active=1。
     - 新 url：插入，first_seen_at = last_refresh_at = 当前时间。
     - 本轮未命中的既有 active=1 记录：置 active=0（标记为历史归档，仍可被读取）。
+    - 需求 1（同一词条下相同的报道）：写库前 url 经 normalize_url_key 归一
+      （实体解码 + 去片段 + 去 utm_*），批次内同归一键只保留一份（keywords
+      并集）；随后自愈存量孪生行——同一篇报道不再因 url 字符串差异（&amp;/&、
+      utm 变体）落成两行造成计数翻倍与逐条流/搜索双显。
 
     事务内完成，失败静默（不阻塞 dims 刷新主流程）。
     """
     if not _DB_OK or not cards:
         return
     now = _now_iso()
-    seen_urls = set()
     try:
         with _db_lock:
             conn = _conn()
-            rows = [_card_to_row(c, now) for c in cards]
+            # 批次内按归一键去重：同一次入库出现两种 url 形态时只留一份，
+            # 保留数据更全者（带 keywords、score 高），keywords 取并集。
+            row_by_key = {}
+            for c in cards:
+                row = _card_to_row(c, now)
+                prev = row_by_key.get(row["url"])
+                if prev is None:
+                    row_by_key[row["url"]] = row
+                else:
+                    row_by_key[row["url"]] = _merge_rows(prev, row)
+            rows = list(row_by_key.values())
             # 关键词 churn 防护：同一 url 已存在且本轮抽取的关键词集合是旧集合的
             # 真子集（典型场景：上一轮 LLM 抽词成功 → 本轮 GLM 限流/无 key 降级为
             # 词典匹配，丢失词典外热词如 openclaw）时，保留旧的关键词不覆盖。
@@ -195,6 +219,9 @@ def upsert_cards(cards):
                 """,
                 rows,
             )
+            # 自愈存量孪生行：旧库中 &amp;/&、utm 变体造成的同文双行在此合并
+            # （须在 active 归档之前，保证归档按归一后的键判断）。
+            _heal_dup_urls(conn)
             # 收集本轮命中的 url，把既有的 active=1 但本轮未命中者置 0
             seen_urls = {_card_url(c) for c in cards}
             if seen_urls:
@@ -247,7 +274,7 @@ def _card_url(c, title=None):
     """Return the same normalized URL used for persistence and deactivation."""
     if title is None:
         title = decode_html_entities(c.get("title") or "")
-    return decode_url_entities(c.get("official_url") or c.get("url") or title)
+    return normalize_url_key(c.get("official_url") or c.get("url") or title)
 
 
 def _canonical_keyword(k):
@@ -318,6 +345,120 @@ def _keyword_set(value):
         if canon:
             out.add(canon)
     return out
+
+
+def _keyword_ordered(value):
+    """存量 keywords 值 → canonical 键有序列表（解析口径同 _keywords_to_json）。
+
+    供孪生行合并/批次去重做关键词并集：需要保序 + 保重，故单独实现。
+    """
+    raw = []
+    if isinstance(value, (list, tuple)):
+        raw = list(value)
+    elif isinstance(value, str) and value.strip():
+        try:
+            v = json.loads(value)
+            if isinstance(v, list):
+                raw = v
+            else:
+                raw = re.split(r"[,|]", value)
+        except (json.JSONDecodeError, ValueError):
+            raw = re.split(r"[,|]", value)
+    out = []
+    for k in raw:
+        canon = _canonical_keyword(k)
+        if canon and canon not in out:
+            out.append(canon)
+    return out
+
+
+def _union_keyword_json(*values):
+    """多个 keywords 值 → 并集 JSON 串：保留首次出现顺序，上限 8。
+
+    孪生行合并时，LLM 成功轮抽到的词典外热词不能因删除孪生行而丢
+    （与 upsert 的 churn 防护同一目标）。
+    """
+    out = []
+    for value in values:
+        for canon in _keyword_ordered(value):
+            if canon not in out:
+                out.append(canon)
+    return json.dumps(out[:8], ensure_ascii=False)
+
+
+def _merge_rows(a, b):
+    """合并同归一键的两张候选行：主体取数据更全者（带 keywords 且 score 高），
+    keywords 取并集，first_seen_at 取更早（首次发现语义）。"""
+    def richer(x):
+        return (bool(_keyword_set(x["keywords"])), int(x.get("score") or 0))
+    if richer(a) >= richer(b):
+        base, other = a, b
+    else:
+        base, other = b, a
+    merged = dict(base)
+    merged["keywords"] = _union_keyword_json(base["keywords"], other["keywords"])
+    merged["first_seen_at"] = min(base.get("first_seen_at") or "",
+                                  other.get("first_seen_at") or "") or \
+        (base.get("first_seen_at") or other.get("first_seen_at") or "")
+    return merged
+
+
+def _heal_dup_urls(conn):
+    """自愈存量孪生行（同归一键多行 → 一行）。
+
+    - 归一键 = text_utils.normalize_url_key（实体单层解码 + 去 #fragment +
+      去 utm_* 参数）。
+    - 组内多行：保留一行——优先已存为归一键的行（后续 upsert 冲突键一致），
+      否则取数据更全者（带 keywords、score 高）；keywords 并集写回保留行，
+      first_seen_at 取组内最早（保留“首次发现”历史语义），last_refresh_at
+      取最新；其余行**删除**。
+      选删除而非 active=0 的理由：terms.refresh_words / get_term_news 扫描
+      news_cards 时不过滤 active，置 inactive 的行仍参与计数与展示；删除
+      才能根治孪生行造成的计数膨胀与同一报道双显。
+    - 组内仅一行但行 url ≠ 归一键：把行键重写为归一键，保持存储键与 upsert
+      冲突键一致，避免下一轮刷新再造孪生行。
+    """
+    try:
+        rows = conn.execute(
+            "SELECT url, keywords, score, first_seen_at, last_refresh_at "
+            "FROM news_cards").fetchall()
+        groups = {}
+        for r in rows:
+            groups.setdefault(normalize_url_key(r["url"] or ""), []).append(r)
+        for key, group in groups.items():
+            if not key:
+                continue  # 空键行不参与（历史脏数据，保持原状）
+            canonical = [r for r in group if (r["url"] or "") == key]
+            if canonical:
+                winner = canonical[0]
+            else:
+                winner = max(group, key=lambda r: (
+                    bool(_keyword_set(r["keywords"])),
+                    int(r["score"] or 0)))
+            if len(group) == 1:
+                if (winner["url"] or "") != key:
+                    conn.execute("UPDATE news_cards SET url=? WHERE url=?",
+                                 (key, winner["url"]))
+                continue
+            first_seen = min((r["first_seen_at"] for r in group
+                              if r["first_seen_at"]), default="") or \
+                winner["first_seen_at"] or ""
+            last_refresh = max((r["last_refresh_at"] for r in group
+                                if r["last_refresh_at"]), default="") or \
+                winner["last_refresh_at"] or ""
+            merged_kw = _union_keyword_json(
+                *[r["keywords"] for r in group])
+            for r in group:
+                if (r["url"] or "") == winner["url"]:
+                    continue
+                conn.execute("DELETE FROM news_cards WHERE url=?",
+                             (r["url"],))
+            conn.execute(
+                "UPDATE news_cards SET keywords=?, first_seen_at=?, "
+                "last_refresh_at=?, url=? WHERE url=?",
+                (merged_kw, first_seen, last_refresh, key, winner["url"]))
+    except Exception:
+        pass
 
 
 # ---------- 读：合并历史库扩大内容池 ----------
