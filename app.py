@@ -31,6 +31,7 @@ import tracker
 import dims
 import config
 import store
+import text_utils
 from stream_utils import (card_identity as _stream_card_identity,
                           dedupe_cards as _dedupe_stream_cards,
                           dimension_members as _stream_dimension_members,
@@ -1201,7 +1202,26 @@ def _do_search(q, lang, limit):
         scored.append(s)
     scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
     word_hits.sort(key=lambda x: x.get("_score", 0), reverse=True)
-    return scored[:limit], word_hits[:3], history_hits
+    # 需求 1：搜索结果不双显同一报道——历史库与当轮池可能各带同一篇文章的
+    # 不同 url 形态（&amp;/&、utm 变体等镜像/孪生行），news 卡按归一化标题
+    # 去重（与词条关联列表同口径的标题键；评分已降序，保留最高分那份）。
+    # model/word 卡不参与：HF 模型名与新闻报道同名时两者都是有效命中。
+    deduped = []
+    seen_titles = set()
+    for s in scored:
+        if s.get("kind") == "news":
+            tkey = None
+            for field in ("title_zh", "title_en", "title"):
+                k = text_utils.normalized_title_key(s.get(field))
+                if k:
+                    tkey = k
+                    break
+            if tkey is not None:
+                if tkey in seen_titles:
+                    continue
+                seen_titles.add(tkey)
+        deduped.append(s)
+    return deduped[:limit], word_hits[:3], history_hits
 
 
 @app.route("/search")

@@ -112,23 +112,24 @@
 - 写入函数：`record_event()`（单条）、`record_events_batch()`（批量事务）。
 - 查询函数：`event_stats(days)` → 按类型计数 + 每日趋势 + 近期明细。
 
-### news.db（`news_store.py:36` `init_db`，路径 `config.NEWS_DB_PATH`）
+### news.db（`news_store.py:44` `init_db`，路径 `config.NEWS_DB_PATH`）
 
 **`news_cards`** — 事件卡历史库
 | 列 | 类型 | 说明 |
 |----|------|------|
-| url | TEXT PK | official_url，自然主键 |
+| url | TEXT PK | **归一键**（2026-09-04 需求 1 起：写库前经 `text_utils.normalize_url_key` 归一 = 实体单层解码 + 去 #fragment + 去 `utm_*` 参数；同一篇文章的 `&amp;`/`&`、带/不带片段或 utm 的 url 变体落成同一行，消除物理孪生行；存量孪生行由 `_heal_dup_urls` 自愈合并删除） |
 | title/title_zh/title_en | TEXT | 原生+双语 |
 | summary_zh/summary_en | TEXT | LLM 摘要 |
 | dimension | TEXT | 维度（新 6 类枚举） |
 | source/region/published | TEXT | |
 | hn_points/reddit_score/reddit_comments | INT | 社区热度信号 |
 | score/trend/hot | INT | 累计热度/上升势头（每次刷新重算） |
-| keywords | TEXT | JSON 数组（canonical 词键，每卡 0-3 个；词维度重构新增，幂等迁移列） |
-| first_seen_at/last_refresh_at | TEXT | 首次入库/最近刷新 |
+| keywords | TEXT | JSON 数组（canonical 词键，每卡 0-3 个；词维度重构新增，幂等迁移列；孪生行合并/批次去重时取并集，LLM 抽到的词不因删孪生行丢失） |
+| first_seen_at/last_refresh_at | TEXT | 首次入库/最近刷新（孪生合并时 first_seen 取更早） |
 | active | INT | 0=历史归档（近期未刷新命中） |
 - 索引：`idx_news_{score,trend,published,dim}`。
-- 迁移 `_migrate`（`news_store.py:89`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
+- 迁移 `_migrate`（`news_store.py:100`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
+- 自愈 `_heal_dup_urls`（`news_store.py:406`）：同归一键多行保留一行（优先归一键行/数据更全者，keywords 并集、first_seen_at 取更早），其余行**删除**——terms 聚合/关联扫描不过滤 active，删除才能根治计数膨胀与同一报道双显；启动（init_db）与每次 upsert 后各跑一次。
 
 **`terms`** — 词主表（`terms.py:176` `init_db`）
 | 列 | 类型 | 说明 |
