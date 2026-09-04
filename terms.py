@@ -1968,6 +1968,39 @@ def get_term_row(term):
         return None
 
 
+def term_row_indexable(row):
+    """词条详情页可索引性判定（P1 索引质量门槛：与其 500 个薄页面，不如 50 个扎实的页面）。
+
+    详情页 meta robots（index,follow 与否）与 sitemap 是否列出该词共用本判定，
+    同一门槛单点收口，避免 SQL 与 Python 判定双份漂移。判定口径：
+    - row 为空（None/空行）→ False（词池外 HF 长尾回退页、DB 不可用等均不可索引）；
+    - origin ∈ {hf, both} 且 hf_json 非空 → True：HF 模型词自带 likes/downloads/
+      papers 等实质内容，不受报道数门槛限制；
+    - 其余词需同时满足：total_mentions >= config.TERM_INDEX_MIN_NEWS 且
+      cur_hot >= config.TERM_INDEX_MIN_HOT。
+
+    对缺失键/脏数据健壮：缺键或解析失败按 0 计，永不抛异常。
+    row 可为 dict 或 sqlite3.Row 等映射行（内部统一转 dict）。
+    """
+    try:
+        if not row:
+            return False
+        if not isinstance(row, dict):
+            row = dict(row)
+        origin = row.get("origin") or ""
+        if origin in ("hf", "both") and str(row.get("hf_json") or "").strip():
+            return True
+        def _int(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return 0
+        return (_int(row.get("total_mentions")) >= config.TERM_INDEX_MIN_NEWS
+                and _int(row.get("cur_hot")) >= config.TERM_INDEX_MIN_HOT)
+    except Exception:
+        return False
+
+
 def get_term_explanation(term, lang="zh"):
     """按 canonical 键返回热词解释，详情页「这是什么」。三级取词：
 
@@ -2128,16 +2161,26 @@ def get_term_news(term, limit=50, lang="zh"):
 
 
 def list_terms_for_sitemap(limit=200):
-    """sitemap 用：按热度降序返回词 display 列表。"""
+    """sitemap 用：只列可索引（质量门槛达标）词的 display，按热度降序。
+
+    P1 索引质量门槛（与其 500 个薄页面，不如 50 个扎实的页面）：薄词条
+    （total_mentions < TERM_INDEX_MIN_NEWS 或 cur_hot < TERM_INDEX_MIN_HOT，
+    且非带 hf_json 实质内容的 HF 词）不进 sitemap。判定统一走
+    term_row_indexable——与详情页 meta robots 同一门槛单点收口，避免 SQL
+    过滤与 Python 判定双份口径漂移。词池行数少（≤200），直接全量取回在
+    Python 内过滤后再取前 limit 个，保持 cur_hot DESC, total_mentions DESC
+    排序不被截断破坏。异常/DB 不可用仍返回 []。
+    """
     if not _DB_OK:
         return []
     try:
         conn = _conn()
         rows = conn.execute(
-            "SELECT display FROM terms ORDER BY cur_hot DESC, total_mentions DESC "
-            "LIMIT ?", (limit,)).fetchall()
+            "SELECT term, display, origin, total_mentions, cur_hot, hf_json "
+            "FROM terms ORDER BY cur_hot DESC, total_mentions DESC").fetchall()
         conn.close()
-        return [r["display"] for r in rows if r["display"]]
+        return [r["display"] for r in rows
+                if r["display"] and term_row_indexable(r)][:limit]
     except Exception:
         return []
 
