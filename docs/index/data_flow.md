@@ -6,7 +6,7 @@
 
 ### RSS 源（36 个，`dims.py:155` `RSS_SOURCES`，其中 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）
 
-并发抓取（`fetch_all_rss` `dims.py:329`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条；RSS 标题使用有界双层实体解码，URL 只解一层 XML entity。
+并发抓取（`fetch_all_rss` `dims.py:334`，8 worker），按 url 去重，每源取前 `PER_SOURCE_LIMIT=6` 条；RSS 标题使用有界双层实体解码，URL 只解一层 XML entity。
 
 | 名称 | feed | region | default_dim | lang | 备注 |
 |------|------|--------|-------------|------|------|
@@ -48,23 +48,23 @@
 - 检索式：`_search_query_for(term)` 按模型名逐词 `all:` 全文检索。
 - 只在后台预热 + `get_term_detail` 同步调用（详情页慢根因）。
 
-### LLM（模型故障转移链，`dims.py:959` `_llm_classify_batch`）
+### LLM（模型故障转移链，`dims.py:960` `_llm_classify_batch`）
 - **故障转移链** `config.LLM_CHAIN`（默认 `glm-4.7-flash → glm-5.3-flash → deepseek-v4-flash`）：首档默认 GLM-4.7-Flash，**可用性失败**（429/5xx/超时/key 无效等）每档连续 `LLM_FAILOVER_THRESHOLD`（默认 3）次顺链切下一档（单向熔断式，成功只清零计数不回退首档；**2026-09-02 起 `_dims_refresh_once` 每轮起始 `_llm_cycle_reset` 复位回链首**——故障转移只限当轮逃生）；**质量失败**（混杂/缺翻译/JSON）2026-09-03 起走独立高阈值熔断 `_llm_quality_failure`（连续 6/周期累计 12 才换档）——零星 1-2/6 混杂不再快速换档（换档救不了质量：DeepSeek 被拒率同样 ~50%，只会把账单抬到 3 倍价档；09-03 仍费用异常的根因），GLM-5.3 只要在线就整轮主扛、DeepSeek 只兜底；无 key 的 provider 档不烧重试、直接顺链跳过。当前档端点由 `config.llm_endpoint(model)` 解析（glm-* → 智谱 BigModel，deepseek-* → DeepSeek）。
 - **思考强度控制**（2026-08-31，针对 GLM-5.3-Flash）：GLM-5.2+ 的 thinking 不可关闭（`thinking.type=disabled` 会报错），只能经 `reasoning_effort` 调强度；`config.llm_reasoning_params(model)` 对 glm-5.2+ 返回 `{"reasoning_effort": LLM_REASONING_EFFORT}`（默认 low），glm-4.7/deepseek 返回 {}。low 减少 thinking token 挤占 max_tokens，降低 length 截断导致的 content 空/缺翻译。提示词同步加了防回显（翻译字段不得照抄原标题）、非空（翻译字段禁止空字符串）、数组长度与输入一致、禁 Markdown 代码块等规则。
 - **中英混杂防线**（2026-09-01，issue 11）：提示词显式要求「翻译必须完整、不得保留原文片段、禁止中英混杂输出」（title 与 summary 都要求）；批完整性检查再加硬编码兜底 `_is_mixed_translation`——中文原文翻英文残留任一 CJK、或英文原文翻中文长文本 ASCII 字母占比 >60%，该条按坏计，不静默回退成原文标题。**2026-09-02：逐条校验回填**——过者即回填、坏者计数（好条目不白烧）。**2026-09-03：坏条目「二次提示」修正**——带失败原因（缺翻译/混杂）喂回当前档模型继续修正最多 `LLM_REPAIR_ROUNDS`（默认 2）轮（`_llm_apply_output`@864 逐条校验/回填），仍失败按质量失败计（不快速换档）。
 - 用途：维度打标（模型与技术/产品与应用/研究与论文/商业与投融资/政策与行业/其他）+ 双语翻译（title_zh/title_en/summary_zh/summary_en）+ **抽取关键词 keywords**（1-3 个高价值 AI 实体/技术词——具体模型/产品/公司名、核心技术、事件主体；禁止泛化词/纯形容词，词维度重构核心）。
-- **热词解释生成**（动态词典资产，`dims.py:1361` `explain_terms`）：供 `terms.refresh_words` 的 `term_explainer` 回调；面向普通访客的「定义 + 为什么值得关注」双语解释，携带代表报道标题作上下文；已有解释仅明显更优才返回新文本。失败降级返回空映射（详情页模板兜底）。
-- **热词翻译**（display_en，`dims.py:1309` `_translate_terms`，供 refresh_words 的 term_translator 回调）：2026-09-02 起增量翻译（缺 en 词优先 + `TRANSLATE_BATCH_MAX_WORDS=100` 上限，预算内回译已有 en 词允许更优更新）——不再每轮全量重译池内中文词（当日观察 ~35 次 LLM 调用/轮）。
+- **热词解释生成**（动态词典资产，`dims.py:1362` `explain_terms`）：供 `terms.refresh_words` 的 `term_explainer` 回调；面向普通访客的「定义 + 为什么值得关注」双语解释，携带代表报道标题作上下文；已有解释仅明显更优才返回新文本。失败降级返回空映射（详情页模板兜底）。
+- **热词翻译**（display_en，`dims.py:1310` `_translate_terms`，供 refresh_words 的 term_translator 回调）：2026-09-02 起增量翻译（缺 en 词优先 + `TRANSLATE_BATCH_MAX_WORDS=100` 上限，预算内回译已有 en 词允许更优更新）——不再每轮全量重译池内中文词（当日观察 ~35 次 LLM 调用/轮）。
 - **降级**（无 LLM key：`GLM_API_KEY` 与 `DEEPSEEK_API_KEY` 均未设）：用 RSS 源 `default_dim` 分类、双 slot 填原标题、summary_zh 取原标题前 30 字；**keywords 走 `terms.extract_keywords_dict` 词典匹配**。零 token 消耗。天然 Mock 机制，无需代码开关。
 - 瞬态容错：`_post` 对连接重置/超时 + HTTP 429/5xx + 错误体 1305（GLM 免费档过载）重试 3 次；永久错误直接抛 → `_llm_failure()` 计一次并顺链。**2026-09-02：HTTP 402（余额不足）归为账户级限流 `_LLMAccountRateLimit`**（非瞬态不重试，顺链跳过）。**2026-09-03：解析/混杂类异常归 `_LLMQualityError` → `_llm_quality_failure()`（质量熔断），不再计 provider 快速换档**。
 - 批量调用：`enrich_with_llm(items)` 分批打标（6 条子批；质量失败不重复重试、provider 故障才收进末尾重试集）。
 - 生产定点刷新：`DIMS_REFRESH_HOURS=(1,7,13,19)`，避开高峰段 + 命中硬盘缓存 TTL。
 
-### 关键词词典（`terms.py:256` `_LEXICON`）
+### 关键词词典（`terms.py:257` `_LEXICON`）
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
 - 用途：无 LLM key 降级抽词、历史库零成本回填、常见异形归一、display_zh 来源。
-- 通用热词停用词表（`terms.py:359` `_TERM_STOPWORDS`）：低价值通用词（"AI"/"llm"/"model" 等，canonical 键）在抽词（`extract_keywords_dict`）、聚合（`_keyword_canons`）、HF 词（`_hf_canon` 后）三级被剔除，不作为独立热词。
-- 热词解释：三级取词——① `terms.py:374` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1513`）。
+- 通用热词停用词表（`terms.py:360` `_TERM_STOPWORDS`）：低价值通用词（"AI"/"llm"/"model" 等，canonical 键）在抽词（`extract_keywords_dict`）、聚合（`_keyword_canons`）、HF 词（`_hf_canon` 后）三级被剔除，不作为独立热词。
+- 热词解释：三级取词——① `terms.py:375` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1871`）。
 
 ## SQLite Schema
 
@@ -131,7 +131,7 @@
 - 迁移 `_migrate`（`news_store.py:100`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
 - 自愈 `_heal_dup_urls`（`news_store.py:406`）：同归一键多行保留一行（优先归一键行/数据更全者，keywords 并集、first_seen_at 取更早），其余行**删除**——terms 聚合/关联扫描不过滤 active，删除才能根治计数膨胀与同一报道双显；启动（init_db）与每次 upsert 后各跑一次。
 
-**`terms`** — 词主表（`terms.py:176` `init_db`）
+**`terms`** — 词主表（`terms.py:182` `init_db`）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | term | TEXT PK | canonical 键（小写归一），如 "gpt-5" |

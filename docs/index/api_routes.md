@@ -14,10 +14,10 @@
 | `/term/<path:term_name>` | GET | `term_detail` | `app.py:749` | 通用热词聚合页（SEO 长尾）：任何词有页——相关报道聚合 + 词热度；HF 词额外含官方/社区/arXiv 区块 | 进程内 TTL 缓存；未找到 → 404 |
 | `/terms` | GET | `terms` | `app.py:805` | 服务条款页（中英双语） | 静态文案，`SITE_TERMS_UPDATED` 常量 |
 | `/search` | GET | `search_page` | `app.py:1228` | 搜索结果页（独立页，热词命中卡置顶 + 高亮 + 历史归档标记；2026-09-04 需求 1：news 结果按归一化标题去重，镜像报道不双显） | `?q=` `?lang=zh/en` |
-| `/admin/login` | GET,POST | `admin_login` | `app.py:1511` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身，登录后默认跳 `/monitor` |
-| `/admin/logout` | GET | `admin_logout` | `app.py:1528` | 退出登录 | 清 session 回登录页 |
-| `/admin` | GET | `admin_home` | `app.py:1535` | ~~赞助位管理后台~~ → 重定向到 `/monitor#sponsors` | 需 admin，合并后统一入口 |
-| `/monitor` | GET | `monitor` | `app.py:1585` | **统一管理后台**（流量监控 + 赞助位管理 Tab 切换） | 需 admin |
+| `/admin/login` | GET,POST | `admin_login` | `app.py:1531` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身，登录后默认跳 `/monitor` |
+| `/admin/logout` | GET | `admin_logout` | `app.py:1548` | 退出登录 | 清 session 回登录页 |
+| `/admin` | GET | `admin_home` | `app.py:1555` | ~~赞助位管理后台~~ → 重定向到 `/monitor#sponsors` | 需 admin，合并后统一入口 |
+| `/monitor` | GET | `monitor` | `app.py:1605` | **统一管理后台**（流量监控 + 赞助位管理 Tab 切换） | 需 admin |
 
 ## 数据 API（JSON）
 
@@ -25,9 +25,9 @@
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/api/sources` | GET | `api_sources` | `app.py:718` | 所有源元信息（`SOURCE_META`） |
-| `/api/hot/<source>` | GET | `api_hot` | `app.py:723` | 单源热点（带硬性超时 `SOURCE_DEADLINE`） |
-| `/api/all` | GET | `api_all` | `app.py:728` | 并发聚合所有 8 源 |
+| `/api/sources` | GET | `api_sources` | `app.py:719` | 所有源元信息（`SOURCE_META`） |
+| `/api/hot/<source>` | GET | `api_hot` | `app.py:724` | 单源热点（带硬性超时 `SOURCE_DEADLINE`） |
+| `/api/all` | GET | `api_all` | `app.py:729` | 并发聚合所有 8 源 |
 
 ### 词维度层（词维度重构后主功能）
 
@@ -42,57 +42,57 @@
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/api/search` | GET | `api_search` | `app.py:1274` | 搜索 JSON（加权打分 + 高亮 + 历史归档计数；2026-09-04 需求 1：news 命中按归一化标题去重，镜像报道只留评分高者） |
-| `/api/search/suggest` | GET | `api_search_suggest` | `app.py:1293` | 搜索补全建议 |
-| `/api/search/click` | POST | `api_search_click` | `app.py:1311` | 搜索→点击埋点（漏斗数据源） |
+| `/api/search` | GET | `api_search` | `app.py:1311` | 搜索 JSON（加权打分 + 高亮 + 历史归档计数；2026-09-04 需求 1：news 命中按归一化标题去重，镜像报道只留评分高者） |
+| `/api/search/suggest` | GET | `api_search_suggest` | `app.py:1274` | 搜索补全建议 |
+| `/api/search/click` | POST | `api_search_click` | `app.py:1293` | 搜索→点击埋点（漏斗数据源） |
 
 ### 用户行为事件（埋点系统 v3）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/api/event` | POST | `api_event` | `app.py:1637` | 用户行为事件上报（批量兼容：单条/`{events:[...]}`；`event_type` 白名单校验） | 前端埋点统一入口（2026-09-01 任务 9） |
+| `/api/event` | POST | `api_event` | `app.py:1657` | 用户行为事件上报（批量兼容：单条/`{events:[...]}`；`event_type` 白名单校验） | 前端埋点统一入口（2026-09-01 任务 9） |
 
 ### 系统
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/health` | GET | `health` | `app.py:1015` | 健康检查 |
-| `/api/click/<path:slot_id>` | GET | `sponsor_click` | `app.py:1482` | 赞助位点击计数 + 302 跳转 |
-| `/admin/stats` | GET | `admin_stats` | `app.py:1578` | 赞助位 30 天统计（需 admin） |
-| `/admin/sponsors/list` | GET | `admin_sponsors_list` | `app.py:1542` | 赞助位列表 JSON（供合并后 monitor 页 AJAX 加载，需 admin） |
-| `/monitor/api` | GET | `monitor_api` | `app.py:1591` | 监控页数据（`?days=1..90`，需 admin） |
-| `/monitor/api/search` | GET | `monitor_search_api` | `app.py:1602` | 搜索词统计（热门搜索 Top-N + 近期搜索，需 admin） |
-| `/monitor/api/search/funnel` | GET | `monitor_search_funnel_api` | `app.py:1618` | 搜索→点击漏斗（需 admin） |
-| `/monitor/api/events` | GET | `monitor_events_api` | `app.py:1674` | 用户行为事件统计（近 N 天事件量/类型分布，需 admin） |
+| `/health` | GET | `health` | `app.py:1016` | 健康检查 |
+| `/api/click/<path:slot_id>` | GET | `sponsor_click` | `app.py:1502` | 赞助位点击计数 + 302 跳转 |
+| `/admin/stats` | GET | `admin_stats` | `app.py:1598` | 赞助位 30 天统计（需 admin） |
+| `/admin/sponsors/list` | GET | `admin_sponsors_list` | `app.py:1562` | 赞助位列表 JSON（供合并后 monitor 页 AJAX 加载，需 admin） |
+| `/monitor/api` | GET | `monitor_api` | `app.py:1611` | 监控页数据（`?days=1..90`，需 admin） |
+| `/monitor/api/search` | GET | `monitor_search_api` | `app.py:1622` | 搜索词统计（热门搜索 Top-N + 近期搜索，需 admin） |
+| `/monitor/api/search/funnel` | GET | `monitor_search_funnel_api` | `app.py:1638` | 搜索→点击漏斗（需 admin） |
+| `/monitor/api/events` | GET | `monitor_events_api` | `app.py:1694` | 用户行为事件统计（近 N 天事件量/类型分布，需 admin） |
 
 ### Admin 写操作（需 admin，POST）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:1550` | 新建/更新赞助位 |
-| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:1560` | 上下架切换 |
-| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:1569` | 删除赞助位 |
+| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:1570` | 新建/更新赞助位 |
+| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:1580` | 上下架切换 |
+| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:1589` | 删除赞助位 |
 
 ## SEO 路由
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/robots.txt` | GET | `robots` | `app.py:1326` | 爬虫规则（SEO 关 → 禁止索引） |
-| `/sitemap.xml` | GET | `sitemap` | `app.py:1346` | 站点地图（首页 + 热词详情页，上限 `SITEMAP_MAX_URLS`） |
-| `/favicon.ico` | GET | `favicon` | `app.py:1385` | favicon |
-| `/favicon.svg` | GET | `favicon_svg` | `app.py:1394` | favicon SVG |
-| `/apple-touch-icon.png` | GET | `apple_touch_icon` | `app.py:1406` | Apple 触屏图标 |
-| `/og-image.png` | GET | `og_image` | `app.py:1418` | Open Graph 分享图（动态生成，SEO 任务 11） |
+| `/robots.txt` | GET | `robots` | `app.py:1346` | 爬虫规则（SEO 关 → 禁止索引） |
+| `/sitemap.xml` | GET | `sitemap` | `app.py:1366` | 站点地图（首页 + 热词详情页，上限 `SITEMAP_MAX_URLS`） |
+| `/favicon.ico` | GET | `favicon` | `app.py:1405` | favicon |
+| `/favicon.svg` | GET | `favicon_svg` | `app.py:1414` | favicon SVG |
+| `/apple-touch-icon.png` | GET | `apple_touch_icon` | `app.py:1426` | Apple 触屏图标 |
+| `/og-image.png` | GET | `og_image` | `app.py:1438` | Open Graph 分享图（动态生成，SEO 任务 11） |
 
 ## 错误处理
 
 | 类型 | 函数 | 行号 | 功能 |
 |------|------|------|------|
-| 404 | `not_found` | `app.py:819` | 简单 HTML + `noindex`，防爬虫索引不存在的 term 页 |
+| 404 | `not_found` | `app.py:820` | 简单 HTML + `noindex`，防爬虫索引不存在的 term 页 |
 
 ## 鉴权机制
 
-- `admin_required` 装饰器（`app.py:1492`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
+- `admin_required` 装饰器（`app.py:1512`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
 - token 来源优先级：`Authorization: Bearer` → `?token=` → `session["admin_token"]`。
 - `hmac.compare_digest` 防时序攻击；未登录页面请求 → 跳登录页（带 next），API 请求 → 401。
 - `/monitor` 与 `/admin` 共用同一 `admin_required`。

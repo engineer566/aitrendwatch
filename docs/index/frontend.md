@@ -128,7 +128,7 @@
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1511`）。
+**渲染路由**：`/admin/login`（`app.py:1531`）。
 
 ---
 
@@ -151,6 +151,6 @@
 | └ 自动刷新 | 1047–1049 | 60s 轮询（仅 monitor tab 激活时） |
 
 **引用 API**：`/monitor/api?days=N`、`/monitor/api/search`、`/monitor/api/search/funnel`、`/monitor/api/events`、`/admin/sponsors/list`、`/admin/sponsors`（POST）、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/monitor`（`app.py:1585`，需 admin）。
-**旧 `/admin` 路由**：重定向到 `/monitor#sponsors`（`app.py:1535`）。
+**渲染路由**：`/monitor`（`app.py:1605`，需 admin）。
+**旧 `/admin` 路由**：重定向到 `/monitor#sponsors`（`app.py:1555`）。
 **数据**：PV/UV/地域分布（`store.monitor_stats`）+ 用户行为事件（`store.event_stats`）+ 赞助位 CRUD（`store.list_slots`/`upsert_slot`/`toggle_slot`/`delete_slot`）。

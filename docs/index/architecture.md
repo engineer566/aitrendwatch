@@ -129,7 +129,7 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 | 层级 | 介质 | 作用域 | TTL | 典型键 | 代码位置 |
 |------|------|--------|-----|--------|----------|
 | L1 内存 | 进程内 `dict` | 单 worker 进程 | 300s（单源）/ 1800s（详情） | `{source: (ts,data)}` | `app.py:63` `_cache` |
-| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:79` / `terms.py:116` |
+| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:82` / `terms.py:122` |
 | L3 SQLite | `data/*.db` | 跨 worker 共享，持久 | 永久（历史库）/ 按周期聚合 | sponsors.db, news.db | `store.py` / `news_store.py` / `terms.py` |
 
 跨进程锁文件：`cache/.tracker.refresh.lock`、`cache/.dims.refresh.lock`（`fcntl.flock`）。
