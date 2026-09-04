@@ -563,7 +563,8 @@ def normalize_term(s):
     规则：strip/lower → 空白与下划线归一为单 '-' → 去首尾 ASCII 标点
     （LLM 抽词偶发 "GPT-5." / "(gpt-5)" 等噪音，CJK 词整词保留）→
     查别名表 → 保守去复数（仅 ASCII 且长度>3）→ 长度<2 或纯数字丢弃 →
-    缩写大写校正（_UPPER_ACRONYMS：gpu→GPU / ui→UI / glm→GLM 等）。
+    缩写大写校正（_UPPER_ACRONYMS：gpu→GPU / ui→UI / glm→GLM 等）→
+    需求 2：词典治理的紧凑孪生折叠（'hugging-face'→'huggingface'，见实现注释）。
     大小写无关：GPT-5 / gpt-5 / Gpt-5 都归一到 gpt-5；版本感知边界保留
     （内部 '.' 不动，gpt-5 ≠ gpt-5.5）。
     """
@@ -588,7 +589,19 @@ def normalize_term(s):
     if len(t) < 2 or t.isdigit():
         return ""
     # 缩写大写校正：已知技术缩写统一为大写 canonical 形式
-    return _UPPER_ACRONYMS.get(t, t)
+    result = _UPPER_ACRONYMS.get(t, t)
+    # 需求 2（分隔符孪生 canonical）：纯 ASCII 且含 '-' 的 canonical，若去掉 '-'
+    # 后的紧凑形式（compact）是「受词典治理的 canonical」（_LEXICON 键 / 缩写表
+    # 值 / _LEXICON_DISPLAY 键 / _OVERRIDES 键之一，如 'huggingface'），折叠为
+    # compact——"Hugging Face"/"Hugging-Face" 与 "HuggingFace" 本是同一词，不应
+    # 因分隔符拼写差异产生两个 canonical（榜单重复词条根因之一）。非治理词的紧凑
+    # 孪生（ai-agent/aiagent）在此不动：本函数无状态、不知道词池，交给
+    # refresh_words 聚合层按紧凑分组归并。compact 无 '-'，递归一次即终止。
+    if "-" in result and result.isascii():
+        compact = result.replace("-", "")
+        if compact != result and _is_dictionary_governed(compact):
+            return normalize_term(compact)
+    return result
 
 
 def is_stopword(term):
@@ -722,6 +735,26 @@ def _term_surfaces(canon):
     # space spelling is useful for uncatalogued LLM terms as well.
     if "-" in canon:
         _add(canon.replace("-", " "))
+    # 需求 2（分隔符孪生）：历史卡 keywords/标题可能以任意分隔形态落库——
+    # "Hugging Face"/"Hugging-Face"/"HuggingFace"（canon huggingface 缺
+    # "hugging-face" 表面）。为 '-' 表面补紧凑/空格形、为空格表面补 '-' 形，
+    # 让词-新闻关联、get_term_news 的 LIKE 候选与标题匹配覆盖全部孪生拼写
+    # （LIKE 只是候选收集，Python 侧仍做权威归一校验，宽候选安全）。
+    extras = []
+    for surface in list(surfaces):
+        if not surface or any(ord(c) >= 128 for c in surface):
+            continue
+        variants = []
+        if "-" in surface:
+            variants.append(surface.replace("-", ""))
+            variants.append(surface.replace("-", " "))
+        elif " " in surface:
+            variants.append(surface.replace(" ", "-"))
+        for v in variants:
+            if v and v.casefold() not in seen:
+                seen.add(v.casefold())
+                extras.append(v)
+    surfaces.extend(extras)
     return surfaces
 
 
@@ -926,6 +959,75 @@ def _is_dictionary_governed(canon):
             or canon in _UPPER_ACRONYMS.values()
             or canon in _OVERRIDES or canon.lower() in _OVERRIDES
             or canon in _LEXICON_DISPLAY or canon.lower() in _LEXICON_DISPLAY)
+
+
+def _compact_group_key(canon):
+    """ASCII canonical 的「去 '-' 紧凑形式」分组键（需求 2 孪生归并用）。
+
+    同一词的分隔符拼写变体（huggingface / hugging-face、aiagent / ai-agent、
+    stable-diffusion / stablediffusion）归一后得到不同 canonical，但去掉 '-' 的
+    紧凑形式相同；聚合层按此分组归并到单一代表键。非 ASCII（CJK）词无分隔符
+    变体，返回 None 自成组。
+    """
+    if not canon:
+        return None
+    c = str(canon)
+    if not c.isascii():
+        return None
+    return c.casefold().replace("-", "")
+
+
+def _merge_old_rows(base, extra):
+    """合并同词两行旧表数据（需求 2：折叠/孪生键历史行归并到代表键）。
+
+    - first_seen_at 取最早（immutable 首见时间不因归并后移）；
+    - display 优先含大写形态（脏小写行不覆盖规范展示名）；
+    - 其余字段 base 优先、base 缺失时用 extra 补齐（display_en/hf_json/解释列等）。
+    """
+    if base is None:
+        return dict(extra) if extra else {}
+    merged = dict(base)
+    for f in ("display", "display_zh", "display_en", "hf_json", "origin",
+              "explain_zh", "explain_en", "explain_updated_at"):
+        bv = merged.get(f)
+        ev = (extra or {}).get(f)
+        if f == "display":
+            if (not bv or not any(c.isupper() for c in bv)) and ev \
+                    and any(c.isupper() for c in ev):
+                merged[f] = ev
+        elif not bv and ev:
+            merged[f] = ev
+    bf = merged.get("first_seen_at") or ""
+    ef = (extra or {}).get("first_seen_at") or ""
+    if ef and (not bf or ef < bf):
+        merged["first_seen_at"] = ef
+    return merged
+
+
+def _merge_agg_rows(a, b, cur_urls):
+    """把孪生词 B 的当轮聚合数据并入代表词 A（需求 2 聚合层归并）。
+
+    urls/pubs 取并集后按并集重算 mentions（与单词口径一致：每个 url 至多计 1
+    次）；cur_cnt 按并集 url 是否当轮命中重算；hot_score/win7_cnt/cur_score/
+    cur_signal 相加（行级计数；两键同 url 重叠极罕见，可接受）；dims 按维度
+    相加；top news 合并后由调用方统一排序/去重/截断。
+    """
+    a["urls"] |= b["urls"]
+    a["pubs"] |= b["pubs"]
+    a["mentions"] = len(a["urls"])
+    a["hot_score"] += b["hot_score"]
+    a["win7_cnt"] += b["win7_cnt"]
+    a["cur_score"] += b["cur_score"]
+    a["cur_signal"] += b["cur_signal"]
+    a["cur_cnt"] = sum(1 for u in a["urls"] if u in cur_urls)
+    for d, n in b["dims"].items():
+        a["dims"][d] = a["dims"].get(d, 0) + n
+    a["top"].extend(b["top"])
+    if b["latest_pub"] > a["latest_pub"]:
+        a["latest_pub"] = b["latest_pub"]
+    if b["earliest_pub"] and b["earliest_pub"] < a["earliest_pub"]:
+        a["earliest_pub"] = b["earliest_pub"]
+    return a
 
 
 def _surface_upper_trusted(surface, title):
@@ -1149,10 +1251,83 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
             conn.close()
         except Exception:
             pass
+    # ---- 3. 归并 HF 词（无新闻命中也入池，origin=hf）----
+    for canon, meta in hf_terms.items():
+        agg.setdefault(canon, {
+            "mentions": 0, "hot_score": 0, "urls": set(), "dims": {},
+            "top": [], "latest_pub": "", "earliest_pub": "9999",
+            "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
+            "win7_cnt": 0,
+        })
+
+    # ---- 4. 读旧 terms 表（保留 first_seen_at / display 演进）----
+    # 流式读取，不 fetchall 物化；用完后及时释放，避免与第 7 步 final_rows 双份驻留。
+    # 键按 canonical 归一：早期版本可能落过混合大小写行（"GPT-5"）或分隔符孪生行
+    # （"hugging-face"，需求 2 normalize 折叠后与 "huggingface" 同键）。同键多行
+    # 用 _merge_old_rows 合并（first_seen_at 取最早、display 优先含大写形态），
+    # 避免旧行数据互相覆盖、或被误判为全新词。
+    old = {}
+    try:
+        conn = _conn()
+        for r in conn.execute("SELECT * FROM terms"):
+            n = normalize_term(r["term"]) or r["term"]
+            old[n] = _merge_old_rows(old.get(n), dict(r))
+        conn.close()
+    except Exception:
+        old = {}
+
+    # ---- 4.5 分隔符孪生归并（需求 2：榜单重复词条根因）----
+    # 对当轮出现的 ASCII canonical 按「去 '-' 紧凑形式」分组：同组（huggingface /
+    # hugging-face、aiagent / ai-agent、stable-diffusion / stablediffusion）是同一
+    # 词的分隔符拼写孪生，聚合数据 / HF 元数据 / 关键词表面全部归并到单一代表键，
+    # 避免词池出现「同展示名两行」。代表键优先级：
+    #   受词典治理（huggingface 类）> 旧词池已存在（有 first_seen 历史）
+    #   > 本轮 mentions 更高 > 字典序稳定兜底。
+    # normalize_term 已折叠的治理词孪生（hugging-face→huggingface）不会以两个键
+    # 出现在 agg，本步主要兜住自由孪生（ai-agent/aiagent 等）；两处共同保证词池
+    # 每词单行。top news 在归并后统一排序/去重/截断（见下）。
+    groups = {}
+    group_order = []
+    for k in agg:
+        gid = _compact_group_key(k)
+        if gid is None:
+            continue
+        if gid not in groups:
+            groups[gid] = []
+            group_order.append(gid)
+        groups[gid].append(k)
+    for gid in group_order:
+        members = groups[gid]
+        if len(members) < 2:
+            continue
+        members.sort(key=lambda k: (
+            0 if _is_dictionary_governed(k) else 1,
+            0 if k in old else 1,
+            -(agg[k].get("mentions") or 0),
+            k,
+        ))
+        rep = members[0]
+        for m in members[1:]:
+            agg[rep] = _merge_agg_rows(agg[rep], agg[m], cur_urls)
+            del agg[m]
+            # HF 元数据跟随归并（trending 更高者胜出，供 origin/hf_json/展示名）
+            hm = hf_terms.pop(m, None)
+            if hm is not None and (rep not in hf_terms or int(
+                    hm.get("hf", {}).get("trending_score", 0) or 0) > int(
+                    hf_terms[rep]["hf"].get("trending_score", 0) or 0)):
+                hf_terms[rep] = hm
+            # 当轮关键词表面（display 大小写候选）并入代表键
+            ms = cur_kw_surfaces.pop(m, None)
+            if ms:
+                rs = cur_kw_surfaces.setdefault(rep, {})
+                for _s, _titles in ms.items():
+                    rs.setdefault(_s, set()).update(_titles)
+
     for a in agg.values():
         # top news 与 get_term_news 同序（hot 降序，hot 缺失回退 score；
         # 本路径只投影 score，故按 score 降序 + published 降序），保证卡片
         # 内嵌预览与「展开更多」列表顺序一致，展开时不重新排序。
+        # （在孪生归并后执行：归并前的 top 只按各自键收集，这里统一排序/去重。）
         a["top"].sort(key=lambda x: x["card"].get("published") or "", reverse=True)
         a["top"].sort(key=lambda x: -x["score"])
         # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：保留排序后
@@ -1171,28 +1346,6 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
             deduped.append(t)
         a["top"] = [t["card"] for t in deduped[:3]]
 
-    # ---- 3. 归并 HF 词（无新闻命中也入池，origin=hf）----
-    for canon, meta in hf_terms.items():
-        agg.setdefault(canon, {
-            "mentions": 0, "hot_score": 0, "urls": set(), "dims": {},
-            "top": [], "latest_pub": "", "earliest_pub": "9999",
-            "pubs": set(), "cur_cnt": 0, "cur_score": 0, "cur_signal": 0.0,
-            "win7_cnt": 0,
-        })
-
-    # ---- 4. 读旧 terms 表（保留 first_seen_at / display 演进）----
-    # 流式读取，不 fetchall 物化；用完后及时释放，避免与第 7 步 final_rows 双份驻留。
-    # 键按 canonical 归一：早期版本可能落过混合大小写行（"GPT-5"），归并后
-    # 与当前 canonical 键同一条目，避免被误判为全新词。
-    old = {}
-    try:
-        conn = _conn()
-        for r in conn.execute("SELECT * FROM terms"):
-            old[normalize_term(r["term"]) or r["term"]] = dict(r)
-        conn.close()
-    except Exception:
-        old = {}
-
     # ---- 5. 噪词过滤 + 新增 cap ----
     kept = {}
     new_budget = MAX_NEW_TERMS_PER_CYCLE
@@ -1208,6 +1361,22 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 continue
             new_budget -= 1
         kept[canon] = a
+
+    # ---- 4.7 孪生旧行吸收视图（需求 2）----
+    # 代表键自身可能无旧行，但其紧凑孪生键有历史行（aiagent ↔ ai-agent 这类
+    # normalize 不折叠的自由孪生）。把孪生旧行的 first_seen_at / display /
+    # display_en / hf_json / 解释列并入代表键视角，供 5.6 翻译判定与第 6 步
+    # display 演进 / 首见时间使用，归并不丢历史。normalize 已折叠的孪生
+    # （hugging-face→huggingface）在第 4 步同键合并，不会走到这里。
+    old_view = {}
+    for canon in kept:
+        o = old.get(canon)
+        gid = _compact_group_key(canon)
+        if gid:
+            for other, row in old.items():
+                if other != canon and _compact_group_key(other) == gid:
+                    o = _merge_old_rows(o, row)
+        old_view[canon] = o if o else {}
 
     # ---- 5.6 英文展示名（display_en）----
     # 词典外 LLM 抽取的中文词（债务融资/并购/自动驾驶卡车等）没有英文形态，
@@ -1275,8 +1444,47 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     # ---- 6. 三榜打分 + 写 terms 主表 + 快照 ----
     with _db_lock:
         conn = _conn()
+        # 需求 2 残留行定位：历史轮次可能落过与 kept 同词但不同键的物理行——
+        # 折叠残留（legacy "GPT-5" / "hugging-face"，normalize 后即 kept 键）与
+        # 自由孪生归并输家（"aiagent"，其紧凑组代表键是 kept 的 "ai-agent"）。
+        # 快照先迁移到代表键（同 cycle 数值相加，rise 环比历史连续），物理行在
+        # 主循环写完后删除（此时代表行已存在，解释列可顺带迁移，见下）。
+        dead = []
+        try:
+            gid_rep = {}
+            for k in kept:
+                g = _compact_group_key(k)
+                if g is not None and g not in gid_rep:
+                    gid_rep[g] = k
+            for (raw,) in conn.execute("SELECT term FROM terms"):
+                n = normalize_term(raw) or raw
+                if n in kept and n != raw:
+                    dead.append((raw, n))          # 折叠残留行
+                elif n not in kept:
+                    g = _compact_group_key(n)
+                    r = gid_rep.get(g)
+                    if r is not None and r != n:
+                        dead.append((raw, r))      # 自由孪生归并输家行
+            for raw, rep in dead:
+                for s in conn.execute(
+                        "SELECT cycle, news_cnt, win7_cnt, score_sum, signal_sum "
+                        "FROM term_snapshots WHERE term=?", (raw,)).fetchall():
+                    conn.execute(
+                        """INSERT INTO term_snapshots
+                               (term, cycle, news_cnt, win7_cnt, score_sum, signal_sum)
+                           VALUES (?,?,?,?,?,?)
+                           ON CONFLICT(term, cycle) DO UPDATE SET
+                               news_cnt=news_cnt+excluded.news_cnt,
+                               win7_cnt=win7_cnt+excluded.win7_cnt,
+                               score_sum=score_sum+excluded.score_sum,
+                               signal_sum=signal_sum+excluded.signal_sum""",
+                        (rep, s["cycle"], s["news_cnt"], s["win7_cnt"],
+                         s["score_sum"], s["signal_sum"]))
+                conn.execute("DELETE FROM term_snapshots WHERE term=?", (raw,))
+        except Exception:
+            dead = []
         for canon, a in kept.items():
-            o = old.get(canon) or {}
+            o = old_view.get(canon) or {}
             is_hf = canon in hf_terms
             hf_meta = {}
             if is_hf:
@@ -1417,6 +1625,41 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 # ON CONFLICT 不更新 first_seen_at；自愈场景需显式回填
                 conn.execute("UPDATE terms SET first_seen_at=? WHERE term=?",
                              (first_seen, canon))
+            else:
+                # 需求 2（孪生归并）：代表键自身旧行已存在但其孪生键历史更早
+                # （hugging-face 08-20 vs huggingface 08-25）——归并后首见时间取
+                # 组内最早。ON CONFLICT 不更新 first_seen_at，且 old 视图已把孪生
+                # 行折叠进同一键，需按物理行现值比较后显式回填。
+                row_cur = conn.execute(
+                    "SELECT first_seen_at FROM terms WHERE term=?",
+                    (canon,)).fetchone()
+                stored_first_seen = (row_cur["first_seen_at"]
+                                     if row_cur else "") or ""
+                if (stored_first_seen and first_seen
+                        and first_seen[:10] < stored_first_seen[:10]):
+                    conn.execute("UPDATE terms SET first_seen_at=? WHERE term=?",
+                                 (first_seen, canon))
+        # 需求 2：删除孪生/折叠残留物理行（快照已迁移、历史数据经 old_view 吸收）。
+        # 解释列（LLM 动态词典资产）在代表行存在后迁入，避免删行丢解释。
+        try:
+            for raw, rep in dead:
+                conn.execute(
+                    """UPDATE terms SET
+                           explain_zh=CASE WHEN explain_zh IS NULL OR explain_zh=''
+                                           THEN (SELECT explain_zh FROM terms WHERE term=?)
+                                           ELSE explain_zh END,
+                           explain_en=CASE WHEN explain_en IS NULL OR explain_en=''
+                                           THEN (SELECT explain_en FROM terms WHERE term=?)
+                                           ELSE explain_en END,
+                           explain_updated_at=CASE
+                               WHEN explain_updated_at IS NULL OR explain_updated_at=''
+                               THEN (SELECT explain_updated_at FROM terms WHERE term=?)
+                               ELSE explain_updated_at END
+                       WHERE term=?""",
+                    (raw, raw, raw, rep))
+                conn.execute("DELETE FROM terms WHERE term=?", (raw,))
+        except Exception:
+            pass
         # 本轮未命中的词：三分清零（不出榜），历史字段保留
         if kept:
             placeholders = ",".join("?" * len(kept))
