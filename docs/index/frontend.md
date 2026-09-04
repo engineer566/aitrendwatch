@@ -41,7 +41,7 @@
 | ├ 数据拉取 `fetchAll` | 1337 | `fetchJSON("/api/stream?lang=&sort=&view=")`；全量就位先 `unlockCatCounts()` 再 render，分类条一次更新到全量计数 |
 | ├ 返回滚动恢复 `finalizeScrollRestore` | 1461 | 消费 `aitw_last_scroll` key + 清理 URL 标记（`scroll_back=1`），校准落位；配套 head 脚本（82）+ 词条页 `home_url` 回显（app.py:756） |
 | └ Mock 数据 | 1488 | 后端不可用时的内置预览数据 |
-| 悬浮回到顶部按钮（需求 6 改进：文字 + 箭头 + 移动端安全区/节流） | 1564–1619 | 页尾 3 块：`.back-top` 样式（1564–1590，fixed 右下胶囊形，文字 + ↑ 箭头 span（`.bt-arrow`），CSS 变量主题自适应，hover 高亮；≤560px 收窄并叠加 `env(safe-area-inset-*)` 安全区）+ 按钮元素（1592–1596，仅 aria-label 随 `is_en` 双语「回到顶部/Back to top」，箭头 span `aria-hidden`）+ IIFE 脚本（1598–1619，`matchMedia` 窄屏阈值 250 / 宽屏 400，rAF 节流滚动加 `.show`，点击 `scrollTo` 平滑回顶；独立作用域不与既有 JS 冲突） |
+| 悬浮回到顶部按钮（需求 6 改进：文字 + 箭头 + 移动端安全区/节流；2026-09-04 需求 3：文案统一英文） | 1564–1619 | 页尾 3 块：`.back-top` 样式（1564–1590，fixed 右下胶囊形，文字 + ↑ 箭头 span（`.bt-arrow`），CSS 变量主题自适应，hover 高亮；≤560px 收窄并叠加 `env(safe-area-inset-*)` 安全区）+ 按钮元素（1592–1596，aria-label 与可见文案固定英文「Back to top」——2026-09-04 需求 3：中英文页一致，不再随 `is_en` 切中文；箭头 span `aria-hidden`）+ IIFE 脚本（1598–1619，`matchMedia` 窄屏阈值 250 / 宽屏 400，rAF 节流滚动加 `.show`，点击 `scrollTo` 平滑回顶；独立作用域不与既有 JS 冲突） |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）、`/api/event`（埋点上报，任务 9）。
 **渲染路由**：`/`（`app.py:658`）。
