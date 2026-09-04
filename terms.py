@@ -191,7 +191,7 @@ def init_db():
                 term           TEXT PRIMARY KEY,  -- canonical 键（小写归一），如 "gpt-5"
                 display        TEXT,              -- 最佳展示形（如 "GPT-5"）
                 display_zh     TEXT DEFAULT '',   -- 中文别名（词典提供，可空）
-                display_en     TEXT DEFAULT '',   -- 英文展示名（中文词的 LLM 翻译，可空）
+                display_en     TEXT DEFAULT '',   -- 英文展示名（中文词：官方英名词典优先，LLM 翻译兜底；可空）
                 origin         TEXT DEFAULT 'news', -- news | hf | both
                 first_seen_at  TEXT,              -- 首次进入词池（取关联报道最早 published 兜底）
                 last_seen_at   TEXT,
@@ -919,6 +919,87 @@ _LEXICON_DISPLAY = {
     "tsinghua": "Tsinghua"
 }
 
+# ---------- 中文公司/机构名 → 官方英文名（display_en 确定性映射词典，需求 4）----------
+# 用户反馈：站内出现由中文公司名派生/翻译出的英文展示名（拼音式 "Qujing Tech"、
+# "Tashi Zhihang"，或自译形态）观感不佳。本表收录「广为人知、官方英文名确定」
+# 的中文公司/机构名（display 形态，CJK 键），refresh_words 5.6 段对 display /
+# display_zh 命中词直接确定性写入 display_en=官方英文名。
+#
+# 次序：**词典优先（本表确定性映射，不进 LLM 翻译批次、不受限流/词数上限影响，
+# 存量拼音/自译脏值随刷新回归官方名）→ 词典未收录的中文词才走 LLM 增量翻译兜底**
+# （dims._translate_terms 提示词已约束：无官方英文名的中文专名保留中文原词，
+# 严禁拼音音译/自造英文）。词典判定独立于 term_translator：静态词典属确定性
+# 知识，无 LLM key 的降级环境同样生效（与 _EXPLANATIONS 等静态词典同性质）。
+#
+# 维护原则：只收录有把握的官方英文名，拿不准的不收（宁缺毋滥）；键必须是中文
+# display 形态（ASCII 键即英文展示本身，无需映射，如 MiniMax 中英同形不收）。
+# 收录了但命中不到的词无害（个别键与 _LEXICON 的 CJK 表面形式重合，如 深度求索/
+# 字节跳动——关键词归一后并入英文 canonical，其中文形态词不会独立成词，收录作为
+# display_zh 兜底与文档性覆盖）。
+_COMPANY_EN_GLOSSARY = {
+    # —— QA 点名案例（必收）——
+    # 创通联达：中科创达（ThunderSoft）与高通合资的端侧智能公司，官方英文名
+    # Thundercomm（此前中文标题词会被 LLM 译为拼音/自造形态，词典直接钉死官方名）。
+    "创通联达": "Thundercomm",
+    # 中科创达：其母公司，官方英文名 Thunder Software Technology / 品牌简称 ThunderSoft。
+    "中科创达": "ThunderSoft",
+    # —— 大模型/AI 基础公司 ——
+    "深度求索": "DeepSeek",       # DeepSeek，官网 deepseek.com
+    "月之暗面": "Moonshot AI",    # Moonshot AI（Kimi 开发商），官网 moonshot.cn
+    "智谱": "Zhipu AI",           # 智谱 AI（GLM 开发商），官网 zhipuai.cn
+    "智谱AI": "Zhipu AI",         # 同上，常见带 AI 后缀写法（别名对，非冲突）
+    "零一万物": "01.AI",           # 李开复创办的 01.AI（万知/千问前团队）
+    "百川智能": "Baichuan AI",     # Baichuan Intelligence，官网 baichuan-ai.com
+    "阶跃星辰": "StepFun",         # StepFun（上海阶跃星辰），Step 系列大模型
+    "面壁智能": "ModelBest",       # ModelBest，官网 modelbest.cn
+    "无问芯穹": "Infinigence-AI",  # Infinigence-AI（算力中间层/推理优化公司）
+    # —— AI 应用/机器人/自动驾驶公司 ——
+    "科大讯飞": "iFlytek",         # iFlytek（讯飞），官网 iflytek.com
+    "商汤科技": "SenseTime",       # SenseTime，官网 sensetime.com
+    "旷视科技": "Megvii",          # Megvii（Face++），官网 megvii.com
+    "云从科技": "CloudWalk",       # CloudWalk，官网 cloudwalk.com
+    "地平线": "Horizon Robotics",  # Horizon Robotics（地平线机器人），官网 horizon.cc
+    "文远知行": "WeRide",          # WeRide，官网 weride.ai
+    "小马智行": "Pony.ai",         # Pony.ai，官网 pony.ai
+    "图森未来": "TuSimple",        # TuSimple，官网 tusimple.com
+    "毫末智行": "HAOMO",           # HAOMO.AI（毫末智行），官网 haomo.ai
+    "元戎启行": "DeepRoute",       # DeepRoute.ai（元戎启行），官网 deeproute.ai
+    "宇树科技": "Unitree",         # Unitree Robotics（宇树），官网 unitree.com
+    "银河通用": "Galbot",          # Galbot（银河通用机器人），官网 galbot.com
+    "智元机器人": "AgiBot",        # AgiBot（智元），官网 agibot.com
+    # —— 互联网/科技平台（中文标题报道常以中文名出现）——
+    "字节跳动": "ByteDance",
+    "阿里巴巴": "Alibaba",
+    "百度": "Baidu",
+    "腾讯": "Tencent",
+    "华为": "Huawei",
+    "小米": "Xiaomi",
+    "快手": "Kuaishou",
+    "网易": "NetEase",
+    "京东": "JD.com",
+    "美团": "Meituan",
+    "哔哩哔哩": "Bilibili",
+    "拼多多": "Pinduoduo",
+    "小红书": "Xiaohongshu",
+}
+
+
+def _company_glossary_en(disp, display_zh=""):
+    """中文公司/机构专名 → 官方英文展示名（_COMPANY_EN_GLOSSARY 精确键查）。
+
+    需求 4：display（词卡中文展示形态）精确命中词典键即返回官方英文名；
+    display 未收录时以 display_zh（中文别名形态）兜底查一次。只做精确键匹配，
+    不子串匹配（避免误伤普通中文概念词）；未收录返回 ""，调用方对未收录的中文词
+    走 LLM 增量翻译兜底（dims._translate_terms 提示词已约束：无官方英文名的中文
+    专名保留中文原词，严禁拼音音译/自造英文）。
+    """
+    if not disp:
+        return ""
+    en = _COMPANY_EN_GLOSSARY.get(disp)
+    if en is None and display_zh:
+        en = _COMPANY_EN_GLOSSARY.get(display_zh)
+    return en or ""
+
 
 def _display_of(term, surfaces):
     """从命中表面形式里挑展示名：优先含大写的最长形式，否则按规则美化。"""
@@ -1391,11 +1472,30 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
     # 2026-09-02（DeepSeek 用量事故修复）：增量翻译 + 上限。缺 display_en 的新词
     # 优先译；预算（TRANSLATE_BATCH_MAX_WORDS）有余才回译已有 en 的词（允许更优
     # 翻译更新）——不再每轮全量重译池内全部中文词（当日观察 ~35 次 LLM 调用/轮）。
+    # 2026-09-07（需求 4：中文公司名英译优化）：先做词典预写——display（或
+    # display_zh 兜底）命中 _COMPANY_EN_GLOSSARY 的中文公司/机构专名，直接确定性
+    # 写入官方英文名（词典优先于 LLM：不进翻译批次、不受限流/预算影响，存量拼音/
+    # 自译脏 display_en 随刷新回归官方名）。判定独立于 term_translator（静态词典
+    # 属确定性知识，无 LLM key 的降级环境同样生效）；未收录的中文词才进下方
+    # _needs/_upgradable 走 LLM 增量翻译兜底。
+    _glossary_done = set()  # canon：已由 5.6.1 词典确定性写入的词
+    for canon in kept:
+        _disp = (hf_terms.get(canon, {}).get("display")
+                 or _display_of(canon, [canon]))
+        if not (_disp and re.search(r"[\u4e00-\u9fff]", _disp)):
+            continue
+        _zh = (old.get(canon) or {}).get("display_zh") or _display_zh_of(canon)
+        _en = _company_glossary_en(_disp, _zh)
+        if _en:
+            kept[canon]["display_en"] = _en
+            _glossary_done.add(canon)
     if term_translator:
         try:
             _needs = []       # (canon, disp)：缺 display_en，优先翻译
             _upgradable = []  # (canon, disp)：已有 display_en，预算内再优化
             for canon in kept:
+                if canon in _glossary_done:
+                    continue  # 5.6.1 词典词已确定性写入，不进 LLM 翻译批次
                 _disp = (hf_terms.get(canon, {}).get("display")
                          or _display_of(canon, [canon]))
                 if _disp and re.search(r"[\u4e00-\u9fff]", _disp):
