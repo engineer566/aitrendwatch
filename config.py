@@ -152,6 +152,16 @@ SEO_ENABLED = _as_bool(os.environ.get("SEO_ENABLED", "true"))
 SITEMAP_MAX_URLS = int(os.environ.get("SITEMAP_MAX_URLS", "200") or 200)
 # 单热词详情页进程内缓存 TTL（秒）。get_term_detail 是 live HF + 同步 arXiv（~1-4s）。
 TERM_DETAIL_CACHE_TTL = int(os.environ.get("TERM_DETAIL_CACHE_TTL", "1800") or 1800)
+# P1 词条详情页可索引质量门槛（与其 500 个薄页面，不如 50 个扎实的页面）：
+# 词池里只有「扎实」的词才允许被搜索引擎收录——薄词条页面照常渲染，仅输出
+# meta robots=noindex；sitemap 也只列达标词。判定统一收口在 terms.term_row_indexable
+# （页面 robots 与 sitemap 同一门槛，避免双份口径漂移）：
+#   - HF 模型词（origin ∈ hf/both 且 hf_json 非空）自带 likes/downloads/papers
+#     等实质内容，不受报道数门槛限制，恒可索引；
+#   - 其余词需同时满足：累计关联报道数 >= TERM_INDEX_MIN_NEWS 且本周期热度
+#     cur_hot >= TERM_INDEX_MIN_HOT。
+TERM_INDEX_MIN_NEWS = int(os.environ.get("TERM_INDEX_MIN_NEWS", "2") or 2)  # 至少 N 篇关联报道才可索引
+TERM_INDEX_MIN_HOT = int(os.environ.get("TERM_INDEX_MIN_HOT", "0") or 0)    # 热度门槛（cur_hot）
 
 # ---------- 第三方广告联盟 ----------
 # 与自建赞助位并存；自建优先，联盟广告作为补位/默认填充。

@@ -767,6 +767,12 @@ def term_detail(term_name):
     if not data.get("ok"):
         abort(404)
 
+    # P1 索引质量门槛：词条是否允许被收录由词池行质量判定（薄词条 noindex，
+    # 页面仍照常渲染）；与 sitemap（list_terms_for_sitemap → term_row_indexable）
+    # 同一门槛单点收口。词池外的 HF 长尾回退页 row=None → 不可索引。
+    row = terms_mod.get_term_row(term_name) if terms_mod else None
+    indexable = bool(row) and terms_mod.term_row_indexable(row)
+
     t = data["term"]
     slug = t.get("term") or term_name
     canonical = _abs(_lang_url(f"/term/{quote(slug)}", lang))
@@ -795,6 +801,7 @@ def term_detail(term_name):
                            site_name=config.SITE_NAME,
                            site_desc=desc[:160], base_url=_base_url(),
                            canonical=canonical, seo_enabled=_seo_enabled(),
+                           indexable=indexable,
                            home_url=home_url,
                            lang_toggle_url=_lang_url(
                                request.path, "en" if lang == "zh" else "zh"),
