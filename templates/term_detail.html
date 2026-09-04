@@ -1,4 +1,7 @@
 {% set is_en = lang == 'en' %}
+{# P3 热度口径文案（SSR 静态标注：word 级热度 vs 单篇报道热度分开说明） #}
+{% set hot_note_txt = '词热度 = 近 7 天相关报道热度分（时间加权）+ HuggingFace 点赞数' if not is_en else 'Word hotness = heat scores of related reports in last 7 days (recency-weighted) + HuggingFace likes' %}
+{% set hot_news_note_txt = '报道热度分 = 社区讨论信号按来源加权 + 发布时间衰减' if not is_en else 'Report heat score = community signals weighted by source + time decay' %}
 <!DOCTYPE html>
 <html lang="{{ 'en' if is_en else 'zh-CN' }}">
 <head>
@@ -116,6 +119,7 @@
   .term-name .author { color: var(--text-dim); font-weight: 500; font-size: 15px; }
   .term-name .zh { color: var(--text-dim); font-weight: 600; }
   .term-meta { font-size: 14px; color: var(--text-dim); margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .term-note { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.5; }
   .term-meta .m-up { color: var(--green); font-weight: 600; }
   .term-meta .m-hot { color: var(--orange); font-weight: 600; }
   /* 词条活跃度趋势迷你柱图（term_snapshots 聚合的原创增量，纯 HTML/CSS） */
@@ -272,12 +276,13 @@
   {% endif %}
   {% if word.term.hot or word.term.rise or word.term.news_cnt %}
   <div class="term-meta">
-    {% if word.term.hot %}<span class="m-hot">🔥 {% if is_en %}Hotness{% else %}热度{% endif %} <span class="num">{{ word.term.hot }}</span></span>{% endif %}
+    {% if word.term.hot %}<span class="m-hot" title="{{ hot_note_txt }}">🔥 {% if is_en %}Hotness{% else %}热度{% endif %} <span class="num">{{ word.term.hot }}</span></span>{% endif %}
     {# rise == -1.0 表示本周期无活跃报道（m_cur=0 的环比占位），对用户是噪音不是「下跌 100%」，隐藏 #}
     {% if word.term.rise != none and word.term.rise > -0.999 %}<span class="m-up">📈 {% if is_en %}Rise{% else %}上升{% endif %} <span class="num">{{ '%.2f' | format(word.term.rise) }}</span></span>{% endif %}
     {% if word.term.news_cnt %}<span>📄 <span class="num">{{ word.term.news_cnt }}</span> {% if is_en %}reports{% else %}篇报道{% endif %}</span>{% endif %}
     {% if word.term.first_seen_at %}<span>🗓 {% if is_en %}First seen{% else %}首次出现{% endif %} {{ word.term.first_seen_at[:10] }}</span>{% endif %}
   </div>
+  <div class="term-note">🔥 {{ hot_note_txt }}</div>
   {% endif %}
 
   {% if word.trend and word.trend|length >= 2 %}
@@ -334,7 +339,7 @@
   {% for n in word.news %}
   <div class="news-item">
     <a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title or n.title_en or n.title_zh }}</a>
-    {% if n.hot %}<span class="hd">🔥 {{ n.hot }}</span>{% endif %}
+    {% if n.hot %}<span class="hd" title="{{ hot_news_note_txt }}">🔥 {{ n.hot }}</span>{% endif %}
     {% if n.source %}<span class="src">{{ n.source }}</span>{% endif %}
     {% if n.published %}<span class="pm">{{ n.published }}</span>{% endif %}
     {% if n.summary %}<div class="sum">{{ n.summary }}</div>{% endif %}
