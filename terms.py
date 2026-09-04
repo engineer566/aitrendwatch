@@ -627,6 +627,11 @@ def case_match_original(keyword, text):
     （关键词不在原文中，无从推导大小写，保持 canonical 形式）。纯 CJK
     关键词无大小写概念，原样返回。作为 LLM 抽词与词典抽词的收口校验，
     避免 normalize_term 的小写化把 "OpenClaw"/"GPT-5" 等大小写抹平。
+
+    2026-09-04（gpt-6-astra 案例）：标题常以「连字符 + 空格」混合形态出现
+    （canon "gpt-6-astra"，标题 "GPT-6 Astra"），候选需覆盖全部 '-'/' '
+    分隔组合（GPT-6-Astra / GPT-6 Astra / GPT 6 Astra），否则表面匹配失败、
+    display 回落小写 canonical。
     """
     if not keyword or not text:
         return keyword
@@ -640,6 +645,18 @@ def case_match_original(keyword, text):
         if s and all(ord(c) < 128 for c in s) and s.casefold() not in seen:
             seen.add(s.casefold())
             cands.append(s)
+    if "-" in kw:
+        # 混合分隔组合：gpt-6-astra → gpt-6-astra / gpt-6 astra /
+        # gpt 6-astra / gpt 6 astra（版本号段常保留连字符、其余空格分隔）
+        _parts = kw.split("-")
+        for _mask in range(1 << (len(_parts) - 1)):
+            _cand = _parts[0]
+            for _i in range(len(_parts) - 1):
+                _sep = "-" if (_mask >> _i) & 1 else " "
+                _cand += _sep + _parts[_i + 1]
+            if _cand.casefold() not in seen:
+                seen.add(_cand.casefold())
+                cands.append(_cand)
     for cand in cands:
         hit = _ci_surface_in_text(cand, text)
         if hit is not None:
@@ -1352,7 +1369,14 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 # 词典规则（_display_of(canon, [])）对 governed 词恒命中词典/缩写表。
                 display = _display_of(canon, [])
             else:
-                display = old_display or _display_of(canon, [])
+                # 词典外词且无表面可修：保留历史规范形态（含大写的 old，如曾由
+                # surface/翻译给出的 "Simon Willison"）；早期小写 canonical 脏值
+                # （old == canon，如 databricks）属写库缺陷，改用词典/美化兜底
+                # （_display_of → "Databricks"），不让小写脏值永远占位。
+                if old_display and any(c.isupper() for c in old_display):
+                    display = old_display
+                else:
+                    display = _display_of(canon, [])
             display_zh = o.get("display_zh") or _display_zh_of(canon)
 
             # display_en：本轮翻译有结果才覆盖；翻译失败/未命中时保留旧值，

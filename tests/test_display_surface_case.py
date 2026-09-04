@@ -215,6 +215,62 @@ class DisplaySurfaceCaseTests(unittest.TestCase):
         self.assertEqual(self._term_display("SaaS"), "SaaS")
         self.assertEqual(self._term_display("DevOps"), "DevOps")
 
+    # ---- 8. 连字符/空格混合形态表面匹配（gpt-6-astra → "GPT-6 Astra"）----
+
+    def test_mixed_hyphen_space_surface_matched(self):
+        # canon "gpt-6-astra"（全连字符），标题 "GPT-6 Astra"（版本连字符 + 空格
+        # + 型号名）——case_match_original 需覆盖 '-'/' ' 混合组合才能命中原文。
+        self.assertEqual(
+            self.terms.case_match_original(
+                "gpt-6-astra",
+                "Sam Altman Apologizes as GPT-6 Astra Staged Launch Denies Paid Access"),
+            "GPT-6 Astra")
+
+    def test_new_word_display_mixed_hyphen_space_from_title(self):
+        # 集成：标题含 "GPT-6 Astra"（混合形态），display 应为原文形态而非小写。
+        self.news_store.upsert_cards([self._card(
+            "https://astra.example/1",
+            "OpenAI Releases GPT-6 Astra: A 1.05M-Context Computer-Use Model",
+            ["gpt-6-astra"])])
+        self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
+        self.assertEqual(self._term_display("gpt-6-astra"), "GPT-6 Astra")
+
+    # ---- 9. 词典外词小写 canonical 脏 display 修正（databricks/simon-willison）----
+
+    def test_lowercase_canon_legacy_display_replaced_by_pretty(self):
+        # 早期写库缺陷：display 直接落小写 canonical（'databricks'/'simon-willison'），
+        # 词又不在标题中（来自正文/作者/域名）→ 表面无源。此类 old 全小写脏值
+        # 不应永远占位，回落词典/美化兜底（Databricks / Simon Willison）。
+        conn = sqlite3.connect(self.db_path)
+        for term, dirty in (("databricks", "databricks"),
+                            ("simon-willison", "simon-willison")):
+            conn.execute("INSERT INTO terms (term, display, origin) "
+                         "VALUES (?,?,?)", (term, dirty, "news"))
+        conn.commit()
+        conn.close()
+        # 标题不含词面（模拟来自正文/域名的抽词）：仅 keywords 命中聚合
+        self.news_store.upsert_cards([
+            self._card("https://db.example/1",
+                       "Governance beyond security: knowledge & ontology on the lakehouse",
+                       ["databricks"]),
+            self._card("https://sw.example/1",
+                       "August newsletter is out", ["simon-willison"]),
+        ])
+        self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
+        self.assertEqual(self._term_display("databricks"), "Databricks")
+        self.assertEqual(self._term_display("simon-willison"), "Simon Willison")
+
+    def test_legacy_upper_display_kept_when_no_surface(self):
+        # 词典外词历史 display 含大写（曾由 surface/翻译给出）且本轮无表面 →
+        # 保留稳定形态，不回落美化（避免 WorkBuddy → Workbuddy 闪变）。
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO terms (term, display, origin) VALUES (?,?,?)",
+                     ("workbuddy", "WorkBuddy", "news"))
+        conn.commit()
+        conn.close()
+        self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)  # 无任何卡
+        self.assertEqual(self._term_display("workbuddy"), "WorkBuddy")
+
 
 if __name__ == "__main__":
     unittest.main()
