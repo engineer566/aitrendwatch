@@ -271,6 +271,18 @@ class DisplaySurfaceCaseTests(unittest.TestCase):
         self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)  # 无任何卡
         self.assertEqual(self._term_display("workbuddy"), "WorkBuddy")
 
+    def test_all_lowercase_keyword_surface_not_adopted(self):
+        # 回归：当轮卡 keywords 是全小写 canonical（case_match_original 未在标题
+        # 命中时保持 canon，如 "databricks"）——全小写表面无大小写信息，不得借
+        # surface 路径占位（曾导致 old 小写脏值修复被短路）。display 应回落美化
+        # 兜底 "Databricks"。
+        card = self._card("https://db.example/2",
+                          "Governance beyond security: knowledge & ontology on the lakehouse",
+                          ["databricks"])
+        self.news_store.upsert_cards([card])
+        self.terms.refresh_words([card], [], fetched_at=self.FIXED_TS)
+        self.assertEqual(self._term_display("databricks"), "Databricks")
+
 
 if __name__ == "__main__":
     unittest.main()

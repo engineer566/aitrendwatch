@@ -929,14 +929,17 @@ def _is_dictionary_governed(canon):
 
 
 def _surface_upper_trusted(surface, title):
-    """全大写表面（如赛事缩写 GOAI）是否可信为原文写法（需求5 改进 2）。
+    """表面是否可作为 display 候选（需求5 改进 2/3：GOAI + 三词案例）。
 
-    含小写字母的表面（WorkBuddy/GoAI 等）恒可信；全大写表面（GOAI 等真
-    缩写）只有当所在标题并非整体全大写时才可信——标题含小写字母或 CJK
-    （如 "GOAI复赛评审正式启动"、"GOAI Announces Finalists…"）说明该全大写
-    形态是该词在原文中的真实写法；整条全大写的标题党标题
-    （"IROBOT LAUNCHES NEW ROBOT…"）里的全大写形态不作 display。
+    - 必须含大写字母：全小写表面（canon 自身如 "databricks"/"simon-willison"）
+      无任何大小写信息，不采纳——否则小写脏 display 会借 surface 路径占位；
+    - 含大写且含小写（WorkBuddy/Simon Willison 等）：恒可信；
+    - 全大写表面（GOAI 赛事缩写）：所在标题非整体全大写（标题含小写字母或
+      CJK，如 "GOAI复赛评审正式启动"）才可信；整条全大写的标题党标题
+      （"IROBOT LAUNCHES NEW ROBOT…"）里的全大写形态不作 display。
     """
+    if not any(c.isupper() for c in surface):
+        return False
     if any(c.islower() for c in surface):
         return True
     return (any(c.islower() for c in title)
