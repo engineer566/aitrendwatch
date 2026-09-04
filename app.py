@@ -202,6 +202,8 @@ def _word_detail(term_name, lang="zh"):
                                  term_info["news_cnt"], term_info["hot"],
                                  term_info["rise"], term_info["origin"]))
         return {"ok": True, "term": term_info, "news": news, "hf": hf,
+                # 词条自有数据增量：term_snapshots 聚合的近 7 天活跃度（无数据 []）
+                "trend": terms_mod.get_term_trend(canon, days=7),
                 "hf_detail": _hf_live((hf or {}).get("full_id")),
                 "legacy_hf": False}
 
@@ -217,6 +219,7 @@ def _word_detail(term_name, lang="zh"):
                              hf_detail.get("term") or term_name,
                              lang, 0, 0, 0, "hf")},
                 "news": [],
+                "trend": [],
                 "hf": {"full_id": hf_detail.get("full_id", ""),
                        "likes": hf_detail.get("likes", 0),
                        "trending_score": hf_detail.get("trending_score", 0),
@@ -225,7 +228,7 @@ def _word_detail(term_name, lang="zh"):
                        "author": hf_detail.get("author", ""),
                        "tags": hf_detail.get("tags") or []},
                 "hf_detail": hf_detail, "legacy_hf": True}
-    return {"ok": False}
+    return {"ok": False, "trend": []}
 
 
 def _base_url():
