@@ -27,7 +27,6 @@
 {% set search_desc = ('Search AI trends, models, and news on ' ~ site_name ~ '. Find HuggingFace models, arXiv papers, and AI industry updates.' if is_en else '在 ' ~ site_name ~ ' 搜索 AI 热点、模型与新闻。查找 HuggingFace 模型、arXiv 论文与 AI 行业动态。') %}
 <title>{% if q %}{{ 'Search «' if is_en else '搜索「' }}{{ q }}{{ '» ·' if is_en else '」·' }}{% endif %} {{ site_name }}</title>
 <meta name="description" content="{% if q %}{{ ('Search results for «' ~ q ~ '» – AI trends, models & news on ' ~ site_name) if is_en else ('「' ~ q ~ '」搜索结果 – ' ~ site_name ~ ' AI 热点、模型与新闻') }}{% else %}{{ search_desc }}{% endif %}">
-{% if q %}<meta name="keywords" content="{{ q }},AI trends,HuggingFace,arXiv">{% endif %}
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">

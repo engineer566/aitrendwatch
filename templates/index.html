@@ -44,7 +44,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}</title>
 <meta name="description" content="{{ site_desc }}">
-<meta name="keywords" content="{{ 'AI trends,HuggingFace,open-source models,arXiv,machine learning,deep learning,LLM,AI news' if is_en else 'AI热点,HuggingFace,开源模型,arXiv,机器学习,深度学习,大模型,AI新闻' }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -262,6 +261,7 @@
   .word-top-item a { color: var(--text); text-decoration: none; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .word-top-item a:hover { color: var(--accent); }
   .word-top-item .src { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+  .word-top-item .pm { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   .word-top-item .hd { color: var(--orange); font-size: 11px; white-space: nowrap; }
   .word-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
@@ -429,7 +429,7 @@
   {% if t.top_news %}
   <div class="word-top">
     {% for n in t.top_news[:3] %}
-    <div class="word-top-item"><a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title or n.title_en or n.title_zh or '' }}</a><span class="hd">🔥 {{ n.hot }}</span></div>
+    <div class="word-top-item"><a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title or n.title_en or n.title_zh or '' }}</a><span class="hd">🔥 {{ n.hot }}</span>{% if n.source %}<span class="src">{{ n.source }}</span>{% endif %}</div>
     {% endfor %}
   </div>
   {% endif %}
@@ -1138,7 +1138,8 @@ function renderWordExpand(box, d, term) {
     html += `<div class="word-top-item">
       <a href="${escapeHtml(n.official_url || "#")}" target="_blank" rel="noopener">${escapeHtml(n.title || "")}</a>
       ${n.hot ? `<span class="hd">🔥 ${fmtNum(n.hot)}</span>` : ""}
-      ${n.published ? `<span class="src">${escapeHtml(n.published)}</span>` : ""}
+      ${n.source ? `<span class="src">${escapeHtml(n.source)}</span>` : ""}
+      ${n.published ? `<span class="pm">${escapeHtml(n.published)}</span>` : ""}
     </div>`;
   });
   if (!news.length) html += `<div class="word-top-item">—</div>`;
