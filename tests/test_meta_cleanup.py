@@ -53,10 +53,10 @@ class SourceAttributionVisibleTest(unittest.TestCase):
         cls.term_detail = (ROOT / "templates" / "term_detail.html").read_text(encoding="utf-8")
 
     def test_index_ssr_word_top_shows_source(self):
-        # SSR 词卡 top 报道：标题链接原文后跟来源标签
+        # SSR 词卡 top 报道：标题链接原文后跟来源标签（hd span 可能带 P3 口径 title 属性）
         self.assertRegex(
             self.index,
-            r'<div class="word-top-item"><a href="{{ n\.official_url }}"[^>]*>.*</a><span class="hd">[^<]*</span>{% if n\.source %}<span class="src">{{ n\.source }}</span>{% endif %}</div>')
+            r'<div class="word-top-item"><a href="\{\{ n\.official_url \}\}"[^>]*>.*?</a><span class="hd"[^>]*>🔥 \{\{ n\.hot \}\}</span>\{% if n\.source %\}<span class="src">\{\{ n\.source \}\}</span>\{% endif %\}</div>')
 
     def test_index_js_word_card_top_shows_source(self):
         self.assertIn('${n.source ? `<span class="src">${escapeHtml(n.source)}</span>` : ""}',
