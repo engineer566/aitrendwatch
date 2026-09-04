@@ -56,6 +56,11 @@
 {% if seo_enabled %}
 <meta name="robots" content="index,follow">
 {% if canonical %}<link rel="canonical" href="{{ canonical }}">{% endif %}
+{% if hreflang and hreflang.zh and hreflang.en %}
+<link rel="alternate" hreflang="zh" href="{{ hreflang.zh }}">
+<link rel="alternate" hreflang="en" href="{{ hreflang.en }}">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang.en }}">
+{% endif %}
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
