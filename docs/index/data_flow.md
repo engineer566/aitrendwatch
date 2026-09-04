@@ -64,7 +64,7 @@
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
 - 用途：无 LLM key 降级抽词、历史库零成本回填、常见异形归一、display_zh 来源。
 - 通用热词停用词表（`terms.py:359` `_TERM_STOPWORDS`）：低价值通用词（"AI"/"llm"/"model" 等，canonical 键）在抽词（`extract_keywords_dict`）、聚合（`_keyword_canons`）、HF 词（`_hf_canon` 后）三级被剔除，不作为独立热词。
-- 热词解释：三级取词——① `terms.py:374` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1513`）。
+- 热词解释：三级取词——① `terms.py:374` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1865`）。
 
 ## SQLite Schema
 
@@ -130,7 +130,7 @@
 - 索引：`idx_news_{score,trend,published,dim}`。
 - 迁移 `_migrate`（`news_store.py:89`）：加 keywords 列、修复 NULL；旧维度值（模型发布/产品发布/...）→ 新 6 类幂等映射。
 
-**`terms`** — 词主表（`terms.py:176` `init_db`）
+**`terms`** — 词主表（`terms.py:181` `init_db`）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | term | TEXT PK | canonical 键（小写归一），如 "gpt-5" |
