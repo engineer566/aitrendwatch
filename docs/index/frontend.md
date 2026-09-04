@@ -39,12 +39,12 @@
 | ├ `render` | 1241 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
 | ├ `_fetchCtrl` | 1300 | 当前 /api/stream 请求的 AbortController，切语言/排序/视图时 abort 旧请求 |
 | ├ 数据拉取 `fetchAll` | 1337 | `fetchJSON("/api/stream?lang=&sort=&view=")`；全量就位先 `unlockCatCounts()` 再 render，分类条一次更新到全量计数 |
-| ├ 返回滚动恢复 `finalizeScrollRestore` | 1461 | 消费 `aitw_last_scroll` key + 清理 URL 标记（`scroll_back=1`），校准落位；配套 head 脚本（82）+ 词条页 `home_url` 回显（app.py:755） |
+| ├ 返回滚动恢复 `finalizeScrollRestore` | 1461 | 消费 `aitw_last_scroll` key + 清理 URL 标记（`scroll_back=1`），校准落位；配套 head 脚本（82）+ 词条页 `home_url` 回显（app.py:756） |
 | └ Mock 数据 | 1488 | 后端不可用时的内置预览数据 |
 | 悬浮回到顶部按钮（需求 6 改进：文字 + 箭头 + 移动端安全区/节流） | 1564–1619 | 页尾 3 块：`.back-top` 样式（1564–1590，fixed 右下胶囊形，文字 + ↑ 箭头 span（`.bt-arrow`），CSS 变量主题自适应，hover 高亮；≤560px 收窄并叠加 `env(safe-area-inset-*)` 安全区）+ 按钮元素（1592–1596，仅 aria-label 随 `is_en` 双语「回到顶部/Back to top」，箭头 span `aria-hidden`）+ IIFE 脚本（1598–1619，`matchMedia` 窄屏阈值 250 / 宽屏 400，rAF 节流滚动加 `.show`，点击 `scrollTo` 平滑回顶；独立作用域不与既有 JS 冲突） |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）、`/api/event`（埋点上报，任务 9）。
-**渲染路由**：`/`（`app.py:657`）。
+**渲染路由**：`/`（`app.py:658`）。
 **SSR 首屏**：`initial_terms` 注入词卡（词名 + top-3 报道，爬虫可见），随后异步拉 `/api/stream?view=words` 全量替换。
 
 ---
@@ -61,8 +61,8 @@
 | 模型卡列表 | 270–307 | 排名 / 🤗 开源模型徽标 / pipeline_tag 主徽标 / tags / 趋势分·点赞·下载 / 官方 + 社区链接 / 相关论文 |
 | 主 JS `<script>` | 315–357 | 主题切换 / 搜索跳转 `/search` / 更新时间渲染 |
 
-**引用 API**：无（服务端 `_hf_models_for`（`app.py:924`）装配后 SSR；数据与 `/api/hf` 同一来源）。
-**渲染路由**：`/hf`（`app.py:946`）。
+**引用 API**：无（服务端 `_hf_models_for`（`app.py:925`）装配后 SSR；数据与 `/api/hf` 同一来源）。
+**渲染路由**：`/hf`（`app.py:947`）。
 **数据源**：`tracker.get_model_cards`（trending 文件缓存）→ 冷启动回退 `tracker.get_terms`（自带快速兜底，只抓 HF ~1s）；likes/downloads 在内存重排。
 
 ---
@@ -79,7 +79,7 @@
 | 切换 JS | 365 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:804`）。
+**渲染路由**：`/terms`（`app.py:805`）。
 
 ---
 
@@ -95,8 +95,8 @@
 | 相关报道列表（SSR，SEO 主体） | ~286–302 | `word.news` 聚合卡 |
 | SEO ld+json | 164, 175, 196, 211 | 四个块：DefinedTerm（164）/ ItemList（175）/ SoftwareApplication（196）/ ScholarlyArticle（211）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
 
-**引用 API**：无（服务端 `_word_detail`（`app.py:133`）同步装配，进程内 TTL 缓存）。
-**渲染路由**：`/term/<name>`（`app.py:748`）。
+**引用 API**：无（服务端 `_word_detail`（`app.py:134`）同步装配，进程内 TTL 缓存）。
+**渲染路由**：`/term/<name>`（`app.py:749`）。
 **数据源**：词池 `terms` 表命中（任何词有页）→ 报道聚合；未命中回退 HF live；再无 → 404。
 
 ---
@@ -117,7 +117,7 @@
 | 建议补全 | ~305+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1208`）、SSR `word_hits` 由 `_do_search`（`app.py:1178`）返回。
+**渲染路由**：`/search`（`app.py:1228`）、SSR `word_hits` 由 `_do_search`（`app.py:1179`）返回（2026-09-04 需求 1：news 命中在评分排序后按归一化标题去重，镜像报道只留评分高者）。
 
 ---
 
