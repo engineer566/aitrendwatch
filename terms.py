@@ -28,7 +28,8 @@ import threading
 import datetime
 
 import config
-from text_utils import decode_html_entities, decode_url_entities
+from text_utils import (decode_html_entities, decode_url_entities,
+                        normalize_url_key, normalized_title_key)
 
 try:
     import news_store  # 历史库读取（回填/聚合扫描）；失败自动降级
@@ -753,17 +754,18 @@ def _title_matches_term(text, surfaces):
 
 
 def _title_key(title):
-    """标题归一化去重键：strip + casefold + 连续空白压缩。
+    """标题归一化去重键：strip + casefold + 连续空白压缩 + 剥离常见标点。
 
     同标题转载/镜像（不同 URL 同一篇报道，如 Yahoo Finance / The Motley Fool
-    两处镜像）在关联列表里会连续重复展示。归一化标题作为去重键，命中即只保留
-    首条（调用方需保证输入已按 published DESC, score DESC 排序，首条即
-    score 最高者）。空/缺失/纯空白标题返回 None（不去重，保持原行为）。
+    两处镜像；或尾标点有无、全角/半角标点、"·" 等写法差异的镜像标题）在
+    关联列表里会连续重复展示。归一化标题作为去重键，命中即只保留首条（调用方
+    需保证输入已按 published DESC, score DESC 排序，首条即 score 最高者）。
+    空/缺失/纯空白/纯标点标题返回 None（不去重，保持原行为）。
+    实现委托 text_utils.normalized_title_key，与逐条新闻流
+    （dims.get_news_cards）同口径。ASCII 连字符等有语义字符不剥离，
+    真实不同的标题不会被误压（见 tests/test_task1_dup_reports.py）。
     """
-    if title is None:
-        return None
-    norm = re.sub(r"\s+", " ", str(title).strip().casefold())
-    return norm or None
+    return normalized_title_key(title)
 
 
 def _compile_surface_patterns(surfaces):
@@ -1044,14 +1046,18 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
 
     # ---- 2. 全量历史库扫描：词 → 关联聚合（total_mentions / 7 天热窗 / dims / top news）----
     agg = {}  # canon → {mentions, hot_score, urls:set, dims:Counter, top:[...], latest_pub, earliest_pub, pubs:set, cur_cnt, cur_score, cur_signal}
-    cur_urls = {c.get("official_url") or c.get("title", "") for c in all_cards}
+    # 当轮 url 归一到与 news_cards 存储键相同的口径（normalize_url_key：
+    # 实体解码 + 去片段 + 去 utm_*），否则孪生/变体 url 会让 cur_cnt 漏计
+    # 已归一的存量行（需求 1）。
+    cur_urls = {normalize_url_key(c.get("official_url") or c.get("title", ""))
+                for c in all_cards}
     cur_signal_by_url = {}
     # 需求5 改进：收集当轮卡 keywords 的表面形式（LLM/词典抽词经 case_match_original
     # 对齐原文大小写后的形态，如 "WorkBuddy"/"GOAI"），并记录所在标题，供全大写
     # 表面可信度判定（整条全大写的标题党标题中的全大写不算原文写法）。
     cur_kw_surfaces = {}  # canon → {表面形式: set(所在标题)}
     for c in all_cards:
-        u = c.get("official_url") or c.get("title", "")
+        u = normalize_url_key(c.get("official_url") or c.get("title", ""))
         cur_signal_by_url[u] = (c.get("hn_points", 0) or 0) * 10 + \
             (c.get("reddit_score", 0) or 0) + (c.get("reddit_comments", 0) or 0) * 0.5
         _card_title = str(c.get("title") or "")

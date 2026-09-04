@@ -42,7 +42,8 @@ from config import (CACHE_DIR, LLM_CHAIN, LLM_CYCLE_ESCAPE,
                     llm_endpoint,
                     llm_reasoning_params,
                     DIMS_REFRESH_HOURS, NEWS_HISTORY_DAYS, NEWS_HISTORY_LIMIT)
-from text_utils import decode_html_entities, decode_url_entities
+from text_utils import (decode_html_entities, decode_url_entities,
+                        normalize_url_key, normalized_title_key)
 
 try:
     import news_store  # 历史持久化（issue 6）；失败不阻塞，get_news_cards 自动降级
@@ -1588,6 +1589,11 @@ def get_news_cards(lang="zh"):
 
     供 app.py 的 /api/stream 调用。每张卡补 kind=news、id=official_url，
     经 _project_card 投影到目标语言。缓存缺失返回空列表（不触发抓取）。
+    2026-09-04（需求 1）：id 用 normalize_url_key 归一到与历史库存储键同口径
+    （实体解码 + 去片段 + 去 utm_*），并在 url 去重之后再按归一化标题去重
+    （与词条关联列表/词卡 top_news 同口径的标题键）——不同 url 的同标题
+    镜像/孪生报道在逐条新闻流里只出现一次，顺序/计数随之收敛；model 卡与
+    words 视图不经过这里，不受影响。
     """
     lang = lang if lang in ("zh", "en") else "zh"
     data, fetched_at = _file_cache_get()
@@ -1597,7 +1603,8 @@ def get_news_cards(lang="zh"):
             for c in arr:
                 pc = _project_card(c, lang)
                 pc["kind"] = "news"
-                pc["id"] = pc.get("official_url") or pc.get("title", "")
+                pc["id"] = normalize_url_key(
+                    pc.get("official_url") or pc.get("title", ""))
                 pc["hot"] = pc.get("hot") or pc.get("score", 0)
                 pc["official_label"] = pc.get("source", "")
                 pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
@@ -1607,7 +1614,7 @@ def get_news_cards(lang="zh"):
     # 合并历史库（issue 6）：当轮 cards 可能只有几十条（每维度前 10），
     # 叠加历史库回溯近 NEWS_HISTORY_DAYS 天、上限 NEWS_HISTORY_LIMIT 条，
     # 扩大内容池让 rise/hot/new 有区分度、内容更丰富。
-    # 去重按 official_url（id），当轮优先；历史卡补 kind/id/official_label/summary。
+    # 去重按归一 url（id），当轮优先；历史卡补 kind/id/official_label/summary。
     if news_store:
         try:
             hist = news_store.list_history_cards(
@@ -1615,7 +1622,7 @@ def get_news_cards(lang="zh"):
                 days=NEWS_HISTORY_DAYS)
             seen = {c.get("id") for c in cards if c.get("id")}
             for hc in hist:
-                url = hc.get("official_url")
+                url = normalize_url_key(hc.get("official_url") or "")
                 if not url or url in seen:
                     continue
                 pc = _project_card(hc, lang)
@@ -1633,7 +1640,32 @@ def get_news_cards(lang="zh"):
         except Exception:
             pass
 
-    return cards, fetched_at
+    return _dedupe_news_titles(cards), fetched_at
+
+
+def _dedupe_news_titles(cards):
+    """逐条新闻流标题级去重（需求 1）：归一标题相同只保留首条，顺序不变。
+
+    与词条关联列表（terms.get_term_news / 词卡 top_news）同口径的标题键
+    （normalized_title_key：strip + casefold + 空白压缩 + 剥常见标点），
+    键字段顺序同为 title_zh → title_en → title。当轮卡先于历史卡出现，
+    首条即当轮（更新鲜）；空/纯标点标题不去重（保持原行为）。
+    """
+    out = []
+    seen = set()
+    for c in cards:
+        tkey = None
+        for field in ("title_zh", "title_en", "title"):
+            k = normalized_title_key(c.get(field))
+            if k:
+                tkey = k
+                break
+        if tkey is not None:
+            if tkey in seen:
+                continue
+            seen.add(tkey)
+        out.append(c)
+    return out
 
 
 # ---------- 后台预热线程 ----------
