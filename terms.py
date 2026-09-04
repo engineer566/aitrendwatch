@@ -2127,6 +2127,56 @@ def get_term_news(term, limit=50, lang="zh"):
         return []
 
 
+def get_term_trend(term, days=7):
+    """词 → 近 N 天活跃度序列（term_snapshots 按日聚合，词条页自有数据增量）。
+
+    口径：canonical 键全量查 term_snapshots（按 cycle ASC），同一日期
+    （cycle 前 10 字符，如 "2026-08-28-13" → "2026-08-28"）取当日最后一个
+    cycle 的行——即当日最后一次刷新的值（backfill 合成 "-00" 周期排在真实
+    刷新之前，不影响取末）。输出按日期升序，仅保留最近 ``days`` 个有数据的
+    日子（默认 7）。不足 2 个数据点或全部 win7_cnt == 0 时返回 []（模板据此
+    隐藏区块）。DB 不可用/任何异常返回 []，绝不抛。
+    每项: {"date": "YYYY-MM-DD", "win7_cnt": int, "news_cnt": int}
+    """
+    if not _DB_OK:
+        return []
+    canon = normalize_term(term)
+    if not canon:
+        return []
+    try:
+        try:
+            days = max(0, int(days))
+        except (TypeError, ValueError):
+            days = 7
+        if not days:
+            return []
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT cycle, news_cnt, win7_cnt FROM term_snapshots "
+            "WHERE term=? ORDER BY cycle ASC", (canon,)).fetchall()
+        conn.close()
+        by_date = {}
+        for r in rows:
+            date = (r["cycle"] or "")[:10]
+            if len(date) != 10:
+                continue
+            # 按 cycle 升序遍历：同日期后到者即当日最后一个 cycle（末次刷新）
+            by_date[date] = r
+        out = []
+        for date, r in by_date.items():   # 插入序 == 日期升序
+            out.append({"date": date,
+                        "win7_cnt": int(r["win7_cnt"] or 0),
+                        "news_cnt": int(r["news_cnt"] or 0)})
+        out = out[-days:]
+        if len(out) < 2:
+            return []
+        if all(p["win7_cnt"] == 0 for p in out):
+            return []
+        return out
+    except Exception:
+        return []
+
+
 def list_terms_for_sitemap(limit=200):
     """sitemap 用：按热度降序返回词 display 列表。"""
     if not _DB_OK:

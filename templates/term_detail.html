@@ -116,6 +116,22 @@
   .term-meta { font-size: 14px; color: var(--text-dim); margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
   .term-meta .m-up { color: var(--green); font-weight: 600; }
   .term-meta .m-hot { color: var(--orange); font-weight: 600; }
+  /* 词条活跃度趋势迷你柱图（term_snapshots 聚合的原创增量，纯 HTML/CSS） */
+  .trend-block {
+    margin-top: 14px; padding: 12px 14px 10px;
+    background: color-mix(in srgb, var(--text) 3%, transparent);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  .trend-title { font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 8px; }
+  .trend-chart { display: flex; align-items: flex-end; gap: 8px; }
+  .trend-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+  .trend-plot { width: 100%; height: 64px; display: flex; align-items: flex-end; }
+  .trend-bar {
+    width: 100%; border-radius: 4px 4px 0 0;
+    background: linear-gradient(180deg, var(--accent),
+                color-mix(in srgb, var(--accent) 40%, transparent));
+  }
+  .trend-date { font-size: 10px; color: var(--text-dim); margin-top: 4px; white-space: nowrap; }
   .term-explain {
     margin-top: 12px; padding: 10px 14px; font-size: 14px; line-height: 1.65;
     color: var(--text);
@@ -260,6 +276,25 @@
     {% if word.term.news_cnt %}<span>📄 <span class="num">{{ word.term.news_cnt }}</span> {% if is_en %}reports{% else %}篇报道{% endif %}</span>{% endif %}
     {% if word.term.first_seen_at %}<span>🗓 {% if is_en %}First seen{% else %}首次出现{% endif %} {{ word.term.first_seen_at[:10] }}</span>{% endif %}
   </div>
+  {% endif %}
+
+  {% if word.trend and word.trend|length >= 2 %}
+  {% set trend_max = (word.trend | map(attribute='win7_cnt') | max) %}
+  {% if trend_max > 0 %}
+  <div class="trend-block">
+    <div class="trend-title">📈 {% if is_en %}7-day activity{% else %}近 7 天活跃度{% endif %}</div>
+    <div class="trend-chart">
+      {% for p in word.trend %}
+      <div class="trend-col" title="{% if is_en %}{{ p.date }}: {{ p.win7_cnt }} reports (last 7 days){% else %}{{ p.date }}：近 7 天 {{ p.win7_cnt }} 篇报道{% endif %}">
+        <div class="trend-plot">
+          <div class="trend-bar" style="height: {{ (100.0 * p.win7_cnt / trend_max) | round(1) }}%"></div>
+        </div>
+        <div class="trend-date">{{ p.date[5:] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if word.hf %}
