@@ -195,6 +195,14 @@
   .seg { display: flex; gap: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: 3px; }
   .seg button { padding: 5px 14px; border-radius: 14px; color: var(--text-dim); font-size: 13px; transition: all .15s; white-space: nowrap; }
   .seg button.active { background: var(--accent); color: #fff; }
+  /* HF 榜：视图 seg 第三项，跨页跳转 /hf（独立 SSR 页），↗ 角标暗示离开当前视图 */
+  .seg a.seg-link {
+    display: inline-flex; align-items: center; gap: 3px; text-decoration: none;
+    padding: 5px 14px; border-radius: 14px; color: var(--text-dim); font-size: 13px;
+    transition: all .15s; white-space: nowrap;
+  }
+  .seg a.seg-link:hover { color: var(--text); background: var(--bg-hover); }
+  .seg a.seg-link .seg-ext { font-size: 10px; opacity: .7; }
   .demo-banner { max-width: 860px; margin: 12px auto 0; padding: 0 24px; }
   .demo-banner .pill {
     display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
@@ -379,7 +387,6 @@
       <kbd>/</kbd>
     </div>
     <div class="header-right">
-      <a id="hf-link" class="btn" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 HF</a>
       <span id="last-update">—</span>
       <button class="btn" id="lang-btn" title="{{ 'Switch language' if is_en else '切换语言' }}">{{ lang_toggle_label }}</button>
       <button class="btn" id="theme-btn" title="{{ 'Toggle theme' if is_en else '切换深浅色' }}">🌙</button>
@@ -410,6 +417,9 @@
     <div class="seg" id="view-seg">
       <button class="active" data-view="words">{{ '🔤 Words' if is_en else '🔤 热词' }}</button>
       <button data-view="news">{{ '📰 News feed' if is_en else '📰 逐条新闻' }}</button>
+      {# HF 榜为独立 SSR 页（/hf，趋势/点赞/下载排序），无法并入本地视图切换； #}
+      {# 作为 seg 第三项跨页跳转，↗ 角标暗示离开当前视图。文案/标题由 updateHfLink() 随 LANG 同步。 #}
+      <a class="seg-link" id="hf-link" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 {{ 'HF Board' if is_en else 'HF 榜' }}<span class="seg-ext">↗</span></a>
     </div>
     <div class="seg" id="sort-seg">
       <button class="active" data-sort="rise">{{ '📈 Trending' if is_en else '📈 上升最快' }}</button>
@@ -519,7 +529,7 @@ const I18N = {
     search_ph: "搜索热点 / 作者…",
     all: "全部",
     sort_rise: "📈 上升最快", sort_hot: "🔥 最热", sort_new: "🕒 最新",
-    view_words: "🔤 热词", view_news: "📰 逐条新闻",
+    view_words: "🔤 热词", view_news: "📰 逐条新闻", view_hf: "🤗 HF 榜",
     loading: "加载中…",
     updated: "更新于 ",
     empty: "没有匹配的热点",
@@ -544,7 +554,7 @@ const I18N = {
     search_ph: "Search trends / authors…",
     all: "All",
     sort_rise: "📈 Trending", sort_hot: "🔥 Hottest", sort_new: "🕒 Newest",
-    view_words: "🔤 Words", view_news: "📰 News feed",
+    view_words: "🔤 Words", view_news: "📰 News feed", view_hf: "🤗 HF Board",
     loading: "Loading…",
     updated: "Updated ",
     empty: "No matching trends",
@@ -610,20 +620,22 @@ function setAllData(cards) {
 
 // URL 参数恢复状态（?view=&cat=&sort=&lang= 可分享）
 let langFromURL = false;
+let viewFromURL = false;
 (function initFromURL() {
   const p = new URLSearchParams(location.search);
   const lp = p.get("lang");
   if (lp === "zh" || lp === "en") { LANG = lp; langFromURL = true; }
-  if (p.get("view") && ["words","news"].includes(p.get("view"))) currentView = p.get("view");
+  if (p.get("view") && ["words","news"].includes(p.get("view"))) { currentView = p.get("view"); viewFromURL = true; }
   if (p.get("sort") && ["rise","hot","new"].includes(p.get("sort"))) currentSort = p.get("sort");
   if (p.get("cat")) currentCat = p.get("cat");
 })();
-// localStorage 优先级高于 SSR 默认（用户上次手动切过则记住）
+// localStorage 优先级高于 SSR 默认（用户上次手动切过则记住），但低于显式 URL 参数
+// （HF 页镜像导航 /?view=words|news 链接必须确定性落到对应视图）。
 try {
   const saved = localStorage.getItem("aitw_lang");
   if (!langFromURL && (saved === "zh" || saved === "en")) LANG = saved;
   const v = localStorage.getItem("aitw_view");
-  if (v === "words" || v === "news") currentView = v;
+  if (!viewFromURL && (v === "words" || v === "news")) currentView = v;
 } catch (e) {}
 function syncURL() {
   const p = new URLSearchParams();
@@ -695,10 +707,12 @@ function updateHfLink() {
   if (!hfLink) return;
   // 跟随前端 LANG（URL ?lang= / localStorage 覆盖后的实际显示语言），
   // 避免链接停留在 SSR 默认语言导致点击跳到错误的语言页面。
+  // HF 榜是 seg 第三项（跨页跳转 /hf），文案与 ↗ 角标也随语言同步。
   hfLink.href = "/hf?lang=" + LANG;
   hfLink.title = LANG === "en"
     ? "HuggingFace open-source model leaderboard"
     : "HuggingFace 开源模型榜";
+  hfLink.innerHTML = t("view_hf") + '<span class="seg-ext">↗</span>';
 }
 function localizeStatic() {
   document.title = `{{ site_name }} · ${t("site_subtitle")}`;
@@ -980,6 +994,12 @@ viewSeg.addEventListener("click", e => {
 });
 document.querySelectorAll("#view-seg button").forEach(x =>
   x.classList.toggle("active", x.dataset.view === currentView));
+
+// HF 榜入口（seg 第三项，普通链接跨页跳转 /hf）：点击埋点用于对比新入口效果，
+// 不拦截默认导航。viewSeg 的 button 委托对 <a> 自然落空，互不影响。
+hfLink.addEventListener("click", () => {
+  Analytics.track("hf_entry_click", {lang: LANG, view: currentView, sort: currentSort});
+});
 
 sortSeg.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;

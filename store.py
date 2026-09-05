@@ -147,7 +147,7 @@ def init_db():
             -- v3: 通用用户行为事件表（埋点系统）
             CREATE TABLE IF NOT EXISTS user_events (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_type TEXT NOT NULL,          -- page_view / click / search / word_expand / view_switch / lang_switch / sort_switch / cat_filter / link_click
+                event_type TEXT NOT NULL,          -- page_view / click / search / word_expand / view_switch / lang_switch / sort_switch / cat_filter / link_click / hf_entry_click
                 event_data TEXT,                   -- JSON 附加数据（如 {term, url, from_view, ...}）
                 ip         TEXT,
                 country    TEXT,
@@ -670,7 +670,7 @@ def search_suggest(prefix, limit=8):
 _VALID_EVENT_TYPES = frozenset({
     "page_view", "click", "search", "word_expand", "word_detail",
     "view_switch", "lang_switch", "sort_switch", "cat_filter",
-    "link_click", "search_click",
+    "link_click", "search_click", "hf_entry_click",
 })
 
 
