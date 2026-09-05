@@ -48,7 +48,7 @@
 
 ## 请求生命周期（三条主链路）
 
-### 1. 首页 `/`  （`app.py:633`）
+### 1. 首页 `/`  （`app.py:658`）
 ```
 浏览器 GET /
   → detect_region()              # Accept-Language → zh/global
@@ -61,18 +61,20 @@
 ```
 首页本身**不抓上游**——数据靠前端 JS 异步拉 `/api/stream`，后端只读缓存。
 
-### 2. 统一卡片流 `/api/stream`  （`app.py:778`）  ← 前端主数据源
+### 2. 统一卡片流 `/api/stream`  （`app.py:843`）  ← 前端主数据源
 ```
 GET /api/stream?lang=zh&sort=rise&view=words
   → detect_region() 决定默认 lang
   → view=words → terms.get_word_cards(sort, lang, limit=60)  # 先完整排序再截断
-  → view=news → tracker.get_model_cards + dims.get_news_cards  # 旧逻辑零回归
+  → view=news → tracker.get_model_cards + dims.get_news_cards
+  │               # 2026-09-04 需求 1：get_news_cards 卡 id url 归一 + _dedupe_news_titles
+  │               # 标题级去重（同标题镜像只出现一次；words 视图不经此处，不受影响）
   → 按 sort(rise/hot/new) 排序并按稳定身份去重（words 视图 new=新奇度）
   → {ok, view, fetched_at, count, dimension_list, dimension_counts, terms}
 ```
 **核心特征：请求路径零上游 IO**。词卡/新闻卡都来自后台预热线程写好的文件缓存。
 
-### 3. 单词聚合 `/api/word/<term>`  （`app.py:937`）  ← 词卡展开「更多」+ 详情页共用
+### 3. 单词聚合 `/api/word/<term>`  （`app.py:1002`）  ← 词卡展开「更多」+ 详情页共用
 ```
 GET /api/word/<term>
   → _word_detail(term)  # terms 词池命中 → 报道 LIKE 聚合 + HF 元数据
@@ -80,7 +82,7 @@ GET /api/word/<term>
   → 进程内 TTL 缓存
 ```
 
-### 4. 热词详情 `/term/<name>`  （`app.py:712`）  ← SEO 长尾 + 慢路径
+### 4. 热词详情 `/term/<name>`  （`app.py:749`）  ← SEO 长尾 + 慢路径
 ```
 GET /term/<name>
   → _detail_cached(key)            # 进程内 TTL 缓存（默认 1800s）
@@ -91,11 +93,11 @@ GET /term/<name>
 ```
 因 HF live 区块慢（arXiv 串行检索），靠进程内缓存 + SEO 长尾页价值支撑。
 
-### 5. HuggingFace 排序页 `/hf` + `/api/hf`  （`app.py:910` / `app.py:939`）  ← 开源动向独立页
+### 5. HuggingFace 排序页 `/hf` + `/api/hf`  （`app.py:947` / `app.py:976`）  ← 开源动向独立页
 ```
 GET /hf?sort=trending|likes|downloads&lang=zh|en
   → _request_lang() 决定语言
-  → _hf_models_for(sort, lang)  # app.py:924
+  → _hf_models_for(sort, lang)  # app.py:925
   │    → tracker.get_model_cards(lang)   # trending 文件缓存（统一卡片 schema）
   │    → 冷启动缓存缺失 → tracker.get_terms(sort)  # 自带快速兜底，只抓 HF ~1s
   → likes/downloads 在内存按字段重排（_stream_number 容错）
@@ -113,21 +115,21 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 - `_cross_proc_lock` (`tracker.py:476`) 用 `fcntl.flock` 跨进程锁，整个容器只有一个 worker 在抓。
 - 失败兜底：读旧缓存文件；旧缓存也无 → 内存兜底。
 
-### dims 层  （`dims.py:1787` `start_background_dims_refresher`）
+### dims 层  （`dims.py:1843` `start_background_dims_refresher`）
 - 独立 daemon 线程，独立跨进程锁 `cache/.dims.refresh.lock`。
-- `_dims_refresh_once` (`dims.py:1688`)：拉 31 个 RSS 源（含 4 个 Google News 关键词源） → HN/Reddit 复合热度 → LLM 批量打标（故障转移链；**每轮起始 `_llm_cycle_reset` 复位回链首**，DeepSeek 只做当轮逃生舱；**2026-09-03 起质量失败与 provider 故障分离 + 坏条目二次提示修正**）+ 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库 → **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
-- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (1,7,13,19)`（`config.py:136`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1740`) 算下次刷新倒计时。
-- `_persist_to_history` (`dims.py:1669`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
+- `_dims_refresh_once` (`dims.py:1744`)：拉 31 个 RSS 源（含 4 个 Google News 关键词源） → HN/Reddit 复合热度 → LLM 批量打标（故障转移链；**每轮起始 `_llm_cycle_reset` 复位回链首**，DeepSeek 只做当轮逃生舱；**2026-09-03 起质量失败与 provider 故障分离 + 坏条目二次提示修正**；**2026-09-04 需求 4**：抽词/翻译提示词（`_USER_PREFIX`@977 / `_TRANSLATE_SYS_MSG`@1326）禁中文公司专名拼音化/自译，详见 modules.md）+ 抽关键词（无 key 走降级：词典匹配抽词）→ 写 `cache/dims.json` + `news_store.upsert_cards` 入历史库（url 归一防孪生行）→ **拿到锁的 worker 再调 `terms.refresh_words` 归并热词池 + 三榜打分 + 周期快照，写 `cache/words.json`**。
+- **定点刷新**（Asia/Shanghai）：`DIMS_REFRESH_HOURS = (1,7,13,19)`（`config.py:136`），一天 4 次，6 小时一档。选点避开 DeepSeek 高峰段 + 命中硬盘缓存 TTL。`_seconds_until_next_refresh_hour` (`dims.py:1796`) 算下次刷新倒计时。
+- `_persist_to_history` (`dims.py:1725`)：每轮把 cards 持久化到 `news.db`，供 `list_history_cards` 扩大内容池 + `terms` 词聚合扫描。
 
 ### 启动时机
-`app.py:47-49` 模块加载时即 `start_background_refresher()` + `start_background_dims_refresher()`。每个 worker 进程各起线程，靠 fcntl 锁去重。
+`app.py:49-51` 模块加载时即 `start_background_refresher()` + `start_background_dims_refresher()`。每个 worker 进程各起线程，靠 fcntl 锁去重。
 
 ## 缓存层级（三级）
 
 | 层级 | 介质 | 作用域 | TTL | 典型键 | 代码位置 |
 |------|------|--------|-----|--------|----------|
-| L1 内存 | 进程内 `dict` | 单 worker 进程 | 300s（单源）/ 1800s（详情） | `{source: (ts,data)}` | `app.py:62` `_cache` |
-| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:79` / `terms.py:116` |
+| L1 内存 | 进程内 `dict` | 单 worker 进程 | 300s（单源）/ 1800s（详情） | `{source: (ts,data)}` | `app.py:63` `_cache` |
+| L2 文件 | `cache/*.json` | 跨 worker 共享 | 后台线程刷新频率决定 | `terms.json`, `dims.json`, `words.json` | `tracker.py:62` / `dims.py:82` / `terms.py:122` |
 | L3 SQLite | `data/*.db` | 跨 worker 共享，持久 | 永久（历史库）/ 按周期聚合 | sponsors.db, news.db | `store.py` / `news_store.py` / `terms.py` |
 
 跨进程锁文件：`cache/.tracker.refresh.lock`、`cache/.dims.refresh.lock`（`fcntl.flock`）。
@@ -138,4 +140,4 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 
 - 生产：gunicorn 多 worker（`docker-compose.prod.yml`），每 worker 一个 Python 进程，各起后台线程。
 - 锁策略：`threading.Lock` 只进程内有效，故跨 worker 用 `fcntl.flock` 文件锁（历史教训：曾因多 worker × threading.Lock 导致内存耗尽，见 memory `aitrendwatch-server-stability`）。
-- 本地：`python app.py` 单进程 debug 模式，`app.py:1496` `app.run(port=5000, debug=True)`。
+- 本地：`python app.py` 单进程 debug 模式，`app.py:1709` `app.run(port=5000, debug=True)`。

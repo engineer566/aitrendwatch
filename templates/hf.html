@@ -59,13 +59,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ 'HuggingFace Open-Source Model Leaderboard – Trending, Likes & Downloads' if is_en else 'HuggingFace 开源模型榜 · 趋势 / 点赞 / 下载排行' }} · {{ site_name }}</title>
 <meta name="description" content="{{ site_desc }}">
-<meta name="keywords" content="{{ 'HuggingFace,open-source models,AI leaderboard,trending models,machine learning' if is_en else 'HuggingFace,开源模型,AI排行榜,趋势模型,机器学习' }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 {% if seo_enabled %}
 <meta name="robots" content="index,follow">
 {% if canonical %}<link rel="canonical" href="{{ canonical }}">{% endif %}
+{% if hreflang and hreflang.zh and hreflang.en %}
+<link rel="alternate" hreflang="zh" href="{{ hreflang.zh }}">
+<link rel="alternate" hreflang="en" href="{{ hreflang.en }}">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang.en }}">
+{% endif %}
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
@@ -403,9 +407,9 @@ if (updatedEl) {
 </style>
 
 <button class="back-top" id="back-top" type="button"
-        aria-label="{{ 'Back to top' if is_en else '回到顶部' }}">
+        aria-label="Back to top">
   <span class="bt-arrow" aria-hidden="true">↑</span>
-  <span>{{ 'Back to top' if is_en else '回到顶部' }}</span>
+  <span>Back to top</span>
 </button>
 
 <script>

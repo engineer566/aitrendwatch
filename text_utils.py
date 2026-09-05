@@ -76,3 +76,72 @@ def decode_url_entities(value):
     if _DANGEROUS_URL_RE.match(decoded):
         return ""
     return decoded
+
+
+def normalize_url_key(url):
+    """Return the canonical identity key of a feed URL.
+
+    The same article can surface with string-different URLs: an XML-escaped
+    ``&amp;`` vs a plain ``&`` query separator, with/without a ``#fragment``,
+    or with/without ``utm_*`` campaign parameters.  Since ``news_cards``
+    deduplicates by the raw URL, those variants used to be stored as separate
+    rows ("twin rows") that double count and double display the article.
+    This key decodes one entity layer, drops the fragment and any ``utm_*``
+    query parameter so the variants collapse to one identity.
+
+    Only URLs that look like real URLs (contain ``://``) get fragment/utm
+    treatment; pseudo keys (title fallbacks, hand-made test keys such as
+    ``old-gpt5``, ``C#``-looking text) stay byte-identical so ordinary text
+    is never corrupted.
+    """
+    decoded = decode_url_entities(url)
+    if "://" not in decoded:
+        return decoded
+    base = decoded.split("#", 1)[0]
+    head, sep, query = base.partition("?")
+    if not sep:
+        return base
+    kept = [part for part in query.split("&")
+            if part and not part.lower().startswith("utm_")]
+    if not kept:
+        return head
+    return head + "?" + "&".join(kept)
+
+
+# 常见全角/半角标点与引号变体；镜像/转载标题常只差在这些写法上。ASCII
+# 连字符、斜杠等有语义的字符刻意保留（GPT-5 vs GPT5 不得因去重键误压）。
+# 「」『』・· 在代码里显式处理：·/・ 是分隔符变体，先替换成空白再折叠，
+# 让 "AI·Agent" 与 "AI Agent"、全角/半角空格形态归一到同一键。
+_PUNCTUATION_STRIP_RE = re.compile(
+    r"[!！?？,，.。;；:：、()（）\[\]【】\"“”'‘’…~～「」『』]+")
+_MIDDLE_DOT_CHARS = ("·", "・")
+
+
+def normalized_title_key(title):
+    """Return the dedup key for mirror/syndicated titles, or ``None``.
+
+    Mirrors of one article often differ only in punctuation spelling:
+    trailing punctuation present or not ("…！" vs "…!"), full-width vs
+    half-width marks ("，" vs ","), middle-dot/space separators or quote
+    variants.  The key folds those variants (after strip + casefold) so
+    such mirrors collapse to one identity, while CJK letters, digits,
+    hyphens and the remaining text stay meaningful — two genuinely
+    different titles are not merged.  Empty/whitespace/punctuation-only
+    titles return ``None`` so callers keep their previous no-dedup
+    behaviour.
+
+    Whitespace is removed entirely after the punctuation pass: punctuation
+    with and without surrounding spaces ("A，B" vs "A, B") would otherwise
+    leave asymmetric spaces that keep one mirror alive.  Removing it is
+    safe for a *dedup key* — real headlines never differ only in where the
+    spaces sit, and the hyphen (semantic in ``GPT-5`` vs ``GPT5``) is kept.
+    """
+    if title is None:
+        return None
+    norm = str(title).strip().casefold()
+    for dot in _MIDDLE_DOT_CHARS:
+        norm = norm.replace(dot, " ")
+    norm = re.sub(r"\s+", " ", norm)
+    norm = _PUNCTUATION_STRIP_RE.sub("", norm)
+    norm = norm.replace(" ", "")
+    return norm or None

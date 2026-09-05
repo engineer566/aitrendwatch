@@ -31,6 +31,7 @@ import tracker
 import dims
 import config
 import store
+import text_utils
 from stream_utils import (card_identity as _stream_card_identity,
                           dedupe_cards as _dedupe_stream_cards,
                           dimension_members as _stream_dimension_members,
@@ -201,6 +202,8 @@ def _word_detail(term_name, lang="zh"):
                                  term_info["news_cnt"], term_info["hot"],
                                  term_info["rise"], term_info["origin"]))
         return {"ok": True, "term": term_info, "news": news, "hf": hf,
+                # 词条自有数据增量：term_snapshots 聚合的近 7 天活跃度（无数据 []）
+                "trend": terms_mod.get_term_trend(canon, days=7),
                 "hf_detail": _hf_live((hf or {}).get("full_id")),
                 "legacy_hf": False}
 
@@ -216,6 +219,7 @@ def _word_detail(term_name, lang="zh"):
                              hf_detail.get("term") or term_name,
                              lang, 0, 0, 0, "hf")},
                 "news": [],
+                "trend": [],
                 "hf": {"full_id": hf_detail.get("full_id", ""),
                        "likes": hf_detail.get("likes", 0),
                        "trending_score": hf_detail.get("trending_score", 0),
@@ -224,7 +228,7 @@ def _word_detail(term_name, lang="zh"):
                        "author": hf_detail.get("author", ""),
                        "tags": hf_detail.get("tags") or []},
                 "hf_detail": hf_detail, "legacy_hf": True}
-    return {"ok": False}
+    return {"ok": False, "trend": []}
 
 
 def _base_url():
@@ -693,10 +697,18 @@ def index():
              sort=requested_sort, lang=lang)
     else:
         initial_dimensions, initial_dimension_counts, initial_total = [], {}, 0
+    # hreflang 互指：zh/en 两个显式语言变体互为 alternate（x-default → en 主语言），
+    # 让 Google 把两语言视为同一内容的语言变体而非独立页；_abs 在 BASE_URL 未设时
+    # 返回 None，模板据此跳过输出。
+    hreflang = {
+        "zh": _abs(_lang_url("/", "zh")),
+        "en": _abs(_lang_url("/", "en")),
+    }
     return render_template("index.html", sources=SOURCE_META,
                            sponsors=sponsors, site_name=config.SITE_NAME,
                            site_desc=SITE_DESC_EN if lang == "en" else SITE_DESC,
                            base_url=_base_url(), canonical=_abs(_lang_url("/", lang)),
+                           hreflang=hreflang,
                            seo_enabled=_seo_enabled(),
                            initial_terms=initial_terms,
                            initial_dimensions=initial_dimensions,
@@ -766,9 +778,22 @@ def term_detail(term_name):
     if not data.get("ok"):
         abort(404)
 
+    # P1 索引质量门槛：词条是否允许被收录由词池行质量判定（薄词条 noindex，
+    # 页面仍照常渲染）；与 sitemap（list_terms_for_sitemap → term_row_indexable）
+    # 同一门槛单点收口。词池外的 HF 长尾回退页 row=None → 不可索引。
+    row = terms_mod.get_term_row(term_name) if terms_mod else None
+    indexable = bool(row) and terms_mod.term_row_indexable(row)
+
     t = data["term"]
     slug = t.get("term") or term_name
     canonical = _abs(_lang_url(f"/term/{quote(slug)}", lang))
+    # hreflang 互指：zh/en 显式语言变体互为 alternate（x-default → en 主语言）；
+    # slug 与 canonical 同用 quote(slug)，_abs 在 BASE_URL 未设时返回 None，
+    # 模板据此跳过输出。
+    hreflang = {
+        "zh": _abs(_lang_url(f"/term/{quote(slug)}", "zh")),
+        "en": _abs(_lang_url(f"/term/{quote(slug)}", "en")),
+    }
     if lang == "zh":
         desc = (f"{slug} 最新动态聚合：{t.get('news_cnt', 0)} 篇相关报道，"
                 f"热度 {t.get('hot', 0)}，追踪 {slug} 的模型、产品与行业进展。")
@@ -793,7 +818,9 @@ def term_detail(term_name):
     return render_template("term_detail.html", word=data, lang=lang,
                            site_name=config.SITE_NAME,
                            site_desc=desc[:160], base_url=_base_url(),
-                           canonical=canonical, seo_enabled=_seo_enabled(),
+                           canonical=canonical, hreflang=hreflang,
+                           seo_enabled=_seo_enabled(),
+                           indexable=indexable,
                            home_url=home_url,
                            lang_toggle_url=_lang_url(
                                request.path, "en" if lang == "zh" else "zh"),
@@ -955,6 +982,12 @@ def hf_page():
         sort = "trending"
     models, fetched_at = _hf_models_for(sort, lang)
     canonical = _abs(_lang_url("/hf", lang))
+    # hreflang 互指：/hf?lang=zh|en 两个显式语言变体互为 alternate
+    # （x-default → en 主语言）；_abs 在 BASE_URL 未设时返回 None，模板据此跳过。
+    hreflang = {
+        "zh": _abs(_lang_url("/hf", "zh")),
+        "en": _abs(_lang_url("/hf", "en")),
+    }
     if lang == "zh":
         desc = ("HuggingFace 开源模型榜：按趋势分 / 点赞 / 下载量排序，"
                 "数据来自 HuggingFace 官方，追踪 AI 开源动向。")
@@ -966,7 +999,8 @@ def hf_page():
     return render_template(
         "hf.html", models=models, sort=sort, fetched_at=fetched_at,
         lang=lang, site_name=config.SITE_NAME, site_desc=desc,
-        base_url=_base_url(), canonical=canonical, seo_enabled=_seo_enabled(),
+        base_url=_base_url(), canonical=canonical, hreflang=hreflang,
+        seo_enabled=_seo_enabled(),
         home_url=_lang_url("/", lang), lang_toggle_url=toggle,
         lang_toggle_label="中文" if lang == "en" else "English")
 
@@ -1201,7 +1235,26 @@ def _do_search(q, lang, limit):
         scored.append(s)
     scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
     word_hits.sort(key=lambda x: x.get("_score", 0), reverse=True)
-    return scored[:limit], word_hits[:3], history_hits
+    # 需求 1：搜索结果不双显同一报道——历史库与当轮池可能各带同一篇文章的
+    # 不同 url 形态（&amp;/&、utm 变体等镜像/孪生行），news 卡按归一化标题
+    # 去重（与词条关联列表同口径的标题键；评分已降序，保留最高分那份）。
+    # model/word 卡不参与：HF 模型名与新闻报道同名时两者都是有效命中。
+    deduped = []
+    seen_titles = set()
+    for s in scored:
+        if s.get("kind") == "news":
+            tkey = None
+            for field in ("title_zh", "title_en", "title"):
+                k = text_utils.normalized_title_key(s.get(field))
+                if k:
+                    tkey = k
+                    break
+            if tkey is not None:
+                if tkey in seen_titles:
+                    continue
+                seen_titles.add(tkey)
+        deduped.append(s)
+    return deduped[:limit], word_hits[:3], history_hits
 
 
 @app.route("/search")
@@ -1344,19 +1397,24 @@ def robots():
 
 @app.route("/sitemap.xml")
 def sitemap():
+    """站点地图（主语言 = 英文）。
+
+    只提交英文显式变体（?lang=en），中文变体不重复提交，由页面 head 的
+    hreflang zh↔en 互指关联；/terms 是单页内嵌双语（canonical 固定 /terms），
+    保持裸 URL。BASE_URL 未设 → 无法生成绝对 URL，返回空 urlset。
+    """
     base = _base_url()
-    # BASE_URL 未设 → 无法生成绝对 URL，sitemap 退化为仅首页（相对也无意义，返回空集）
     urls = []
     if base:
-        urls.append(base + "/")
+        urls.append(f"{base}/?lang=en")
         if _seo_enabled():
-            # 服务条款页 + HF 模型榜（常驻索引）
+            # 服务条款页（单页双语，裸 URL）+ HF 模型榜（常驻索引，en 显式变体）
             urls.append(f"{base}/terms")
-            urls.append(f"{base}/hf")
+            urls.append(f"{base}/hf?lang=en")
             for slug in _sitemap_terms():
                 if not slug:
                     continue
-                urls.append(f"{base}/term/{quote(slug)}")
+                urls.append(f"{base}/term/{quote(slug)}?lang=en")
                 if len(urls) >= config.SITEMAP_MAX_URLS:
                     break
     now = time.strftime("%Y-%m-%d", time.gmtime())

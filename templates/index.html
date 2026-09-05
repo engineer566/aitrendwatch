@@ -1,5 +1,10 @@
 {% set page_lang = default_lang or 'zh' %}
 {% set is_en = page_lang == 'en' %}
+{# P3 热度口径文案（SSR 静态标注用；JS 路径用下方 I18N 字典同文案 key） #}
+{% set hot_note_zh = '词热度 = 近 7 天相关报道热度分（时间加权）+ HuggingFace 点赞数' %}
+{% set hot_note_en = 'Word hotness = heat scores of related reports in last 7 days (recency-weighted) + HuggingFace likes' %}
+{% set hot_news_note_zh = '报道热度分 = 社区讨论信号按来源加权 + 发布时间衰减' %}
+{% set hot_news_note_en = 'Report heat score = community signals weighted by source + time decay' %}
 {% set dim_labels = {
   '模型与技术': 'Models & Tech',
   '产品与应用': 'Products & Apps',
@@ -44,13 +49,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}</title>
 <meta name="description" content="{{ site_desc }}">
-<meta name="keywords" content="{{ 'AI trends,HuggingFace,open-source models,arXiv,machine learning,deep learning,LLM,AI news' if is_en else 'AI热点,HuggingFace,开源模型,arXiv,机器学习,深度学习,大模型,AI新闻' }}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 {% if seo_enabled %}
 <meta name="robots" content="index,follow">
 {% if canonical %}<link rel="canonical" href="{{ canonical }}">{% endif %}
+{% if hreflang and hreflang.zh and hreflang.en %}
+<link rel="alternate" hreflang="zh" href="{{ hreflang.zh }}">
+<link rel="alternate" hreflang="en" href="{{ hreflang.en }}">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang.en }}">
+{% endif %}
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
@@ -262,6 +271,7 @@
   .word-top-item a { color: var(--text); text-decoration: none; overflow-wrap: break-word; word-break: normal; min-width: 0; }
   .word-top-item a:hover { color: var(--accent); }
   .word-top-item .src { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+  .word-top-item .pm { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   .word-top-item .hd { color: var(--orange); font-size: 11px; white-space: nowrap; }
   .word-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .word-expand-btn { background: none; border: 1px solid var(--border); color: var(--accent); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
@@ -423,13 +433,13 @@
     <span class="head-right"><span>{{ t.news_cnt }} {{ 'reports' if is_en else '篇报道' }} · {{ t.published or '' }}</span></span>
   </div>
   <div class="term-meta">
-    <span class="m-hot">🔥 <span class="num">{{ t.hot }}</span></span>
+    <span class="m-hot" title="{{ hot_note_en if is_en else hot_note_zh }}">🔥 <span class="num">{{ t.hot }}</span></span>
     {% if t.rise != none and t.rise != 0 and t.rise > -0.999 %}<span class="m-up">📈 <span class="num">{{ t.rise }}</span></span>{% endif %}
   </div>
   {% if t.top_news %}
   <div class="word-top">
     {% for n in t.top_news[:3] %}
-    <div class="word-top-item"><a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title or n.title_en or n.title_zh or '' }}</a><span class="hd">🔥 {{ n.hot }}</span></div>
+    <div class="word-top-item"><a href="{{ n.official_url }}" target="_blank" rel="noopener">{{ n.title or n.title_en or n.title_zh or '' }}</a><span class="hd" title="{{ hot_news_note_en if is_en else hot_news_note_zh }}">🔥 {{ n.hot }}</span>{% if n.source %}<span class="src">{{ n.source }}</span>{% endif %}</div>
     {% endfor %}
   </div>
   {% endif %}
@@ -447,7 +457,7 @@
     <span class="head-right"><span>{{ t.published or t.created_at or '' }}</span></span>
   </div>
   {% if t.kind == 'news' %}
-    {% if t.hot %}<div class="term-meta"><span class="m-hot">🔥 <span class="num">{{ t.hot }}</span></span>{% if t.hn_points %}<span>HN <span class="num">{{ t.hn_points }}</span></span>{% endif %}{% if t.reddit_score %}<span>Reddit ❤ <span class="num">{{ t.reddit_score }}</span></span>{% endif %}</div>{% endif %}
+    {% if t.hot %}<div class="term-meta"><span class="m-hot" title="{{ hot_news_note_en if is_en else hot_news_note_zh }}">🔥 <span class="num">{{ t.hot }}</span></span>{% if t.hn_points %}<span>HN <span class="num">{{ t.hn_points }}</span></span>{% endif %}{% if t.reddit_score %}<span>Reddit ❤ <span class="num">{{ t.reddit_score }}</span></span>{% endif %}</div>{% endif %}
     {% if t.summary %}<div class="term-meta"><span>{{ t.summary }}</span></div>{% endif %}
     <div class="links"><a class="link-btn official" href="{{ t.official_url }}" target="_blank" rel="noopener">🔗 {{ t.source or ('Source' if is_en else '官方') }}</a></div>
   {% else %}
@@ -480,11 +490,13 @@
   Unified feed: HuggingFace models (trends/likes/downloads) · arXiv papers · Zhihu/Bilibili/GitHub discussion<br>
   News: OpenAI/TechCrunch/HF/arXiv/QbitAI etc. official RSS · Hacker News + Reddit community heat · DeepSeek tagging (links go to official sources)<br>
   Categories: Model Releases / Product Launches / Research Papers / Funding / Industry News / Other<br>
+  🔥 {{ hot_note_en }}<br>
   <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=en" class="footer-link">Terms of Service</a></span>
   {% else %}
   统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论<br>
   新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）<br>
   分类：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 / 政策与行业 / 其他<br>
+  🔥 热度口径：{{ hot_note_zh }}<br>
   <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=zh" class="footer-link">服务条款</a></span>
   {% endif %}
 </footer>
@@ -520,7 +532,10 @@ const I18N = {
     footer_l1: "统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论",
     footer_l2: "新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）",
     footer_l3: "分类：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 / 政策与行业 / 其他",
+    footer_l4: "🔥 热度口径：词热度 = 近 7 天相关报道热度分（时间加权）+ HuggingFace 点赞数",
     footer_terms: "服务条款",
+    hot_note: "词热度 = 近 7 天相关报道热度分（时间加权）+ HuggingFace 点赞数",
+    hot_news_note: "报道热度分 = 社区讨论信号按来源加权 + 发布时间衰减",
     today: "今天", yesterday: "昨天", days_ago: " 天前", months_ago: " 个月前", years_ago: " 年前",
     warming: "维度热词预热中，请稍后刷新",
   },
@@ -542,7 +557,10 @@ const I18N = {
     footer_l1: "Unified feed: HuggingFace models (trends/likes/downloads) · arXiv papers · Zhihu/Bilibili/GitHub discussion",
     footer_l2: "News: OpenAI/TechCrunch/HF/arXiv/QbitAI etc. official RSS · Hacker News + Reddit community heat · DeepSeek tagging (links go to official sources)",
     footer_l3: "Categories: Model Releases / Product Launches / Research Papers / Funding / Industry News / Other",
+    footer_l4: "🔥 Word hotness = heat scores of related reports in last 7 days (recency-weighted) + HuggingFace likes",
     footer_terms: "Terms of Service",
+    hot_note: "Word hotness = heat scores of related reports in last 7 days (recency-weighted) + HuggingFace likes",
+    hot_news_note: "Report heat score = community signals weighted by source + time decay",
     today: "Today", yesterday: "Yesterday", days_ago: " days ago", months_ago: " months ago", years_ago: " years ago",
     warming: "Warming up trends, please refresh shortly",
   },
@@ -698,7 +716,7 @@ function localizeStatic() {
   });
   if (demoPill) demoPill.textContent = t("demo_pill");
   const f = document.querySelector("footer");
-  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}<br><span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=${LANG}" class="footer-link">${t("footer_terms")}</a></span>`;
+  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}<br>${t("footer_l4")}<br><span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=${LANG}" class="footer-link">${t("footer_terms")}</a></span>`;
   const yEl = document.getElementById("footer-year");
   if (yEl) yEl.textContent = new Date().getFullYear();
 }
@@ -1022,7 +1040,7 @@ function metricsHTML(card) {
   const m = [];
   if (card.kind === "news") {
     // 新闻卡：热度分（复合分）+ HN 分 + Reddit 赞
-    if (card.hot != null && card.hot > 0) m.push(`<span class="m-hot">🔥 <span class="num">${fmtNum(card.hot)}</span></span>`);
+    if (card.hot != null && card.hot > 0) m.push(`<span class="m-hot" title="${t("hot_news_note")}">🔥 <span class="num">${fmtNum(card.hot)}</span></span>`);
     if (card.hn_points > 0) m.push(`<span>HN <span class="num">${fmtNum(card.hn_points)}</span></span>`);
     if (card.reddit_score > 0) m.push(`<span>Reddit ❤ <span class="num">${fmtNum(card.reddit_score)}</span></span>`);
   } else {
@@ -1065,7 +1083,7 @@ function renderWordCard(w, i) {
   const originMap = { news: "📰", hf: "🤗", both: "📰🤗" };
   const originBadge = originMap[w.origin]
     ? `<span class="origin-badge">${originMap[w.origin]}</span>` : "";
-  let metrics = `<span class="m-hot">🔥 <span class="num">${fmtNum(w.hot)}</span></span>`;
+  let metrics = `<span class="m-hot" title="${t("hot_note")}">🔥 <span class="num">${fmtNum(w.hot)}</span></span>`;
   if (currentSort === "rise" && w.rise != null && Number(w.rise) > -0.999)
     metrics += `<span class="m-up">📈 ${t("rise")} <span class="num">${Number(w.rise).toFixed(2)}</span></span>`;
   if (currentSort === "new" && w.novelty != null)
@@ -1074,7 +1092,7 @@ function renderWordCard(w, i) {
     ? `<div class="word-top">${w.top_news.slice(0, 3).map(n =>
         `<div class="word-top-item">
           <a href="${escapeHtml(n.official_url || "#")}" target="_blank" rel="noopener">${escapeHtml(n.title || "")}</a>
-          ${n.hot ? `<span class="hd">🔥 ${fmtNum(n.hot)}</span>` : ""}
+          ${n.hot ? `<span class="hd" title="${t("hot_news_note")}">🔥 ${fmtNum(n.hot)}</span>` : ""}
           ${n.source ? `<span class="src">${escapeHtml(n.source)}</span>` : ""}
         </div>`).join("")}</div>` : "";
   const term = w.term || w.id;
@@ -1137,8 +1155,9 @@ function renderWordExpand(box, d, term) {
   news.forEach(n => {
     html += `<div class="word-top-item">
       <a href="${escapeHtml(n.official_url || "#")}" target="_blank" rel="noopener">${escapeHtml(n.title || "")}</a>
-      ${n.hot ? `<span class="hd">🔥 ${fmtNum(n.hot)}</span>` : ""}
-      ${n.published ? `<span class="src">${escapeHtml(n.published)}</span>` : ""}
+      ${n.hot ? `<span class="hd" title="${t("hot_news_note")}">🔥 ${fmtNum(n.hot)}</span>` : ""}
+      ${n.source ? `<span class="src">${escapeHtml(n.source)}</span>` : ""}
+      ${n.published ? `<span class="pm">${escapeHtml(n.published)}</span>` : ""}
     </div>`;
   });
   if (!news.length) html += `<div class="word-top-item">—</div>`;
@@ -1590,9 +1609,9 @@ function MOCK_DATA() {
 </style>
 
 <button class="back-top" id="back-top" type="button"
-        aria-label="{{ 'Back to top' if is_en else '回到顶部' }}">
+        aria-label="Back to top">
   <span class="bt-arrow" aria-hidden="true">↑</span>
-  <span>{{ 'Back to top' if is_en else '回到顶部' }}</span>
+  <span>Back to top</span>
 </button>
 
 <script>
