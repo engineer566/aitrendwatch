@@ -141,20 +141,20 @@
 
 ---
 
-## store.py  （819 行）— 赞助位/统计/GeoIP/用户行为事件 SQLite
+## store.py  （826 行）— 赞助位/统计/GeoIP/用户行为事件 SQLite
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
 | 27–78 | HTML 净化（`sanitize_banner_html`@32） |
-| 79–190 | 初始化 + 连接（`init_db`@182 / `_conn`@168） |
+| 79–190 | 初始化 + 连接（`init_db`@80 / `_conn`@168） |
 | 191–313 | 赞助位 CRUD |
 | 314–389 | 统计（PV/曝光/点击） |
 | 390–421 | GeoLite2 离线地域查询 |
 | 422–493 | 访问记录 + `monitor_stats` |
-| 494–661 | 用户搜索记录（搜索功能 + 后台监控） |
-| 662–801 | 通用用户行为事件（埋点系统 v3：`record_event`/`record_events_batch`/`event_stats`） |
-| 802–819 | 降级回退 `_fallback_slots` |
+| 494–668 | 用户搜索记录（搜索功能 + 后台监控） |
+| 669–808 | 通用用户行为事件（埋点系统 v3：`record_event`/`record_events_batch`/`event_stats`） |
+| 809–826 | 降级回退 `_fallback_slots` |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
@@ -172,9 +172,9 @@
 | `geoip_country(ip)` | 396 | GeoLite2 查国家码（无库返 Unknown） |
 | `record_visit(ip, country, path)` | 423 | 写 visits 表（监控页数据源） |
 | `monitor_stats(days=30)` | 445 | 监控页聚合（PV/UV/地域） |
-| `record_event(event_type, event_data)` | 670 | 用户行为事件单条入库（`_VALID_EVENT_TYPES` 白名单） |
-| `record_events_batch(events, ...)` | 709 | 批量事件入库（`/api/event` 批量兼容） |
-| `event_stats(days=30)` | 750 | 事件量/类型分布统计（`/monitor/api/events`） |
+| `record_event(event_type, event_data)` | 677 | 用户行为事件单条入库（`_VALID_EVENT_TYPES` 白名单） |
+| `record_events_batch(events, ...)` | 716 | 批量事件入库（`/api/event` 批量兼容） |
+| `event_stats(days=30)` | 757 | 事件量/类型分布统计（`/monitor/api/events`） |
 
 ### SQLite 表
 `sponsor_slots`、`sponsor_stats`、`pageviews`、`visits`、`search_queries`、`search_clicks`、`user_events`（见 [data_flow.md](data_flow.md) §SQLite）。
@@ -258,4 +258,4 @@
 
 ## version.py  （23 行）— 版本号
 - `_read_version()` (10) 读 `VERSION` 文件；`__version__` (22) / `version` 别名。
-- 单一真相源：同目录 `VERSION` 文件（当前 `1.9.1`）。
+- 单一真相源：同目录 `VERSION` 文件（当前 `1.9.2`）。

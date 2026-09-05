@@ -97,7 +97,7 @@
 - 索引：`idx_visits_date`、`idx_visits_ip_date`。
 - PV = 行数，UV = `COUNT(DISTINCT ip)`。
 
-**`user_events`** — 通用用户行为事件（埋点系统 v3，`store.py:670`）
+**`user_events`** — 通用用户行为事件（埋点系统 v3，`store.py:677`）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | id | INT PK AUTO | |
