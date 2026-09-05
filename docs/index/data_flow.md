@@ -64,8 +64,8 @@
 - canonical → 表面形式列表（ASCII 词边界匹配 + CJK 子串匹配），版本感知词边界（"GPT-5.5" 不命中 gpt-5）。
 - 用途：无 LLM key 降级抽词、历史库零成本回填、常见异形归一、display_zh 来源。
 - 通用热词停用词表（`terms.py:360` `_TERM_STOPWORDS`）：低价值通用词（"AI"/"llm"/"model" 等，canonical 键）在抽词（`extract_keywords_dict`）、聚合（`_keyword_canons`）、HF 词（`_hf_canon` 后）三级被剔除，不作为独立热词。
-- 中文公司/机构名 → 官方英文名映射词典（`terms.py:939` `_COMPANY_EN_GLOSSARY`，2026-09-04 需求 4）：refresh_words 5.6 段（@1468）对 display/display_zh 命中的中文公司专名确定性写 display_en=官方英文名（词典优先，不进 LLM 翻译批次；存量拼音/自译脏值随刷新回归）；词典未收录的中文专名才走 LLM 兜底翻译（dims 提示词禁拼音化/自造英文，无官方名保留中文原词）。
-- 热词解释：三级取词——① `terms.py:375` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:1971`）。
+- 中文公司/机构名 → 官方英文名映射词典（`terms.py:943` `_COMPANY_EN_GLOSSARY`，2026-09-04 需求 4）：refresh_words 5.6 段（@1477）对 display/display_zh 命中的中文公司专名确定性写 display_en=官方英文名（词典优先，不进 LLM 翻译批次；存量拼音/自译脏值随刷新回归）；词典未收录的中文专名才走 LLM 兜底翻译（dims 提示词禁拼音化/自造英文，无官方名保留中文原词）。
+- 热词解释：三级取词——① `terms.py:375` `_EXPLANATIONS`（canonical → zh/en 人工精编解释）→ ② `terms` 表 `explain_zh/en`（LLM 每轮刷新生成/优化，动态词典资产）→ ③ 详情页模板兜底（`_explain_fallback`，保证每词有解释块）。入口 `terms.get_term_explanation`（`terms.py:2013`）。
 
 ## SQLite Schema
 
