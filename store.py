@@ -496,13 +496,20 @@ def record_search_query(query, lang=None, ip=None, country=None):
     """记录一次用户搜索关键词到 search_queries 表。
 
     best-effort，失败静默（与 record_visit / record_pageview 同模式）。
-    query 经 trim + 限长 80 字符，空串不入库。每次搜索一行，供监控页统计
-    热门搜索词 / 近期搜索词 / 搜索 PV。
+    query 经 trim + 限长 80 字符，空串不入库；含花括号的模板占位符查询
+    （如爬虫/工具按首页 JSON-LD SearchAction target 字面量抓取的
+    /search?q={search_term_string}）直接跳过，避免后台搜索统计与建议
+    被占位符污染。每次搜索一行，供监控页统计热门搜索词 / 近期搜索词 /
+    搜索 PV。
     """
     if not _DB_OK or not config.ANALYTICS_ENABLED:
         return
     q = (query or "").strip()
     if not q:
+        return
+    # 模板占位符（{search_term_string} 等，见 index.html ld+json SearchAction）：
+    # 真实用户不会搜花括号，命中即视为爬虫/工具探针，不入库。
+    if "{" in q or "}" in q:
         return
     q = q[:80]   # 限长，防超长输入撑库
     now = datetime.datetime.now()

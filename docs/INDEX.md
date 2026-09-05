@@ -16,12 +16,12 @@ aitrendwatch/
 ├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1852 行；2026-09-04 需求 1：逐条流卡 id url 归一 + 标题级去重；需求 4：中文标题公司专名关键词保持中文原词、热词翻译提示词禁拼音化/自造英文——两段提示词提升为模块常量 _USER_PREFIX/_TRANSLATE_SYS_MSG）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（590 行）
 ├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，2336 行，新增；rise 用近 7 天滑动窗口报道数环比；需求 5：抽词关键词经 case_match_original 对齐原文大小写；需求 5 改进：词典外词 display 优先原文表面形态（WorkBuddy 不再显示 Workbuddy），词典权威词存量脏 display 随刷新回归词典规则（Saas→SaaS）；2026-09-02：display_en 增量翻译上限 TRANSLATE_BATCH_MAX_WORDS；2026-09-04 需求 1：_title_key 去重键剥标点加严（委托 text_utils.normalized_title_key），当轮 url 归一到存储键同口径（normalize_url_key）；需求 2：分隔符孪生 canonical 归并——normalize_term 折叠词典治理紧凑孪生（hugging-face→huggingface），refresh_words 按去 '-' 紧凑分组归并自由孪生（ai-agent/aiagent），删残留行/迁快照，榜单无同词两行；需求 4：中文公司/机构专名 display_en 由 _COMPANY_EN_GLOSSARY 官方英名词典确定性映射（词典优先不进 LLM 批次，存量拼音脏值随刷新回归），未收录中文专名不拼音化走 LLM 兜底；2026-09-05 SEO：term_row_indexable 词条可索引判定（sitemap/详情页共用）、get_term_trend 按日聚合近 7 天活跃度趋势、list_terms_for_sitemap 过滤达标词）
-├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP + 用户行为事件（819 行）
+├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP + 用户行为事件（826 行；record_search_query 过滤含花括号的模板占位符查询——首页 JSON-LD SearchAction target 被爬虫字面量抓取 {search_term_string} 不入库，防后台搜索统计/建议污染）
 ├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列，落库前 canonical 归一 + churn 防护；2026-09-04 需求 1：url 主键实体解码+去片段+去 utm 归一 + 批次去重 + 存量孪生行自愈删除）（574 行）
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
 ├── text_utils.py   # RSS 文本/URL HTML entity 解码 + 2026-09-04 需求 1 归一键（url/标题去重键唯一实现源）（147 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
-├── VERSION         # 版本号单一真相源（1.9.1）
+├── VERSION         # 版本号单一真相源（1.9.2）
 ├── templates/      # 8 个 Jinja2 模板
 │   ├── index.html         # 首页主单页（1640 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪，header 含 🤗 HF 入口，页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
 │   ├── hf.html            # HuggingFace 独立排序页（438 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；hreflang zh↔en）
@@ -64,7 +64,7 @@ aitrendwatch/
 | `dims.py` | 1852 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（09-02：链每轮复位/逐条校验/402 账户级；09-03：质量失败与 provider 故障分离 + 坏条目二次提示修正；09-04 需求 1：逐条流 id url 归一 + `_dedupe_news_titles` 标题级去重；需求 4：抽词/翻译提示词规则防中文公司专名拼音化——`_USER_PREFIX`/`_TRANSLATE_SYS_MSG` 模块常量） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
 | `tracker.py` | 590 | HF 热词 + arXiv 论文（词池数据源） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
 | `terms.py` | 2336 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典）+ 热窗新鲜度加权 + 关键词大小写校验 + 词典外词 display 保留原文大小写（词典权威词存量脏值随刷新回归词典规则）+ 需求 2：分隔符孪生 canonical 归并（normalize 折叠词典治理紧凑孪生 hugging-face→huggingface；refresh 按去 '-' 紧凑分组归并自由孪生 ai-agent/aiagent，删残留行/迁快照，榜单无同词两行）+ 需求 1：`_title_key` 剥标点加严（委托 `text_utils.normalized_title_key`）、当轮 url 归一（`normalize_url_key`）+ 需求 4：中文公司/机构专名官方英文名词典优先（`_COMPANY_EN_GLOSSARY`：display_en 确定性映射、不进 LLM 批次、存量拼音脏值随刷新回归；未收录专名不拼音化）+ 2026-09-05 SEO：`term_row_indexable` 可索引判定 + `get_term_trend` 快照按日聚合趋势 + `list_terms_for_sitemap` 过滤达标词 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `get_term_trend`, `term_row_indexable`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict`, `case_match_original` | config, sqlite3, news_store, text_utils |
-| `store.py` | 819 | 赞助位/统计/GeoIP/用户行为事件 SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country`, `record_event`, `record_events_batch`, `event_stats` | config, sqlite3 |
+| `store.py` | 826 | 赞助位/统计/GeoIP/用户行为事件 SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country`, `record_event`, `record_events_batch`, `event_stats` | config, sqlite3 |
 | `news_store.py` | 574 | 事件卡历史库 SQLite（url 归一键主键 + 批次去重 + 存量孪生行自愈删除 + keywords 列 + churn 防护） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
 | `stream_utils.py` | 70 | 统一信息流卡片身份、去重、维度成员与计数 | `card_identity`, `dedupe_cards`, `dimension_members`, `dimension_counts`, `dimension_list` | — |
 | `text_utils.py` | 147 | 文本有界双层解码、URL 单层解码与危险 scheme 拦截 + 需求 1 归一键（`normalize_url_key` url 键 / `normalized_title_key` 标题键） | `decode_html_entities`, `decode_url_entities`, `normalize_url_key`, `normalized_title_key` | — |
