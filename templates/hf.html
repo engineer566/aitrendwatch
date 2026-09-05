@@ -143,7 +143,7 @@
   }
   .btn:hover { color: var(--text); border-color: var(--accent); }
 
-  /* 三视图镜像导航：与首页 #view-seg 同款 seg 样式，HF 榜为当前 active 项 */
+  /* 三视图镜像导航：与首页 #view-seg 同款 seg 样式，「开源」板块入口为当前 active 项 */
   .view-nav {
     display: flex; gap: 4px; width: fit-content; margin: 10px 0 0;
     background: var(--bg-card); border: 1px solid var(--border);
@@ -291,11 +291,11 @@
     </div>
   </div>
 
-  {# 三视图镜像导航：与首页 #view-seg 一致，HF 榜为当前页 active；热词/逐条新闻跳回首页对应视图 #}
+  {# 三视图镜像导航：与首页 #view-seg 一致，「开源」板块入口为当前页 active（本页为 HF 数据源）；热词/逐条新闻跳回首页对应视图 #}
   <nav class="view-nav" aria-label="{{ 'View navigation' if is_en else '视图导航' }}">
     <a href="/?view=words&lang={{ lang }}">🔤 {% if is_en %}Words{% else %}热词{% endif %}</a>
     <a href="/?view=news&lang={{ lang }}">📰 {% if is_en %}News feed{% else %}逐条新闻{% endif %}</a>
-    <a class="active" href="/hf?lang={{ lang }}" aria-current="page">🤗 {% if is_en %}HF Board{% else %}HF 榜{% endif %}</a>
+    <a class="active" href="/hf?lang={{ lang }}" aria-current="page">🤗 {% if is_en %}Open Source{% else %}开源{% endif %}</a>
   </nav>
 
   <nav class="sort-row" aria-label="{{ 'Sort options' if is_en else '排序选项' }}">
