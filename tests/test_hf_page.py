@@ -181,6 +181,35 @@ class HfPageTest(unittest.TestCase):
                   .joinpath("index.html").read_text(encoding="utf-8"))
         self.assertIn('href="/hf?lang=', source)
 
+    def test_index_hf_entry_lives_in_view_seg_not_header(self):
+        """2026-09-05 需求：HF 入口从 header 小按钮迁到视图 seg 第三项。"""
+        source = (Path(app_module.__file__).with_name("templates")
+                  .joinpath("index.html").read_text(encoding="utf-8"))
+        # seg 第三项：<a class="seg-link" id="hf-link">，↗ 角标暗示跨页跳转
+        self.assertIn('class="seg-link" id="hf-link"', source)
+        self.assertIn('seg-ext', source)
+        self.assertIn('view_hf', source)  # i18n 文案 key
+        # header 右上角不再保留独立 HF 按钮
+        header = source.split('<div class="header-right">', 1)[1] \
+                       .split('</div>', 1)[0]
+        self.assertNotIn('hf-link', header)
+
+    def test_hf_page_has_mirror_view_nav(self):
+        """HF 页镜像三视图导航：热词/逐条新闻链回首页对应视图，HF 榜 active。"""
+        with patch.object(app_module, "_hf_models_for",
+                          return_value=([make_model("A", likes=1)], 0)):
+            r = self.client.get("/hf?sort=trending&lang=zh")
+        body = r.get_data(as_text=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('class="view-nav"', body)
+        self.assertIn('href="/?view=words&lang=zh"', body)
+        self.assertIn('href="/?view=news&lang=zh"', body)
+        self.assertIn('aria-current="page"', body)   # HF 榜为当前项
+        self.assertNotIn("返回首页", body)            # 旧单按钮已移除
+
+    def test_hf_entry_click_event_type_is_whitelisted(self):
+        self.assertIn("hf_entry_click", app_module.store._VALID_EVENT_TYPES)
+
     def test_no_llm_keys_are_used(self):
         self.assertFalse(os.environ.get("DEEPSEEK_API_KEY"))
         self.assertFalse(os.environ.get("GLM_API_KEY"))

@@ -143,6 +143,20 @@
   }
   .btn:hover { color: var(--text); border-color: var(--accent); }
 
+  /* 三视图镜像导航：与首页 #view-seg 同款 seg 样式，HF 榜为当前 active 项 */
+  .view-nav {
+    display: flex; gap: 4px; width: fit-content; margin: 10px 0 0;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 18px; padding: 3px;
+  }
+  .view-nav a {
+    display: inline-flex; align-items: center; gap: 3px; text-decoration: none;
+    padding: 5px 14px; border-radius: 14px; color: var(--text-dim); font-size: 13px;
+    transition: all .15s; white-space: nowrap;
+  }
+  .view-nav a:hover { color: var(--text); background: var(--bg-hover); }
+  .view-nav a.active { background: var(--accent); color: #fff; }
+
   main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
   .page-head { margin-bottom: 4px; }
   .page-title { font-size: 20px; font-weight: 800; }
@@ -259,7 +273,6 @@
       <kbd>/</kbd>
     </div>
     <div class="header-right">
-      <a class="btn" href="{{ home_url }}">← {% if is_en %}Home{% else %}返回首页{% endif %}</a>
       <button class="btn" id="theme-btn" title="{{ 'Toggle theme' if is_en else '切换深浅色' }}">🌙</button>
       <a class="btn" href="{{ lang_toggle_url }}">{{ lang_toggle_label }}</a>
     </div>
@@ -277,6 +290,13 @@
       {% endif %}
     </div>
   </div>
+
+  {# 三视图镜像导航：与首页 #view-seg 一致，HF 榜为当前页 active；热词/逐条新闻跳回首页对应视图 #}
+  <nav class="view-nav" aria-label="{{ 'View navigation' if is_en else '视图导航' }}">
+    <a href="/?view=words&lang={{ lang }}">🔤 {% if is_en %}Words{% else %}热词{% endif %}</a>
+    <a href="/?view=news&lang={{ lang }}">📰 {% if is_en %}News feed{% else %}逐条新闻{% endif %}</a>
+    <a class="active" href="/hf?lang={{ lang }}" aria-current="page">🤗 {% if is_en %}HF Board{% else %}HF 榜{% endif %}</a>
+  </nav>
 
   <nav class="sort-row" aria-label="{{ 'Sort options' if is_en else '排序选项' }}">
     <a class="sort-pill {{ 'active' if sort == 'trending' }}" href="/hf?sort=trending&lang={{ lang }}">📈 {% if is_en %}Trending{% else %}趋势{% endif %}</a>
