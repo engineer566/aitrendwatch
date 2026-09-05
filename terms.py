@@ -884,6 +884,10 @@ _OVERRIDES = {
     "glm": "GLM",
     "gpt-4o": "GPT-4o",
     "gpt-5": "GPT-5",
+    # iOS：Apple 系统品牌（i 小写 + OS 大写）。中文报道抽出的英文词键（如
+    # ios-shortcuts）无大小写表面可依时，美化兜底曾把 ios 判成 "Ios"。
+    "ios": "iOS",
+    "ios-shortcuts": "iOS Shortcuts",
     "ipo": "IPO",
     "llm": "LLM",
     "lora": "LoRA",
@@ -1022,10 +1026,15 @@ def _display_of(term, surfaces):
     if term.lower() in _LEXICON_DISPLAY:
         return _LEXICON_DISPLAY[term.lower()]
 
-    # 词典 canonical 的常见美化：按 '-' 分词，已知缩写全大写
+    # 词典 canonical 的常见美化：按 '-' 分词，已知缩写全大写；品牌混合大小写
+    # token（ios→iOS 等 Apple 风格 i 小写）在无表面可依时按品牌写法渲染——
+    # _OVERRIDES 只覆盖精确 canonical，这里兜住 ios-* 家族其他组合（如 ios-18）。
     UPPER = {"gpt", "ai", "kv", "tts"}
+    MIXED = {"ios": "iOS"}
     parts = term.split("-")
-    pretty = " ".join(p.upper() if p in UPPER else p.capitalize() for p in parts)
+    pretty = " ".join(
+        p.upper() if p in UPPER else
+        MIXED.get(p.casefold(), p.capitalize()) for p in parts)
     pretty = pretty.replace("Gpt ", "GPT-").replace("Gpt", "GPT")
     return pretty
 
