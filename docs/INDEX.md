@@ -21,7 +21,7 @@ aitrendwatch/
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
 ├── text_utils.py   # RSS 文本/URL HTML entity 解码 + 2026-09-04 需求 1 归一键（url/标题去重键唯一实现源）（147 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
-├── VERSION         # 版本号单一真相源（1.9.0）
+├── VERSION         # 版本号单一真相源（1.9.1）
 ├── templates/      # 8 个 Jinja2 模板
 │   ├── index.html         # 首页主单页（1640 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪，header 含 🤗 HF 入口，页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
 │   ├── hf.html            # HuggingFace 独立排序页（438 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；hreflang zh↔en）
