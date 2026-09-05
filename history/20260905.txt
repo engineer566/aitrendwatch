@@ -1,1 +1,8 @@
 1. HuggingFace 页面入口优化：现 header 右上角独立小按钮（#hf-link）不显眼。改为视图 seg 三视图导航并列——首页 #view-seg 增加「🤗 HF 榜↗」第三项（跨页跳转 /hf，跟随语言），移除 header 小按钮；hf.html 增加镜像三项导航替换「← 返回首页」，两页导航一致；复用埋点体系记录 HF 入口点击。
+
+2.（设计确认，未动工，2026-09-05）HF 榜入口改名「开源」+ 后续加 GitHub 榜的板块化设计：
+   - 阶段1（待开工）：导航文案「🤗 HF 榜」→「🤗 开源」（i18n en: Open Source；不用「开源模型」——板块将来含 GitHub repo/项目，不止模型）；入口图标阶段性只留 🤗（HF 品牌），🐙 待 GitHub 上线再挂双标，避免指向不存在的榜；页面实体 title/desc 保留 HuggingFace 实体名不变。index.html view_hf key / updateHfLink() 文案 / hf.html 镜像导航 active 项 / 页标题同步。
+   - 阶段2：GitHub 榜（AI 过滤）加入 /hf 页内二级数据源 seg（选型 A：/hf?source=hf|github 一页两视图，SEO 资产零迁移；排序参数共存 ?source=github&sort=…）；HF 与 GitHub 榜分开，同屏永不混排卡片，卡片带源徽标；入口升级为双标「🤗🐙 开源」（GitHub 图标决策：🐙 社区惯例 emoji——Octocat=猫脸+章鱼触手合体、无官方 emoji，🐙 为触手半、社区最通用；不采用 🐈⬛。**升级通道**：emoji 永远只是 Octocat 的近似（半个它），若日后要让入口里的 GitHub 标识像素级还原本人，改挂真实 Octocat logo 的 16px 内联 SVG（HF 侧同规格内联笑脸 logo 配对称）；Octocat 属 GitHub 商标，按品牌规范仅用于指代 GitHub 本身，需注意使用场景合规）。
+   - GitHub 三榜（决策：Forks 作第三轴 v1）：①趋势=自研 Δstars 快照分（复用 terms.py 周期快照 + get_term_trend 按日聚合基建；候选集=AI topic top-N by stars，非官方 trending——无官方 API 且 trending 页无 topic 过滤）；②Stars=官方 search sort=stars（对应 HF likes）；③Forks=官方 search sort=forks（对应 HF downloads 的 proxy，口径脚注：衍生采用度参考，非下载量；Release download_count 留 v2 可选增强）。
+   - 工程要点：.env 配 GITHUB_TOKEN（普通 API key，禁止入仓库；search 未认证 10 req/min 也够 6h 一轮）；AI 过滤 topic:ai/llm/machine-learning/deep-learning/generative-ai OR 组合（小写）+ 名称/描述关键词兜底；排序 pill 文案按 source 分支（HF: 趋势/点赞/下载；GitHub: Δstars/Stars/Forks）；口径脚注沿用 P3 热度口径机制；埋点 github_entry_click / source_switch 进白名单。
+   - 边界：GitHub repo 暂不进首页词池/信息流（kind=repo 会影响三榜打分与 rise 环比口径，另立需求评估）；如要独立 URL 语义再走 /models hub + 301（选型 B，暂不采用）。
