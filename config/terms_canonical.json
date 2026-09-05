@@ -76,6 +76,8 @@
     "gpt-5": "GPT-5",
     "gpt-4o": "GPT-4o",
     "chatgpt": "ChatGPT",
+    "ios": "iOS",
+    "ios-shortcuts": "iOS Shortcuts",
     "xai": "xAI",
     "glm": "GLM",
     "llm": "LLM",
