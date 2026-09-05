@@ -23,8 +23,8 @@ aitrendwatch/
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.9.2）
 ├── templates/      # 8 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1660 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 HF 榜第三项跨页跳转 /hf（↗ 角标，header 独立 HF 按钮已移除，2026-09-05 需求 1），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
-│   ├── hf.html            # HuggingFace 独立排序页（458 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；页首三视图镜像导航 view-nav（热词/逐条新闻链回首页对应视图，HF 榜 active，替换原「← 返回首页」按钮，2026-09-05 需求 1）；hreflang zh↔en）
+│   ├── index.html         # 首页主单页（1660 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 开源第三项跨页跳转 /hf（板块入口语义，↗ 角标；2026-09-05 需求 1 迁入 seg、需求 2 改名，header 独立 HF 按钮已移除），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
+│   ├── hf.html            # HuggingFace 独立排序页（458 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；页首三视图镜像导航 view-nav（热词/逐条新闻链回首页对应视图，「开源」入口 active，2026-09-05 需求 1 建、需求 2 改名；替换原「← 返回首页」按钮）；hreflang zh↔en）
 │   ├── terms.html         # 服务条款页（383 行）
 │   ├── term_detail.html   # 通用热词聚合页（424 行：相关报道聚合 + HF 区块 + 词解释 + 近 7 天活跃度趋势迷你图 + 热度口径脚注 + hreflang + indexable 门槛 noindex 分支；2026-09-05 SEO）
 │   ├── search.html        # 搜索结果页（583 行：含热词命中卡区）

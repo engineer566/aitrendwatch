@@ -195,7 +195,7 @@
   .seg { display: flex; gap: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: 3px; }
   .seg button { padding: 5px 14px; border-radius: 14px; color: var(--text-dim); font-size: 13px; transition: all .15s; white-space: nowrap; }
   .seg button.active { background: var(--accent); color: #fff; }
-  /* HF 榜：视图 seg 第三项，跨页跳转 /hf（独立 SSR 页），↗ 角标暗示离开当前视图 */
+  /* 「开源」板块入口：视图 seg 第三项，跨页跳转 /hf（独立 SSR 页），↗ 角标暗示离开当前视图 */
   .seg a.seg-link {
     display: inline-flex; align-items: center; gap: 3px; text-decoration: none;
     padding: 5px 14px; border-radius: 14px; color: var(--text-dim); font-size: 13px;
@@ -417,9 +417,9 @@
     <div class="seg" id="view-seg">
       <button class="active" data-view="words">{{ '🔤 Words' if is_en else '🔤 热词' }}</button>
       <button data-view="news">{{ '📰 News feed' if is_en else '📰 逐条新闻' }}</button>
-      {# HF 榜为独立 SSR 页（/hf，趋势/点赞/下载排序），无法并入本地视图切换； #}
-      {# 作为 seg 第三项跨页跳转，↗ 角标暗示离开当前视图。文案/标题由 updateHfLink() 随 LANG 同步。 #}
-      <a class="seg-link" id="hf-link" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 {{ 'HF Board' if is_en else 'HF 榜' }}<span class="seg-ext">↗</span></a>
+      {# 「开源」板块入口：现指向独立 SSR 页 /hf（HF 趋势/点赞/下载榜）；#}
+      {# 2026-09-05 需求 2 改名自「HF 榜」——板块语义，GitHub 榜加入后入口升级双标；↗ 角标暗示离开当前视图，文案/标题由 updateHfLink() 随 LANG 同步 #}
+      <a class="seg-link" id="hf-link" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 {{ 'Open Source' if is_en else '开源' }}<span class="seg-ext">↗</span></a>
     </div>
     <div class="seg" id="sort-seg">
       <button class="active" data-sort="rise">{{ '📈 Trending' if is_en else '📈 上升最快' }}</button>
@@ -529,7 +529,7 @@ const I18N = {
     search_ph: "搜索热点 / 作者…",
     all: "全部",
     sort_rise: "📈 上升最快", sort_hot: "🔥 最热", sort_new: "🕒 最新",
-    view_words: "🔤 热词", view_news: "📰 逐条新闻", view_hf: "🤗 HF 榜",
+    view_words: "🔤 热词", view_news: "📰 逐条新闻", view_hf: "🤗 开源",
     loading: "加载中…",
     updated: "更新于 ",
     empty: "没有匹配的热点",
@@ -554,7 +554,7 @@ const I18N = {
     search_ph: "Search trends / authors…",
     all: "All",
     sort_rise: "📈 Trending", sort_hot: "🔥 Hottest", sort_new: "🕒 Newest",
-    view_words: "🔤 Words", view_news: "📰 News feed", view_hf: "🤗 HF Board",
+    view_words: "🔤 Words", view_news: "📰 News feed", view_hf: "🤗 Open Source",
     loading: "Loading…",
     updated: "Updated ",
     empty: "No matching trends",
@@ -707,7 +707,7 @@ function updateHfLink() {
   if (!hfLink) return;
   // 跟随前端 LANG（URL ?lang= / localStorage 覆盖后的实际显示语言），
   // 避免链接停留在 SSR 默认语言导致点击跳到错误的语言页面。
-  // HF 榜是 seg 第三项（跨页跳转 /hf），文案与 ↗ 角标也随语言同步。
+  // 「开源」入口是 seg 第三项（跨页跳转 /hf），文案与 ↗ 角标也随语言同步。
   hfLink.href = "/hf?lang=" + LANG;
   hfLink.title = LANG === "en"
     ? "HuggingFace open-source model leaderboard"
@@ -995,7 +995,7 @@ viewSeg.addEventListener("click", e => {
 document.querySelectorAll("#view-seg button").forEach(x =>
   x.classList.toggle("active", x.dataset.view === currentView));
 
-// HF 榜入口（seg 第三项，普通链接跨页跳转 /hf）：点击埋点用于对比新入口效果，
+// 「开源」入口（seg 第三项，普通链接跨页跳转 /hf）：点击埋点用于对比新入口效果，
 // 不拦截默认导航。viewSeg 的 button 委托对 <a> 自然落空，互不影响。
 hfLink.addEventListener("click", () => {
   Analytics.track("hf_entry_click", {lang: LANG, view: currentView, sort: currentSort});

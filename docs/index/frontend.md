@@ -5,7 +5,7 @@
 ## 通用机制
 
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。head 最前的主题初始化脚本（在 `<style>` 之前）同时给 `<html>` 设内联背景/文字色（`#f5f6f8`/`#1c2130` 或 `#0f1117`/`#e6e8ee`），避免亮色用户首帧「先暗后亮」闪烁；`#theme-btn` 切换时同步更新内联色（20260901 #12）。
-- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:526`，2026-09-05 P3 起含 `hot_note`/`hot_news_note`/`footer_l4` 热度口径 key，需求 1 起含 `view_hf` HF 榜导航文案）+ `t(k)` 翻译函数（`index.html:578`）+ `LANG` 状态（`index.html:593`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
+- **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:526`，2026-09-05 P3 起含 `hot_note`/`hot_news_note`/`footer_l4` 热度口径 key，需求 1 起含 `view_hf`（🤗 开源/Open Source，需求 2 改名）导航文案）+ `t(k)` 翻译函数（`index.html:578`）+ `LANG` 状态（`index.html:593`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
 - **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">` + `<script id="initial-terms-data">` + `<script id="initial-dimensions-data">` + `<script id="initial-dimension-counts-data">`（514 起，词卡 SSR 首屏）。
 - **SEO（2026-09-05 P1~P5 后）**：全站统一 meta 体系为 title/description/OG/Twitter Card/og:image（**`<meta name="keywords">` 已全站移除**，P5）；`index.html`/`term_detail.html`/`hf.html` head 在 `seo_enabled` 且 BASE_URL 已设时输出 **hreflang zh↔en + x-default→en**（主语言英文，P4，`index.html:61`/`term_detail.html:46`/`hf.html:71`）；canonical 仍自指当前显式语言变体；`term_detail.html` 含最多 4 段 `application/ld+json`（DefinedTerm@197 + ItemList@210 通用词；SoftwareApplication@231 + ScholarlyArticle 仅 HF 词）；`index.html` WebSite@346 + ItemList@360；`hf.html` CollectionPage@237 + ItemList；搜索页 `noindex,follow` 防重复索引。所有页面引用 `/og-image.png` 社交分享图。
 
@@ -18,19 +18,19 @@
 | 主题初始化 JS | 14 | 读 localStorage 设 data-theme + `<html>` 内联背景/文字色（防首帧闪烁，head 最前） |
 | 返回滚动恢复 head 脚本 | ~82–86 | 首帧前加 `scroll-restoring` 隐藏内容（back_forward 恢复路径） |
 | hreflang 语言变体 | 61 | zh↔en + x-default→en（P4，`seo_enabled` 且 BASE_URL 已设时输出） |
-| 🤗 HF 榜入口（视图 seg 第三项 `#hf-link`） | 417–423（markup）/ 199–206（`.seg a.seg-link` 样式）/ ~1001（点击埋点 `hf_entry_click`） | **2026-09-05 需求 1**：与「🔤热词/📰逐条新闻」并列的 `<a class="seg-link">`，跨页跳转 /hf（独立 SSR 页，无法并入本地视图切换），↗ 角标暗示离开当前视图；href/title/文案由 `updateHfLink()` 跟随 `LANG` 动态同步。**header 右上角原独立 `.btn` HF 按钮已移除** |
+| 🤗 开源入口（视图 seg 第三项 `#hf-link`，板块语义） | 417–423（markup）/ 199–206（`.seg a.seg-link` 样式）/ ~1001（点击埋点 `hf_entry_click`） | **2026-09-05 需求 1** 迁入 seg（与「🔤热词/📰逐条新闻」并列的 `<a class="seg-link">`，跨页跳转 /hf，↗ 角标暗示离开当前视图）；**需求 2（改名）** 导航文案「🤗 HF 榜」→「🤗 开源 / Open Source」（`view_hf` key + SSR 标签），tooltip 保留 HF 实体名；href/title/文案由 `updateHfLink()` 跟随 `LANG` 动态同步。**header 右上角原独立 `.btn` HF 按钮已移除** |
 | 样式 `<style>` | ~88–327 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
 | SEO ld+json | 346, 360 | WebSite + ItemList 结构化数据 |
 | 热度口径标注（P3） | i18n `footer_l4`/`hot_note`/`hot_news_note`（547/572）+ JS footer 行（733）+ SSR word-meta title + footer 静态口径行 | 🔥 数字带 title 口径说明（词热度 vs 报道热度分开），可见脚注 SSR/JS 双路径 |
 | 来源标注（P5） | SSR 词卡 top（~452）/ JS 词卡 top + 展开列表（1116/1179） | 报道条目显示来源 `.src`；展开列表日期改 `.pm` |
-| 视图切换 seg | ~416 | 「🔤热词 / 📰逐条新闻」+ 🤗 HF 榜第三项，`#view-seg` |
+| 视图切换 seg | ~416 | 「🔤热词 / 📰逐条新闻」+ 🤗 开源第三项（2026-09-05 需求 2 改名），`#view-seg` |
 | SSR 数据注入 | 514–518 | sponsor-data / initial-terms-data（词卡） / initial-dimensions-data / initial-dimension-counts-data（维度元数据） |
 | 主 JS `<script>` | ~519–1618 | 全部前端逻辑 |
 | ├ i18n 定义 | 526 | `I18N` zh/en 双版本（含 view_words/view_news/view_hf/more_btn/hot_note 等） |
 | ├ `t(k)` | 578 | 翻译函数 |
 | ├ `LANG`/`currentView` 状态 | 593 | `currentView=words\|news`，URL/localStorage 记忆 |
 | ├ 埋点 `Analytics` | 653 | 埋点系统 v3（任务 9）：`track(eventType, eventData)` → `POST /api/event`（批量兼容），白名单事件类型；词卡展开/查看热词/视图切换/语言切换/排序切换/维度筛选/搜索/HF 入口点击（`hf_entry_click`，~1001）全链路埋点 |
-| ├ `updateHfLink` | 706 | HF 榜 seg 项 href/title/文案（`view_hf` + ↗ 角标）跟随 LANG |
+| ├ `updateHfLink` | 706 | 「开源」入口 seg 项 href/title/文案（`view_hf` + ↗ 角标）跟随 LANG |
 | ├ URL 状态恢复 | ~622–650 | `?view=&cat=&sort=&lang=` 可分享；`viewFromURL` 标志使显式 `?view=` 优先于 localStorage（HF 页镜像导航链接确定性落视图，2026-09-05 需求 1） |
 | ├ 分类条 `renderCatBar` | 933 | 按后端 `dimensionList` 顺序渲染维度 pill；标准维度计数为 0 也保留，SSR 阶段用注入的维度计数稳定化 |
 | ├ 词链接 `termHref` | 1082 | 携带当前非默认 view/sort/cat（20260901 #7 边界修复） |
@@ -60,7 +60,7 @@
 | hreflang 语言变体 | 71 | zh↔en + x-default→en（P4） |
 | 样式 `<style>` | 89–232 | 暗色默认 + light 覆盖 + 三视图镜像导航 `.view-nav`（147–158）+ 排序 pill / 模型卡 / 响应式 |
 | SEO ld+json | 237, 249 | CollectionPage + ItemList（模型榜 Top-20，爬虫可见） |
-| 三视图镜像导航 `.view-nav` | 295–299 | **2026-09-05 需求 1**：与首页 `#view-seg` 一致的三项导航——🔤热词（`/?view=words`）/ 📰逐条新闻（`/?view=news`）/ 🤗 HF 榜（active，`aria-current="page"`）；替换 header 原「← 返回首页」单按钮 |
+| 三视图镜像导航 `.view-nav` | 295–299 | **2026-09-05 需求 1**：与首页 `#view-seg` 一致的三项导航——🔤热词（`/?view=words`）/ 📰逐条新闻（`/?view=news`）/ 🤗 开源（active，`aria-current="page"`，**需求 2 改名**）；替换 header 原「← 返回首页」单按钮 |
 | 排序切换 pill | 301–306 | `?sort=trending\|likes\|downloads` 普通链接（服务端切换，零 fetch）+ 缓存更新时间 |
 | 模型卡列表 | 309–348 | 排名 / 🤗 开源模型徽标 / pipeline_tag 主徽标 / tags / 趋势分·点赞·下载 / 官方 + 社区链接 / 相关论文 |
 | 主 JS `<script>` | 358–399 | 主题切换 / 搜索跳转 `/search` / 更新时间渲染 |
