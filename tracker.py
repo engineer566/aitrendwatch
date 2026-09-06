@@ -150,12 +150,16 @@ def _model_to_term(m):
 
 
 def community_links(term):
-    """社区讨论入口（纯 URL 拼接，不调 API）。"""
+    """社区讨论入口（纯 URL 拼接，不调 API）。
+
+    site 标签统一用官方英文品牌名（Bilibili/Zhihu/GitHub），中英文页面一致
+    （2026-09-05：原「B站/知乎」按钮名改全英文）。
+    """
     q = quote(term)
     return [
-        {"site": "知乎",  "url": f"https://www.zhihu.com/search?q={q}"},
-        {"site": "B站",   "url": f"https://search.bilibili.com/all?keyword={q}"},
-        {"site": "GitHub","url": f"https://github.com/search?q={q}&type=repositories"},
+        {"site": "Zhihu",    "url": f"https://www.zhihu.com/search?q={q}"},
+        {"site": "Bilibili", "url": f"https://search.bilibili.com/all?keyword={q}"},
+        {"site": "GitHub",   "url": f"https://github.com/search?q={q}&type=repositories"},
     ]
 
 

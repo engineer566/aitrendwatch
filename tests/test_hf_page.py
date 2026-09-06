@@ -214,6 +214,16 @@ class HfPageTest(unittest.TestCase):
     def test_hf_entry_click_event_type_is_whitelisted(self):
         self.assertIn("hf_entry_click", app_module.store._VALID_EVENT_TYPES)
 
+    def test_community_links_labels_are_english_brands(self):
+        """2026-09-05 修复：社区按钮名全英文官方品牌（Bilibili/Zhihu/GitHub），
+        不再显示「B站/知乎」（HF 页/词条页 HF 区块共用 tracker.community_links）。"""
+        links = app_module.tracker.community_links("Qwen3.8-27B")
+        self.assertEqual([l["site"] for l in links],
+                         ["Zhihu", "Bilibili", "GitHub"])
+        self.assertIn("zhihu.com/search?q=Qwen", links[0]["url"])
+        self.assertIn("search.bilibili.com/all?keyword=Qwen", links[1]["url"])
+        self.assertIn("github.com/search?q=Qwen", links[2]["url"])
+
     def test_no_llm_keys_are_used(self):
         self.assertFalse(os.environ.get("DEEPSEEK_API_KEY"))
         self.assertFalse(os.environ.get("GLM_API_KEY"))
