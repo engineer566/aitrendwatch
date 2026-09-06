@@ -1,4 +1,4 @@
-# 数据流与外部依赖索引
+﻿# 数据流与外部依赖索引
 
 > 外部数据源、SQLite schema、缓存产物、环境变量。配合 [INDEX.md](../INDEX.md) 使用。
 
@@ -41,7 +41,7 @@
 - `fetch_hf_models(sort, limit=30)`：trendingScore / likes 两种 sort。
 - 降级：镜像不可达 → 读旧缓存 → 内存兜底。
 
-### arXiv 论文（`tracker.py:260` `search_arxiv_papers`）
+### arXiv 论文（`tracker.py:288` `search_arxiv_papers`）
 - 端点：`ARXIV_API="https://export.arxiv.org/api/query"`（必须 HTTPS）。
 - **限速**：`ARXIV_GAP=3.0` 秒/请求（官方要求，否则 429）。
 - **配额控制**：`ARXIV_ENRICH_LIMIT=8`，只对榜单前 8 热词检索（8×3s≈24s）。

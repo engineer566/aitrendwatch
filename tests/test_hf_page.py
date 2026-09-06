@@ -214,15 +214,37 @@ class HfPageTest(unittest.TestCase):
     def test_hf_entry_click_event_type_is_whitelisted(self):
         self.assertIn("hf_entry_click", app_module.store._VALID_EVENT_TYPES)
 
-    def test_community_links_labels_are_english_brands(self):
-        """2026-09-05 修复：社区按钮名全英文官方品牌（Bilibili/Zhihu/GitHub），
-        不再显示「B站/知乎」（HF 页/词条页 HF 区块共用 tracker.community_links）。"""
-        links = app_module.tracker.community_links("Qwen3.8-27B")
-        self.assertEqual([l["site"] for l in links],
+    def test_community_links_language_split(self):
+        """2026-09-05 需求：社区按钮名全英文官方品牌 + 按页面语言分流——
+        中文页 知乎/B站/GitHub（Zhihu/Bilibili/GitHub），英文页 YouTube/GitHub
+        （知乎无英文官方渠道，英文读者以 YouTube 为主流）。"""
+        zh = app_module.tracker.community_links("Qwen3.8-27B", "zh")
+        self.assertEqual([l["site"] for l in zh],
                          ["Zhihu", "Bilibili", "GitHub"])
-        self.assertIn("zhihu.com/search?q=Qwen", links[0]["url"])
-        self.assertIn("search.bilibili.com/all?keyword=Qwen", links[1]["url"])
-        self.assertIn("github.com/search?q=Qwen", links[2]["url"])
+        self.assertIn("zhihu.com/search?q=Qwen", zh[0]["url"])
+        self.assertIn("search.bilibili.com/all?keyword=Qwen", zh[1]["url"])
+        self.assertIn("github.com/search?q=Qwen", zh[2]["url"])
+
+        en = app_module.tracker.community_links("Qwen3.8-27B", "en")
+        self.assertEqual([l["site"] for l in en], ["YouTube", "GitHub"])
+        self.assertIn("youtube.com/results?search_query=Qwen", en[0]["url"])
+        self.assertIn("github.com/search?q=Qwen", en[1]["url"])
+
+    def test_hf_page_community_links_follow_page_lang(self):
+        """/hf 渲染：zh 页出 Zhihu/Bilibili/GitHub 按钮，en 页出 YouTube/GitHub，
+        互不串台（_hf_models_for 读取时按 lang 投影，缓存共享）。"""
+        with patch.object(app_module.tracker, "get_model_cards",
+                          return_value=([make_model("Beta", likes=9)], 0)):
+            zh = self.client.get("/hf?sort=trending&lang=zh").get_data(as_text=True)
+            en = self.client.get("/hf?sort=trending&lang=en").get_data(as_text=True)
+        self.assertIn("💬 Zhihu", zh)
+        self.assertIn("💬 Bilibili", zh)
+        self.assertIn("💬 GitHub", zh)
+        self.assertNotIn("YouTube", zh)
+        self.assertIn("💬 YouTube", en)
+        self.assertIn("💬 GitHub", en)
+        self.assertNotIn("Zhihu", en)
+        self.assertNotIn("Bilibili", en)
 
     def test_no_llm_keys_are_used(self):
         self.assertFalse(os.environ.get("DEEPSEEK_API_KEY"))

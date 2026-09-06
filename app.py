@@ -167,7 +167,12 @@ def _word_detail(term_name, lang="zh"):
             except Exception:
                 cached = {"ok": False}
             _detail_set_cache(ck, cached)
-        return (cached.get("term") or {}) if cached.get("ok") else None
+        hd = (cached.get("term") or {}) if cached.get("ok") else None
+        # community 按页面语言分流：缓存 hf:<id> 不带 lang（zh/en 共享），
+        # 必须浅拷贝后按 lang 重建，不能污染缓存（2026-09-05 需求）
+        if hd and isinstance(hd, dict) and "community" in hd and hd.get("term"):
+            hd = {**hd, "community": tracker.community_links(hd["term"], lang)}
+        return hd
 
     row = terms_mod.get_term_row(term_name)
     if row:
@@ -966,6 +971,9 @@ def _hf_models_for(sort, lang="zh"):
     key = _HF_SORT_KEYS.get(sort, "trending_score")
     cards = list(cards)
     cards.sort(key=lambda c: _stream_number(c, key), reverse=True)
+    # community 按页面语言分流（get_terms 兜底路径未过 get_model_cards，
+    # 统一在此投影；重复投影幂等，不依赖缓存内容）
+    cards = tracker.localize_model_cards(cards, lang)
     return cards, fetched_at
 
 

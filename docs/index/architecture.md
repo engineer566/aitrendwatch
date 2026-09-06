@@ -48,7 +48,7 @@
 
 ## 请求生命周期（三条主链路）
 
-### 1. 首页 `/`  （`app.py:658`）
+### 1. 首页 `/`  （`app.py:665`）
 ```
 浏览器 GET /
   → detect_region()              # Accept-Language → zh/global
@@ -61,7 +61,7 @@
 ```
 首页本身**不抓上游**——数据靠前端 JS 异步拉 `/api/stream`，后端只读缓存。
 
-### 2. 统一卡片流 `/api/stream`  （`app.py:843`）  ← 前端主数据源
+### 2. 统一卡片流 `/api/stream`  （`app.py:873`）  ← 前端主数据源
 ```
 GET /api/stream?lang=zh&sort=rise&view=words
   → detect_region() 决定默认 lang
@@ -74,7 +74,7 @@ GET /api/stream?lang=zh&sort=rise&view=words
 ```
 **核心特征：请求路径零上游 IO**。词卡/新闻卡都来自后台预热线程写好的文件缓存。
 
-### 3. 单词聚合 `/api/word/<term>`  （`app.py:1002`）  ← 词卡展开「更多」+ 详情页共用
+### 3. 单词聚合 `/api/word/<term>`  （`app.py:1042`）  ← 词卡展开「更多」+ 详情页共用
 ```
 GET /api/word/<term>
   → _word_detail(term)  # terms 词池命中 → 报道 LIKE 聚合 + HF 元数据
@@ -82,7 +82,7 @@ GET /api/word/<term>
   → 进程内 TTL 缓存
 ```
 
-### 4. 热词详情 `/term/<name>`  （`app.py:749`）  ← SEO 长尾 + 慢路径
+### 4. 热词详情 `/term/<name>`  （`app.py:764`）  ← SEO 长尾 + 慢路径
 ```
 GET /term/<name>
   → _detail_cached(key)            # 进程内 TTL 缓存（默认 1800s）
@@ -93,11 +93,11 @@ GET /term/<name>
 ```
 因 HF live 区块慢（arXiv 串行检索），靠进程内缓存 + SEO 长尾页价值支撑。
 
-### 5. HuggingFace 排序页 `/hf` + `/api/hf`  （`app.py:947` / `app.py:976`）  ← 开源动向独立页
+### 5. HuggingFace 排序页 `/hf` + `/api/hf`  （`app.py:980` / `app.py:1016`）  ← 开源动向独立页
 ```
 GET /hf?sort=trending|likes|downloads&lang=zh|en
   → _request_lang() 决定语言
-  → _hf_models_for(sort, lang)  # app.py:925
+  → _hf_models_for(sort, lang)  # app.py:956
   │    → tracker.get_model_cards(lang)   # trending 文件缓存（统一卡片 schema）
   │    → 冷启动缓存缺失 → tracker.get_terms(sort)  # 自带快速兜底，只抓 HF ~1s
   → likes/downloads 在内存按字段重排（_stream_number 容错）
@@ -109,10 +109,10 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 
 ## 后台预热线程（两层）
 
-### tracker 层  （`tracker.py:540` `start_background_refresher`）
+### tracker 层  （`tracker.py:571` `start_background_refresher`）
 - daemon 线程，每个 gunicorn worker 各起一个。
 - 循环：`_refresh_once(sort)` 抓 HF 模型榜（trending + top 两种 sort）→ 写 `cache/terms.json`。
-- `_cross_proc_lock` (`tracker.py:476`) 用 `fcntl.flock` 跨进程锁，整个容器只有一个 worker 在抓。
+- `_cross_proc_lock` (`tracker.py:507`) 用 `fcntl.flock` 跨进程锁，整个容器只有一个 worker 在抓。
 - 失败兜底：读旧缓存文件；旧缓存也无 → 内存兜底。
 
 ### dims 层  （`dims.py:1843` `start_background_dims_refresher`）
@@ -140,4 +140,4 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 
 - 生产：gunicorn 多 worker（`docker-compose.prod.yml`），每 worker 一个 Python 进程，各起后台线程。
 - 锁策略：`threading.Lock` 只进程内有效，故跨 worker 用 `fcntl.flock` 文件锁（历史教训：曾因多 worker × threading.Lock 导致内存耗尽，见 memory `aitrendwatch-server-stability`）。
-- 本地：`python app.py` 单进程 debug 模式，`app.py:1709` `app.run(port=5000, debug=True)`。
+- 本地：`python app.py` 单进程 debug 模式，`app.py:1755` `app.run(port=5000, debug=True)`。

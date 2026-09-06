@@ -149,18 +149,42 @@ def _model_to_term(m):
     }
 
 
-def community_links(term):
-    """社区讨论入口（纯 URL 拼接，不调 API）。
+def community_links(term, lang="zh"):
+    """社区讨论入口（纯 URL 拼接，不调 API），按页面语言分流。
 
-    site 标签统一用官方英文品牌名（Bilibili/Zhihu/GitHub），中英文页面一致
-    （2026-09-05：原「B站/知乎」按钮名改全英文）。
+    中文页：知乎 + B站 + GitHub；英文页：YouTube + GitHub（知乎无英文
+    官方渠道，英文读者以 YouTube 为主流讨论渠道）。site 标签统一官方
+    英文品牌名（Zhihu/Bilibili/YouTube/GitHub），中英文页一致
+    （2026-09-05：按钮名全英文 + 语言分流）。
     """
     q = quote(term)
+    if lang == "en":
+        return [
+            {"site": "YouTube", "url": f"https://www.youtube.com/results?search_query={q}"},
+            {"site": "GitHub",  "url": f"https://github.com/search?q={q}&type=repositories"},
+        ]
     return [
         {"site": "Zhihu",    "url": f"https://www.zhihu.com/search?q={q}"},
         {"site": "Bilibili", "url": f"https://search.bilibili.com/all?keyword={q}"},
         {"site": "GitHub",   "url": f"https://github.com/search?q={q}&type=repositories"},
     ]
+
+
+def localize_model_cards(cards, lang):
+    """把模型卡的 community 列表按页面语言重建（读取时投影，不动共享缓存）。
+
+    HF 模型卡缓存在 zh/en 之间共享（模型名不翻译），而社区渠道需按
+    读者语言分流——zh 页 知乎/B站/GitHub，en 页 YouTube/GitHub。
+    返回新列表（只浅拷贝带 community 的卡并替换 community），
+    旧缓存（无 youtube 条目）同样安全：一律按 term 现算。
+    """
+    out = []
+    for c in (cards or []):
+        if isinstance(c, dict) and "community" in c and c.get("term"):
+            c = dict(c)
+            c["community"] = community_links(c["term"], lang)
+        out.append(c)
+    return out
 
 
 # ---------- arXiv 相关论文（按热词精确全文检索，见下方 search_arxiv_papers）----------
@@ -428,7 +452,8 @@ def get_terms(sort="trending"):
 def get_model_cards(lang="zh"):
     """统一卡片流：返回 model 卡列表（统一 schema）。
 
-    供 app.py 的 /api/stream 调用。lang 仅保签名一致（模型名不翻译）。
+    供 app.py 的 /api/stream 调用。lang 用于 community 渠道分流
+    （模型名本身不翻译；zh 页 知乎/B站/GitHub，en 页 YouTube/GitHub）。
     读 trending sort 的文件缓存（每张 term 卡已含 trending_score 和 likes，
     故一个 sort 缓存即可同时支撑 rise/hot/new 三种排序）。trending 缺失时
     用 top sort 兜底；两者都缺失返回空列表（不触发 HF 抓取，请求路径秒回）。
@@ -461,7 +486,9 @@ def get_model_cards(lang="zh"):
              "summary": "",
              "official_label": t.get("official_label", "HuggingFace")}
         cards.append(c)
-    return cards, fetched_at
+    # community 按页面语言分流（zh 知乎/B站/GitHub；en YouTube/GitHub）——
+    # 缓存 zh/en 共享，读取时按 lang 重建（localize_model_cards 只浅拷贝，不动缓存）
+    return localize_model_cards(cards, lang), fetched_at
 
 
 # ---------- 后台预热线程 ----------

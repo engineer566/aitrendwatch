@@ -5,44 +5,44 @@
 
 ---
 
-## app.py  （1709 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （1755 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
 |----------|------------------------------|
-| 55–85 | 通用配置（UA/HEADERS/TIMEOUT/CACHE_TTL/`_cache`） |
-| 86–347 | SEO 辅助 + 词详情装配（`_explain_fallback`@105 解释模板兜底 / `_word_detail`@134——2026-09-05 P2：返回 dict 顶层附 `trend` 近 7 天活跃度序列） |
-| 348–539 | 各数据源抓取函数（8 个 `fetch_*`） |
-| 540–660 | 路由公共配置（`SOURCES`@543/`SOURCE_META`@554/region/ip 辅助） |
-| 661–950 | 页面 + 词流路由（`index`@661 含 hreflang 传参 / `term_detail`@760 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@831 / 404@846 / `api_dims`@860 / `api_stream`@869） |
-| 951–1048 | HuggingFace 独立排序页（`_hf_models_for`@951 / `hf_page`@973 含 hreflang / `api_hf`@1009 / `api_word`@1035） |
-| 1049–1378 | 全站搜索 v2（`health`@1049 / `search_page`@1261 / `api_search_suggest`@1307 / `api_search_click`@1326 / `api_search`@1344） |
-| 1379–1539 | SEO 路由（`robots`@1379 / `sitemap`@1399——**主语言 en：只交 `?lang=en` 变体 + 达标词** / favicon 三件套 / `og_image`@1476） |
-| 1540–1568 | 赞助位点击跳转 `sponsor_click`@1540 |
-| 1569–1642 | 管理后台（`admin_login`@1569/logout@1586/home@1593 + sponsors list@1600/CRUD） |
-| 1643–1694 | 统一管理后台（`monitor`@1643 + `monitor/api*`） |
-| 1695–1747 | 用户行为事件上报（`api_event`@1695 埋点 v3 + `monitor_events_api`@1732）+ `__main__` 入口 |
+| 55–104 | 通用配置（UA/HEADERS/TIMEOUT/CACHE_TTL/`_cache`/`_cached`/`_set_cache`/`_detail_cached`/`_detail_set_cache`） |
+| 105–357 | SEO 辅助 + 词详情装配（`_explain_fallback`@105 解释模板兜底 / `_word_detail`@134——2026-09-05 P2：返回 dict 顶层附 `trend` 近 7 天活跃度序列；2026-09-05：`_hf_live` 内 community 按页面语言分流）+ stream/SSR 辅助（`_stream_number`@261 / `_initial_terms_for_ssr`@279 / `_initial_dimension_meta_for_ssr`@298） |
+| 358–551 | 各数据源抓取函数（8 个 `fetch_*`：baidu@358/bilibili@380/toutiao@400/hackernews@417/github@445/zhihu@475/douyin@499/weibo@521） |
+| 552–664 | 路由公共配置（`SOURCES`@552/`SOURCE_META`@563/region/ip 辅助：detect_region@575/get_source@617/get_source_timeout@632） |
+| 665–955 | 页面 + 词流路由（`index`@666 含 hreflang 传参 / `term_detail`@765 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@836 / 404@851 / `api_dims`@865 / `api_stream`@874） |
+| 956–1042 | HuggingFace 独立排序页（`_hf_models_for`@956——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub，en YouTube/GitHub** / `hf_page`@981 含 hreflang / `api_hf`@1017） |
+| 1043–1385 | 单词聚合 + 全站搜索 v2（`api_word`@1043 / `health`@1057 / `search_page`@1269 / `api_search_suggest`@1315 / `api_search_click`@1334 / `api_search`@1352 / `_do_search`@1220） |
+| 1386–1546 | SEO 路由（`robots`@1387 / `sitemap`@1407——**主语言 en：只交 `?lang=en` 变体 + 达标词** / favicon 三件套 / `og_image`@1484） |
+| 1547–1575 | 赞助位点击跳转 `sponsor_click`@1548 + `admin_required`@1558 |
+| 1576–1650 | 管理后台（`admin_login`@1577/logout@1594/home@1601 + sponsors list@1608/CRUD@1616-1635/stats@1644） |
+| 1651–1701 | 统一管理后台（`monitor`@1651 + `monitor/api*`@1657-1684） |
+| 1702–1755 | 用户行为事件上报（`api_event`@1703 埋点 v3 + `monitor_events_api`@1740）+ `__main__` 入口 |
 
 ### 公开函数（被路由/外部调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `fetch_baidu()` | 349 | 百度热搜官方接口 |
-| `fetch_bilibili()` | 371 | B站热门官方接口 |
-| `fetch_toutiao()` | 391 | 今日头条热榜 |
-| `fetch_hackernews()` | 408 | HN Firebase API（逐条拉取，慢） |
-| `fetch_github()` | 436 | GitHub Trending HTML 抓取 |
-| `fetch_zhihu()` | 466 | 知乎热榜（直连） |
-| `fetch_douyin()` | 490 | 抖音热搜（直连） |
-| `fetch_weibo()` | 512 | 微博热搜（需登录态，常失败） |
-| `detect_region()` | 566 | Accept-Language → zh/global |
-| `_client_ip()` | 586 | 取真实 IP（信任 X-Forwarded-For） |
-| `_client_country(ip)` | 594 | 反代头优先 + GeoLite2 兜底 |
-| `get_source(source)` | 608 | 带缓存单源抓取 |
-| `get_source_timeout(source)` | 623 | 带硬性截止时间单源抓取 |
+| `fetch_baidu()` | 358 | 百度热搜官方接口 |
+| `fetch_bilibili()` | 380 | B站热门官方接口 |
+| `fetch_toutiao()` | 400 | 今日头条热榜 |
+| `fetch_hackernews()` | 417 | HN Firebase API（逐条拉取，慢） |
+| `fetch_github()` | 445 | GitHub Trending HTML 抓取 |
+| `fetch_zhihu()` | 475 | 知乎热榜（直连） |
+| `fetch_douyin()` | 499 | 抖音热搜（直连） |
+| `fetch_weibo()` | 521 | 微博热搜（需登录态，常失败） |
+| `detect_region()` | 575 | Accept-Language → zh/global |
+| `_client_ip()` | 595 | 取真实 IP（信任 X-Forwarded-For） |
+| `_client_country(ip)` | 603 | 反代头优先 + GeoLite2 兜底 |
+| `get_source(source)` | 617 | 带缓存单源抓取 |
+| `get_source_timeout(source)` | 632 | 带硬性截止时间单源抓取 |
 | 38 个 view 函数 | 见 [api_routes.md](api_routes.md) | 路由处理 |
 
 ### 模块级常量
-`SOURCES`（source→fetcher 映射，`app.py:543`）、`SOURCE_META`（8 源元信息，`app.py:554`）、`WORD_STREAM_LIMIT=100`（`app.py:249`，2026-09-02 由 60 放宽，配合热窗新鲜度加权让今日热词稳定可见）、`SSR_INITIAL_LIMIT=20`（`app.py:267`）、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
+`SOURCES`（source→fetcher 映射，`app.py:552`）、`SOURCE_META`（8 源元信息，`app.py:563`）、`WORD_STREAM_LIMIT=100`（`app.py:258`，2026-09-02 由 60 放宽，配合热窗新鲜度加权让今日热词稳定可见）、`SSR_INITIAL_LIMIT=20`（`app.py:276`）、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
 
 ---
 
@@ -110,28 +110,28 @@
 
 ---
 
-## tracker.py  （590 行）— 热词追踪层（HF + arXiv）
+## tracker.py  （621 行）— 热词追踪层（HF + arXiv）
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
-| 34–63 | 文件缓存（`cache/terms.json`）+ 内存缓存 |
-| 110–161 | HF 模型热词抓取 |
-| 162–354 | arXiv 论文检索（限速 + 检索式构造） |
-| 355–462 | 顶层聚合（`get_terms`/`get_model_cards`） |
-| 463–589 | 后台预热线程 + 跨进程锁 |
+| 34–109 | 文件缓存（`cache/terms.json`）+ 内存缓存 |
+| 110–192 | HF 模型热词抓取 + 社区链接语言分流（`community_links`@152——2026-09-05：zh 知乎/B站/GitHub，en YouTube/GitHub / `localize_model_cards`@173 读取时按 lang 投影） |
+| 193–354 | arXiv 论文检索（限速 + 检索式构造） |
+| 355–505 | 顶层聚合（`get_terms`/`get_model_cards`） |
+| 506–621 | 后台预热线程 + 跨进程锁 + 单词详情 |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `get_terms(sort="trending")` | 399 | 热词榜（trending/top 两种 sort，读缓存）；`/api/trending` `/api/top` |
-| `get_model_cards(lang="zh")` | 424 | model 卡列表（读缓存）；`/api/stream` |
-| `get_term_detail(term_name)` | 551 | 单热词详情：live HF + 同步 arXiv（~1-4s）；`/api/term/` `/term/` |
-| `start_background_refresher()` | 540 | 启动后台预热线程（app.py 启动时调） |
+| `get_terms(sort="trending")` | 427 | 热词榜（trending/top 两种 sort，读缓存）；`/api/trending` `/api/top` |
+| `get_model_cards(lang="zh")` | 452 | model 卡列表（读缓存，community 按 lang 分流）；`/api/stream` |
+| `get_term_detail(term_name)` | 582 | 单热词详情：live HF + 同步 arXiv（~1-4s）；`/api/term/` `/term/` |
+| `start_background_refresher()` | 571 | 启动后台预热线程（app.py 启动时调） |
 
 ### 内部函数
 - 缓存：`_cached`/`_set_cache`/`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
-- HF：`fetch_hf_models`/`_model_to_term`/`community_links`
+- HF：`fetch_hf_models`/`_model_to_term`/`community_links`（按语言分流）/`localize_model_cards`（读取时投影）
 - arXiv：`_base_model_key`/`_dedupe_by_base_model`/`_arxiv_throttle`/`_search_query_for`/`search_arxiv_papers`/`enrich_with_papers`
 - 聚合：`_fetch_terms_raw`/`_fetch_terms_quick`
 - 后台：`_cross_proc_lock`/`_refresh_once`/`_bg_refresher`
