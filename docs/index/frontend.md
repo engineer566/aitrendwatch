@@ -1,4 +1,4 @@
-# 前端模板索引
+﻿# 前端模板索引
 
 > 8 个 Jinja2 模板，用途 / 区块 / 行号 / API 引用。配合 [INDEX.md](../INDEX.md) 使用。
 
@@ -41,12 +41,12 @@
 | ├ `render` | 1280 | words 走 renderWordCard / news 走 renderCard，赞助每 8 卡插 1 |
 | ├ `_fetchCtrl` | 1339 | 当前 /api/stream 请求的 AbortController，切语言/排序/视图时 abort 旧请求 |
 | ├ 数据拉取 `fetchAll` | 1376 | `fetchJSON("/api/stream?lang=&sort=&view=")`；全量就位先 `unlockCatCounts()` 再 render，分类条一次更新到全量计数 |
-| ├ 返回滚动恢复 `finalizeScrollRestore` | 1500 | 消费 `aitw_last_scroll` key + 清理 URL 标记（`scroll_back=1`），校准落位；配套 head 脚本（~82）+ 词条页 `home_url` 回显（app.py:816） |
+| ├ 返回滚动恢复 `finalizeScrollRestore` | 1500 | 消费 `aitw_last_scroll` key + 清理 URL 标记（`scroll_back=1`），校准落位；配套 head 脚本（~82）+ 词条页 `home_url` 回显（app.py:821） |
 | └ Mock 数据 | 1528 | 后端不可用时的内置预览数据 |
 | 悬浮回到顶部按钮（需求 6 改进：文字 + 箭头 + 移动端安全区/节流；2026-09-04 需求 3：文案统一英文） | ~1603–1658 | 页尾 3 块：`.back-top` 样式 + 按钮元素（aria-label 与可见文案固定英文「Back to top」）+ IIFE 脚本（`matchMedia` 窄屏阈值 250 / 宽屏 400，rAF 节流滚动加 `.show`，点击 `scrollTo` 平滑回顶） |
 
 **引用 API**：`/api/stream`（主数据，`?view=words\|news`）、`/api/word/<term>`（词展开）、`/api/click/<slot_id>`（赞助位点击）、`/api/event`（埋点上报，任务 9）。
-**渲染路由**：`/`（`app.py:661`）。
+**渲染路由**：`/`（`app.py:666`）。
 **SSR 首屏**：`initial_terms` 注入词卡（词名 + top-3 报道，爬虫可见），随后异步拉 `/api/stream?view=words` 全量替换。
 
 ---
@@ -65,8 +65,8 @@
 | 模型卡列表 | 309–348 | 排名 / 🤗 开源模型徽标 / pipeline_tag 主徽标 / tags / 趋势分·点赞·下载 / 官方 + 社区链接 / 相关论文 |
 | 主 JS `<script>` | 358–399 | 主题切换 / 搜索跳转 `/search` / 更新时间渲染 |
 
-**引用 API**：无（服务端 `_hf_models_for`（`app.py:951`）装配后 SSR；数据与 `/api/hf` 同一来源）。
-**渲染路由**：`/hf`（`app.py:973`）。
+**引用 API**：无（服务端 `_hf_models_for`（`app.py:956`）装配后 SSR；数据与 `/api/hf` 同一来源）。
+**渲染路由**：`/hf`（`app.py:981`）。
 **数据源**：`tracker.get_model_cards`（trending 文件缓存）→ 冷启动回退 `tracker.get_terms`（自带快速兜底，只抓 HF ~1s）；likes/downloads 在内存重排。
 
 ---
@@ -83,7 +83,7 @@
 | 切换 JS | 365 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:831`）。
+**渲染路由**：`/terms`（`app.py:836`）。
 
 ---
 
@@ -103,7 +103,7 @@
 | SEO ld+json | 197, 210, 231, ~247 | 四个块：DefinedTerm（197）/ ItemList（210）/ SoftwareApplication（231）/ ScholarlyArticle（~247）。SoftwareApplication 无 aggregateRating（likes 非评分，GSC 范围报错修复） |
 
 **引用 API**：无（服务端 `_word_detail`（`app.py:134`）同步装配，进程内 TTL 缓存；`/api/word` 共用并附 `trend` 字段）。
-**渲染路由**：`/term/<name>`（`app.py:760`；indexable 判定 `terms.term_row_indexable`@1971）。
+**渲染路由**：`/term/<name>`（`app.py:765`；indexable 判定 `terms.term_row_indexable`@1980）。
 **数据源**：词池 `terms` 表命中（任何词有页）→ 报道聚合；未命中回退 HF live；再无 → 404。
 
 ---
@@ -124,7 +124,7 @@
 | 建议补全 | ~305+ | `suggest` 热门搜索词 chips |
 
 **引用 API**：`/api/search/suggest`、`/api/search/click`。
-**渲染路由**：`/search`（`app.py:1261`）、SSR `word_hits` 由 `_do_search`（`app.py:1212`）返回（2026-09-04 需求 1：news 命中在评分排序后按归一化标题去重，镜像报道只留评分高者）。
+**渲染路由**：`/search`（`app.py:1269`）、SSR `word_hits` 由 `_do_search`（`app.py:1220`）返回（2026-09-04 需求 1：news 命中在评分排序后按归一化标题去重，镜像报道只留评分高者）。
 
 ---
 
@@ -135,7 +135,7 @@
 | 登录表单 | ~20–50 | POST token |
 
 **引用 API**：`/admin/login`（表单 POST）。
-**渲染路由**：`/admin/login`（`app.py:1569`）。
+**渲染路由**：`/admin/login`（`app.py:1577`）。
 
 ---
 
@@ -158,6 +158,6 @@
 | └ 自动刷新 | 1047–1049 | 60s 轮询（仅 monitor tab 激活时） |
 
 **引用 API**：`/monitor/api?days=N`、`/monitor/api/search`、`/monitor/api/search/funnel`、`/monitor/api/events`、`/admin/sponsors/list`、`/admin/sponsors`（POST）、`/admin/sponsors/<id>/{toggle,delete}`、`/admin/stats`。
-**渲染路由**：`/monitor`（`app.py:1605`，需 admin）。
-**旧 `/admin` 路由**：重定向到 `/monitor#sponsors`（`app.py:1555`）。
+**渲染路由**：`/monitor`（`app.py:1651`，需 admin）。
+**旧 `/admin` 路由**：重定向到 `/monitor#sponsors`（`app.py:1558`）。
 **数据**：PV/UV/地域分布（`store.monitor_stats`）+ 用户行为事件（`store.event_stats`）+ 赞助位 CRUD（`store.list_slots`/`upsert_slot`/`toggle_slot`/`delete_slot`）。
