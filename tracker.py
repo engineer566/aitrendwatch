@@ -152,31 +152,33 @@ def _model_to_term(m):
 def community_links(term, lang="zh"):
     """社区讨论入口（纯 URL 拼接，不调 API），按页面语言分流。
 
-    中文页：知乎 + B站 + GitHub；英文页：YouTube + GitHub（知乎无英文
-    官方渠道，英文读者以 YouTube 为主流讨论渠道）。site 标签统一官方
-    英文品牌名（Zhihu/Bilibili/YouTube/GitHub），中英文页一致
-    （2026-09-05：按钮名全英文 + 语言分流）。
+    中文页：知乎 + B站 + GitHub（国内平台按钮回中文名，GitHub 无通用
+    中文名保留英文）；英文页：YouTube + Reddit + X + GitHub（知乎无
+    英文官方渠道，英文读者以 YouTube/Reddit/X 为主流讨论渠道）。
+    site 标签按页面语言显示（2026-09-05 需求：按钮名语言化 + 渠道分流）。
     """
     q = quote(term)
     if lang == "en":
         return [
             {"site": "YouTube", "url": f"https://www.youtube.com/results?search_query={q}"},
+            {"site": "Reddit",  "url": f"https://www.reddit.com/search/?q={q}"},
+            {"site": "X",       "url": f"https://x.com/search?q={q}"},
             {"site": "GitHub",  "url": f"https://github.com/search?q={q}&type=repositories"},
         ]
     return [
-        {"site": "Zhihu",    "url": f"https://www.zhihu.com/search?q={q}"},
-        {"site": "Bilibili", "url": f"https://search.bilibili.com/all?keyword={q}"},
-        {"site": "GitHub",   "url": f"https://github.com/search?q={q}&type=repositories"},
+        {"site": "知乎",  "url": f"https://www.zhihu.com/search?q={q}"},
+        {"site": "B站",   "url": f"https://search.bilibili.com/all?keyword={q}"},
+        {"site": "GitHub", "url": f"https://github.com/search?q={q}&type=repositories"},
     ]
 
 
 def localize_model_cards(cards, lang):
     """把模型卡的 community 列表按页面语言重建（读取时投影，不动共享缓存）。
 
-    HF 模型卡缓存在 zh/en 之间共享（模型名不翻译），而社区渠道需按
-    读者语言分流——zh 页 知乎/B站/GitHub，en 页 YouTube/GitHub。
-    返回新列表（只浅拷贝带 community 的卡并替换 community），
-    旧缓存（无 youtube 条目）同样安全：一律按 term 现算。
+    HF 模型卡缓存在 zh/en 之间共享（模型名不翻译），而社区渠道（按钮名
+    与渠道集）需按读者语言分流——zh 页 知乎/B站/GitHub，en 页
+    YouTube/Reddit/X/GitHub。返回新列表（只浅拷贝带 community 的卡并
+    替换 community），旧缓存同样安全：一律按 term 现算。
     """
     out = []
     for c in (cards or []):

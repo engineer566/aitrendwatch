@@ -15,7 +15,7 @@
 | 358–551 | 各数据源抓取函数（8 个 `fetch_*`：baidu@358/bilibili@380/toutiao@400/hackernews@417/github@445/zhihu@475/douyin@499/weibo@521） |
 | 552–664 | 路由公共配置（`SOURCES`@552/`SOURCE_META`@563/region/ip 辅助：detect_region@575/get_source@617/get_source_timeout@632） |
 | 665–955 | 页面 + 词流路由（`index`@666 含 hreflang 传参 / `term_detail`@765 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@836 / 404@851 / `api_dims`@865 / `api_stream`@874） |
-| 956–1042 | HuggingFace 独立排序页（`_hf_models_for`@956——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub，en YouTube/GitHub** / `hf_page`@981 含 hreflang / `api_hf`@1017） |
+| 956–1042 | HuggingFace 独立排序页（`_hf_models_for`@956——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub** / `hf_page`@981 含 hreflang / `api_hf`@1017） |
 | 1043–1385 | 单词聚合 + 全站搜索 v2（`api_word`@1043 / `health`@1057 / `search_page`@1269 / `api_search_suggest`@1315 / `api_search_click`@1334 / `api_search`@1352 / `_do_search`@1220） |
 | 1386–1546 | SEO 路由（`robots`@1387 / `sitemap`@1407——**主语言 en：只交 `?lang=en` 变体 + 达标词** / favicon 三件套 / `og_image`@1484） |
 | 1547–1575 | 赞助位点击跳转 `sponsor_click`@1548 + `admin_required`@1558 |
@@ -116,7 +116,7 @@
 | 行号范围 | 分区 |
 |----------|------|
 | 34–109 | 文件缓存（`cache/terms.json`）+ 内存缓存 |
-| 110–192 | HF 模型热词抓取 + 社区链接语言分流（`community_links`@152——2026-09-05：zh 知乎/B站/GitHub，en YouTube/GitHub / `localize_model_cards`@173 读取时按 lang 投影） |
+| 110–192 | HF 模型热词抓取 + 社区链接语言分流（`community_links`@152——2026-09-05：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub / `localize_model_cards`@173 读取时按 lang 投影） |
 | 193–354 | arXiv 论文检索（限速 + 检索式构造） |
 | 355–505 | 顶层聚合（`get_terms`/`get_model_cards`） |
 | 506–621 | 后台预热线程 + 跨进程锁 + 单词详情 |
