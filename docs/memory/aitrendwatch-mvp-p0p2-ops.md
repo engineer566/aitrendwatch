@@ -9,6 +9,13 @@ metadata:
 
 # MVP P0~P2 修复收尾（2026-09-07）
 
+> **执行状态（2026-09-07 release 1.11.0，main `ee2a528`）**：测试机 + 生产均已部署并逐项验证
+> （news 池文件/时延、/privacy、限流 429、500 单测、备份冒烟、nginx 四头公网实测）；
+> 宿主侧已完成：`.env CONTACT_EMAIL=ferriswym@gmail.com`、nginx 安全头 + XFF 单跳化 +
+> reload（conf 已备份）、备份 cron（04:30，keep 14，/opt/aitrendwatch-backups）。**仍待用户**：
+> ① UptimeRobot 免费档两条监控（/health 与首页）；② backups 目录异机/对象存储同步；③ nginx
+> 1.18 随系统升级规划。部署细节与验证数据见 deploy-key / test-host 记忆条目的 1.11.0 记录。
+
 来源：[`docs/mvp-assessment-20260906.md`](../../mvp-assessment-20260906.md) P0~P2 清单。
 **代码侧改动已全部合入 dev**（详见 `docs/INDEX.md` 各模块注释与 git log），本文件只记录
 「必须在生产/测试主机上执行」的收尾动作 + 每项上线后的验证方法。执行前先读
