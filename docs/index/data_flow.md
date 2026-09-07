@@ -1,4 +1,4 @@
-﻿# 数据流与外部依赖索引
+# 数据流与外部依赖索引
 
 > 外部数据源、SQLite schema、缓存产物、环境变量。配合 [INDEX.md](../INDEX.md) 使用。
 
@@ -156,7 +156,8 @@ WAL 模式。DB 不可用 → `_DB_OK=False` 全程静默降级返空。
 | 文件 | 写入者 | 读者 | 内容 |
 |------|--------|------|------|
 | `terms.json` | `tracker._refresh_once` | `tracker.get_terms`/`get_model_cards` | HF 热词榜 + model 卡 |
-| `dims.json` | `dims._dims_refresh_once` | `dims.get_dims`/`get_news_cards` | 维度事件卡分组 |
+| `dims.json` | `dims._dims_refresh_once` | `dims.get_dims` | 维度事件卡分组 |
+| `news.json` | `dims._dims_refresh_once`（落库后 `_write_news_pool_file`） | `dims.get_news_cards`（`/api/stream?view=news`） | **news 视图内容池（2026-09-07 P0）**：dims 当轮 + news.db 历史卡预装配 neutral 池（已去重，未按语言投影），请求路径零 DB 读——修复 news 视图 7-21s |
 | `words.json` | `terms.refresh_words`（dims 刷新锁内调） | `terms.get_word_cards` | 词卡榜（热度/上升/新奇度，词维度重构新增；hot 按报道新鲜度加权——≤1d ×3 / ≤3d ×1.5，2026-09-02 优化） |
 | `.tracker.refresh.lock` | `tracker._cross_proc_lock` | — | fcntl 跨进程锁 |
 | `.dims.refresh.lock` | `dims._cross_proc_lock` | — | fcntl 跨进程锁 |
@@ -171,11 +172,13 @@ WAL 模式。DB 不可用 → `_DB_OK=False` 全程静默降级返空。
 | `ADMIN_TOKEN` | "" | 未设 → 所有 `/admin/*` 返回 404（隐身） |
 | `SITE_NAME` | ModelRadar | 站点名 |
 | `BASE_URL` | "" | 站点绝对 URL（SEO canonical/OG） |
-| `CONTACT_EMAIL` | "" | 条款页联系邮箱；未设 → 占位文案 |
+| `CONTACT_EMAIL` | "" | 条款页/隐私页联系邮箱（DMCA/合规统一入口）；未设 → 占位文案（P1 建议生产必配） |
 | `DATA_DIR` | /app/data | SQLite 目录 |
 | `NEWS_DB_PATH` | $DATA_DIR/news.db | 事件库路径 |
 | `GEOIP_DB_PATH` | $DATA_DIR/GeoLite2-Country.mmdb | 离线地域库；缺失 → Unknown |
 | `CACHE_DIR` | /app/cache 或 ./cache | 文件缓存目录 |
+| `EVENT_RATE_LIMIT` | 300 | **（2026-09-07 P1）** /api/event 每 IP 每分钟上报上限（进程内固定窗口，超限 429） |
+| `LOGIN_RATE_LIMIT` | 5 | **（2026-09-07 P1）** /admin/login 每 IP 15 分钟尝试上限 |
 | `LLM_CHAIN` | glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash | 模型故障转移链（逗号分隔，按序尝试；首档即默认）；单档测试如 `glm-5.3-flash` |
 | `LLM_FAILOVER_THRESHOLD` | 3 | 每档连续失败次数达此值 → 顺链切下一档 |
 | `LLM_CYCLE_ESCAPE` | 4 | 单刷新周期累计失败达此值 → 跳当前 provider 剩余档 |

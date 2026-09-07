@@ -5,48 +5,49 @@
 
 ---
 
-## app.py  （1755 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （1829 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
 |----------|------------------------------|
 | 55–104 | 通用配置（UA/HEADERS/TIMEOUT/CACHE_TTL/`_cache`/`_cached`/`_set_cache`/`_detail_cached`/`_detail_set_cache`） |
-| 105–357 | SEO 辅助 + 词详情装配（`_explain_fallback`@105 解释模板兜底 / `_word_detail`@134——2026-09-05 P2：返回 dict 顶层附 `trend` 近 7 天活跃度序列；2026-09-05：`_hf_live` 内 community 按页面语言分流）+ stream/SSR 辅助（`_stream_number`@261 / `_initial_terms_for_ssr`@279 / `_initial_dimension_meta_for_ssr`@298） |
-| 358–551 | 各数据源抓取函数（8 个 `fetch_*`：baidu@358/bilibili@380/toutiao@400/hackernews@417/github@445/zhihu@475/douyin@499/weibo@521） |
-| 552–664 | 路由公共配置（`SOURCES`@552/`SOURCE_META`@563/region/ip 辅助：detect_region@575/get_source@617/get_source_timeout@632） |
-| 665–955 | 页面 + 词流路由（`index`@666 含 hreflang 传参 / `term_detail`@765 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@836 / 404@851 / `api_dims`@865 / `api_stream`@874） |
-| 956–1042 | HuggingFace 独立排序页（`_hf_models_for`@956——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub** / `hf_page`@981 含 hreflang / `api_hf`@1017） |
-| 1043–1385 | 单词聚合 + 全站搜索 v2（`api_word`@1043 / `health`@1057 / `search_page`@1269 / `api_search_suggest`@1315 / `api_search_click`@1334 / `api_search`@1352 / `_do_search`@1220） |
-| 1386–1546 | SEO 路由（`robots`@1387 / `sitemap`@1407——**主语言 en：只交 `?lang=en` 变体 + 达标词** / favicon 三件套 / `og_image`@1484） |
-| 1547–1575 | 赞助位点击跳转 `sponsor_click`@1548 + `admin_required`@1558 |
-| 1576–1650 | 管理后台（`admin_login`@1577/logout@1594/home@1601 + sponsors list@1608/CRUD@1616-1635/stats@1644） |
-| 1651–1701 | 统一管理后台（`monitor`@1651 + `monitor/api*`@1657-1684） |
-| 1702–1755 | 用户行为事件上报（`api_event`@1703 埋点 v3 + `monitor_events_api`@1740）+ `__main__` 入口 |
+| 105–357 | SEO 辅助 + 词详情装配（`_explain_fallback`@106 解释模板兜底 / `_word_detail`@135——2026-09-05 P2：返回 dict 顶层附 `trend` 近 7 天活跃度序列；2026-09-05：`_hf_live` 内 community 按页面语言分流）+ stream/SSR 辅助（`_stream_number`@262 / `_initial_terms_for_ssr`@280 / `_initial_dimension_meta_for_ssr`@299）+ `SITE_PRIVACY_UPDATED`@356 |
+| 361–~577 | 各数据源抓取函数（8 个 `fetch_*`：baidu@361/bilibili@383/toutiao@403/hackernews@420/github@448/zhihu@478/douyin@502/weibo@524） |
+| ~580–~664 | 路由公共配置（`SOURCES`/`SOURCE_META`/region/ip 辅助：detect_region@578/_client_ip@598/_client_country@606/_rate_limit_deny@620（2026-09-07 P1 限流 429 响应）/get_source@628/get_source_timeout@643） |
+| 665–955 | 页面 + 词流路由（`index`@677 含 hreflang 传参 / `term_detail`@776 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@847 / `privacy`@862 + `/privacy-policy`@879 301（2026-09-07 P1）/ 404@885 / **500@899（2026-09-07 P2）** / `api_dims`@925 / `api_stream`@934） |
+| ~1000–~1100 | HuggingFace 独立排序页（`_hf_models_for`@1016——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub** / `hf_page`@1041 含 hreflang / `api_hf`@1077） |
+| ~1103–~1446 | 单词聚合 + 全站搜索 v2（`api_word`@1103 / `health`@1117 / `search_page`@1329 / `api_search_suggest`@1375 / `api_search_click`@1394 / `api_search`@1412） |
+| ~1447–~1608 | SEO 路由（`robots`@1447 / `sitemap`@1467——**主语言 en：只交 `?lang=en` 变体 + 达标词；2026-09-07 追加 /privacy** / favicon 三件套 / `og_image`@1545） |
+| ~1609–~1637 | 赞助位点击跳转 `sponsor_click`@1609 + `admin_required`@1619 |
+| ~1638–~1718 | 管理后台（`admin_login`@1638——**2026-09-07 P1 POST 按 IP 限流** /logout@1662/home@1669 + sponsors list@1676/CRUD@1684-1703/stats@1712） |
+| ~1719–~1770 | 统一管理后台（`monitor`@1719 + `monitor/api*`@1725-1752） |
+| ~1771–1829 | 用户行为事件上报（`api_event`@1771 埋点 v3——**2026-09-07 P1 按 IP 限流** + `monitor_events_api`@1814）+ `__main__` 入口 |
 
 ### 公开函数（被路由/外部调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `fetch_baidu()` | 358 | 百度热搜官方接口 |
-| `fetch_bilibili()` | 380 | B站热门官方接口 |
-| `fetch_toutiao()` | 400 | 今日头条热榜 |
-| `fetch_hackernews()` | 417 | HN Firebase API（逐条拉取，慢） |
-| `fetch_github()` | 445 | GitHub Trending HTML 抓取 |
-| `fetch_zhihu()` | 475 | 知乎热榜（直连） |
-| `fetch_douyin()` | 499 | 抖音热搜（直连） |
-| `fetch_weibo()` | 521 | 微博热搜（需登录态，常失败） |
-| `detect_region()` | 575 | Accept-Language → zh/global |
-| `_client_ip()` | 595 | 取真实 IP（信任 X-Forwarded-For） |
-| `_client_country(ip)` | 603 | 反代头优先 + GeoLite2 兜底 |
-| `get_source(source)` | 617 | 带缓存单源抓取 |
-| `get_source_timeout(source)` | 632 | 带硬性截止时间单源抓取 |
-| 38 个 view 函数 | 见 [api_routes.md](api_routes.md) | 路由处理 |
+| `fetch_baidu()` | 361 | 百度热搜官方接口 |
+| `fetch_bilibili()` | 383 | B站热门官方接口 |
+| `fetch_toutiao()` | 403 | 今日头条热榜 |
+| `fetch_hackernews()` | 420 | HN Firebase API（逐条拉取，慢） |
+| `fetch_github()` | 448 | GitHub Trending HTML 抓取 |
+| `fetch_zhihu()` | 478 | 知乎热榜（直连） |
+| `fetch_douyin()` | 502 | 抖音热搜（直连） |
+| `fetch_weibo()` | 524 | 微博热搜（需登录态，常失败） |
+| `detect_region()` | 578 | Accept-Language → zh/global |
+| `_client_ip()` | 598 | 取真实 IP（信任 X-Forwarded-For） |
+| `_client_country(ip)` | 606 | 反代头优先 + GeoLite2 兜底 |
+| `_rate_limit_deny(retry_after)` | 620 | 限流 429 响应（JSON + Retry-After，2026-09-07 P1） |
+| `get_source(source)` | 628 | 带缓存单源抓取 |
+| `get_source_timeout(source)` | 643 | 带硬性截止时间单源抓取 |
+| 39 个 view 函数 + 404/500 | 见 [api_routes.md](api_routes.md) | 路由处理 |
 
 ### 模块级常量
 `SOURCES`（source→fetcher 映射，`app.py:552`）、`SOURCE_META`（8 源元信息，`app.py:563`）、`WORD_STREAM_LIMIT=100`（`app.py:258`，2026-09-02 由 60 放宽，配合热窗新鲜度加权让今日热词稳定可见）、`SSR_INITIAL_LIMIT=20`（`app.py:276`）、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
 
 ---
 
-## config.py  （186 行）— 配置集中地
+## config.py  （197 行）— 配置集中地
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -58,55 +59,57 @@
 | 52–134 | LLM 提供方（模型故障转移链 `LLM_CHAIN`@67/`LLM_FAILOVER_THRESHOLD`@71/`LLM_CYCLE_ESCAPE`@75 + **质量/可用性分离熔断 `LLM_QUALITY_FAILOVER_THRESHOLD`@83/`LLM_QUALITY_CYCLE_ESCAPE`@85 + 坏条目二次提示轮数 `LLM_REPAIR_ROUNDS`@90（2026-09-03）** + 思考强度 `LLM_REASONING_EFFORT`@98 + `llm_endpoint()`@111/`llm_reasoning_params()`@119；链每轮刷新复位回链首——DeepSeek 只做当轮逃生舱） |
 | 135–139 | dims 定点预热 `DIMS_REFRESH_HOURS`@136 |
 | 140–147 | 分析开关 |
-| 148–155 | SEO 开关 |
-| 156–165 | 第三方广告（AdSense/百度联盟） |
-| 166–169 | 赞助位展示 |
-| 170–176 | `ensure_data_dir()` |
+| 148–158 | **公开端点限流（2026-09-07 P1）**：`EVENT_RATE_LIMIT`@153=300/分/IP（/api/event）、`LOGIN_RATE_LIMIT`@156=5/15分/IP（/admin/login，窗口 900s），进程内 ratelimit.py 固定窗口计数 |
+| 159–178 | SEO 开关 |
+| 179–188 | 第三方广告（AdSense/百度联盟） |
+| 189–192 | 赞助位展示 |
+| 193–197 | `ensure_data_dir()` |
 
 ### 公开函数
 | 函数 | 行号 | 职责 |
 |------|------|------|
 | `_as_bool(v, default)` | 141 | 字符串→布尔 |
-| `ensure_data_dir()` | 171 | 建 `DATA_DIR`（容器 /app/data，本地 ./data） |
+| `ensure_data_dir()` | 192 | 建 `DATA_DIR`（容器 /app/data，本地 ./data） |
 | `llm_endpoint(model)` | 111 | 模型 ID → (url, api_key)：deepseek-* → DeepSeek，其余 → 智谱 BigModel |
 | `llm_reasoning_params(model)` | 119 | 模型 ID → 思考强度参数 dict：glm-5.2+ 返回 `{"reasoning_effort": ...}`，glm-4.7/deepseek 返回 {}（不传未知参数） |
 
 ### 关键常量
-`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`LLM_CHAIN`（默认 `glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash`）、`LLM_FAILOVER_THRESHOLD=3`、`LLM_CYCLE_ESCAPE=4`、`LLM_QUALITY_FAILOVER_THRESHOLD=6`/`LLM_QUALITY_CYCLE_ESCAPE=12`/`LLM_REPAIR_ROUNDS=2`（2026-09-03：质量失败与 provider 故障分离 + 坏条目二次提示轮数）、`LLM_REASONING_EFFORT=low`（可选 low/high/max，仅 glm-5.2+ 生效）、`DEEPSEEK_API_KEY`/`DEEPSEEK_URL`、`GLM_API_KEY`/`GLM_URL`（智谱 BigModel 免费档，高峰 429/1305 过载）、`DIMS_REFRESH_HOURS=(1,7,13,19)`、`ANALYTICS_ENABLED`、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
+`SECRET_KEY`、`ADMIN_TOKEN`（未设→admin 路由 404 隐身）、`DB_PATH`/`NEWS_DB_PATH`、`GEOIP_DB_PATH`、`CACHE_DIR`、`CONTACT_EMAIL`（站点联系/DMCA 统一入口，`/terms`+`/privacy` 共用，未配→占位文案）、`LLM_CHAIN`（默认 `glm-4.7-flash,glm-5.3-flash,deepseek-v4-flash`）、`LLM_FAILOVER_THRESHOLD=3`、`LLM_CYCLE_ESCAPE=4`、`LLM_QUALITY_FAILOVER_THRESHOLD=6`/`LLM_QUALITY_CYCLE_ESCAPE=12`/`LLM_REPAIR_ROUNDS=2`（2026-09-03：质量失败与 provider 故障分离 + 坏条目二次提示轮数）、`LLM_REASONING_EFFORT=low`（可选 low/high/max，仅 glm-5.2+ 生效）、`DEEPSEEK_API_KEY`/`DEEPSEEK_URL`、`GLM_API_KEY`/`GLM_URL`（智谱 BigModel 免费档，高峰 429/1305 过载）、`DIMS_REFRESH_HOURS=(1,7,13,19)`、`ANALYTICS_ENABLED`、`EVENT_RATE_LIMIT=300`/`LOGIN_RATE_LIMIT=5`（2026-09-07 P1 公开端点限流，env 可覆盖）、`SEO_ENABLED`/`SITEMAP_MAX_URLS`/`TERM_DETAIL_CACHE_TTL=1800`、`ADSENSE_ENABLED`/`ADSENSE_CLIENT`、`BAIDU_ADS_ENABLED`/`BAIDU_ADS_CPRO_ID`、`INLINE_SLOT_EVERY_N=8`、`NEWS_HISTORY_LIMIT=400`/`NEWS_HISTORY_DAYS=30`。
 
 ---
 
-## dims.py  （1852 行）— 维度事件层（RSS + 热度 + LLM）
+## dims.py  （1956 行）— 维度事件层（RSS + 热度 + LLM）
 
 ### 分区清单
 | 行号范围 | 分区 |
 |----------|------|
 | 63–80 | LLM 配置（模型故障转移链） |
-| 81–151 | 文件缓存（`cache/dims.json`） |
-| 152–348 | RSS 源定义 `RSS_SOURCES`@160（36 源）+ RSS 解析 + 抓取（`fetch_all_rss`@334） |
-| 349–658 | 社区热度增强（HN/Reddit/复合分/趋势分） |
-| 659–1475 | LLM 批量打标（668–696 异常类：`_LLMTransientError`@668 / `_LLMAccountRateLimit`@672 / `_LLMQualityError`@677（2026-09-03 质量失败类）；697–902 故障转移状态机：`_llm_quality_failure`@767（质量/可用性分离高阈值熔断：连续 6/周期累计 12 才换档）+ `_llm_cycle_reset`@818（每轮刷新起始复位链首）+ `_llm_apply_output`@865 逐条校验+回填（好条目保留、坏条目记 `_llm_fail` 原因）；960–1148 **`_USER_PREFIX`@977 user 前缀模块常量**（keywords/翻译规则全在这，稳定前缀缓存单元；2026-09-04 需求 4：中文标题里的公司/机构/产品专名保持中文原词，仅标题原文含官方英文名/英文拼写时才用英文，禁拼音化/自译）+ `_llm_classify_batch`@1010（2026-09-02 逐条校验 + 2026-09-03 坏条目「二次提示」修正 repair pass（LLM_REPAIR_ROUNDS 轮，带失败原因喂回当前档）+ 质量失败不快速换档、429/5xx/402 才换档）；1149–1261 `_item_missing_llm_out`@1249 + `enrich_with_llm`@1262（质量失败不重试、provider 故障才收进末尾重试）；1262–1475 **`_TRANSLATE_SYS_MSG`@1326**（热词翻译 system 提示词常量；2026-09-04 需求 4：公司/机构/产品专名必须用官方英文名（如 创通联达→Thundercomm、中科创达→ThunderSoft）、无官方英文名的中文专名保留中文原词、禁拼音音译/自造英文（反例 Qujing Tech 钉在提示词里））+ `_translate_terms`@1336 + `explain_terms`@1386 热词解释生成/优化） |
-| 1476–1694 | 顶层聚合 + 逐条流去重（`_to_card`@1477 / `_fetch_dims_raw`@1512 / `_project_card`@1552 / `get_dims`@1577 / `get_news_cards`@1611——2026-09-04 需求 1：卡 id 按 `text_utils.normalize_url_key` 归一到与历史库存储键同口径（实体解码+去片段+去 utm_*），返回前经 `_dedupe_news_titles`@1670 标题级去重（同口径归一标题键，title_zh→title_en→title，同标题镜像只留首条）；words 视图不经过这里，不受影响） |
-| 1695–1852 | 后台预热线程 + 跨进程锁 + 定点刷新（`_cross_proc_lock`@1707 / `_persist_to_history`@1725 / `_dims_refresh_once`@1744 起始 `_llm_cycle_reset` / `_seconds_until_next_refresh_hour`@1796 / `start_background_dims_refresher`@1843） |
+| 81–159 | 文件缓存（`cache/dims.json` 81–159；**news 内容池 `NEWS_STREAM_CACHE_FILE`@93 = cache/news.json，2026-09-07 P0**） |
+| 160–290 | **news 视图内容池（P0 性能修复）**：`_load_news_pool_file`@167（mtime 感知读盘）/`_build_news_pool_neutral`@196（dims.json 当轮 + news.db 历史库现装配，写盘与冷启动回退共用同一实现）/`_write_news_pool_file`@250（刷新锁内写 tmp + os.replace）/`_news_pool_cards`@278（池文件优先、缺失回退现装配，请求路径零 DB 读） |
+| 291–487 | RSS 源定义 `RSS_SOURCES`@299（36 源）+ RSS 解析 + 抓取（`fetch_all_rss`@473） |
+| 488–797 | 社区热度增强（HN/Reddit/复合分/趋势分） |
+| 798–1614 | LLM 批量打标（807–835 异常类：`_LLMTransientError`@807 / `_LLMAccountRateLimit`@811 / `_LLMQualityError`@816（2026-09-03 质量失败类）；836–1041 故障转移状态机：`_llm_quality_failure`@906（质量/可用性分离高阈值熔断：连续 6/周期累计 12 才换档）+ `_llm_cycle_reset`@957（每轮刷新起始复位链首）+ `_llm_apply_output`@1004 逐条校验+回填（好条目保留、坏条目记 `_llm_fail` 原因）；1099–1287 **`_USER_PREFIX`@1116 user 前缀模块常量**（keywords/翻译规则全在这，稳定前缀缓存单元；2026-09-04 需求 4：中文标题里的公司/机构/产品专名保持中文原词，仅标题原文含官方英文名/英文拼写时才用英文，禁拼音化/自译）+ `_llm_classify_batch`@1149（2026-09-02 逐条校验 + 2026-09-03 坏条目「二次提示」修正 repair pass（LLM_REPAIR_ROUNDS 轮，带失败原因喂回当前档）+ 质量失败不快速换档、429/5xx/402 才换档）；1288–1400 `_item_missing_llm_out`@1388 + `enrich_with_llm`@1401（质量失败不重试、provider 故障才收进末尾重试）；1401–1614 **`_TRANSLATE_SYS_MSG`@1465**（热词翻译 system 提示词常量；2026-09-04 需求 4：公司/机构/产品专名必须用官方英文名（如 创通联达→Thundercomm、中科创达→ThunderSoft）、无官方英文名的中文专名保留中文原词、禁拼音音译/自造英文（反例 Qujing Tech 钉在提示词里））+ `_translate_terms`@1475 + `explain_terms`@1525 热词解释生成/优化） |
+| 1615–1794 | 顶层聚合 + 逐条流去重（`_to_card`@1616 / `_fetch_dims_raw`@1651 / `_project_card`@1691 / `get_dims`@1716 / `get_news_cards`@1750——2026-09-04 需求 1：卡 id 按 `text_utils.normalize_url_key` 归一到与历史库存储键同口径（实体解码+去片段+去 utm_*），返回前经 `_dedupe_news_titles`@1770 标题级去重（同口径归一标题键，title_zh→title_en→title，同标题镜像只留首条）；words 视图不经过这里，不受影响；**2026-09-07 P0**：get_news_cards 改读 `cache/news.json` 内容池（见 160–290 分区），不再每次请求扫 news.db 现装配——修复 `/api/stream?view=news` 线上 7-21s |
+| 1795–1956 | 后台预热线程 + 跨进程锁 + 定点刷新（`_cross_proc_lock`@1807 / `_persist_to_history`@1825 / `_dims_refresh_once`@1844 起始 `_llm_cycle_reset`、尾部 `_write_news_pool_file`（2026-09-07 P0）/ `_seconds_until_next_refresh_hour`@1901 / `_bg_dims_refresher`@1925 / `start_background_dims_refresher`@1948） |
 
 ### 公开函数（被 app.py 调用）
 | 函数 | 行号 | 职责 |
 |------|------|------|
-| `get_dims(dimension=None, lang="zh")` | 1577 | 维度热词分组（只读缓存）；`/api/dims` |
-| `get_news_cards(lang="zh")` | 1611 | news 卡列表（读缓存 + 历史库，id 归一 + `_dedupe_news_titles`@1670 标题级去重）；`/api/stream?view=news` |
-| `enrich_with_signals(items)` | 628 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
-| `start_background_dims_refresher()` | 1843 | 启动后台预热线程（app.py 启动时调） |
+| `get_dims(dimension=None, lang="zh")` | 1716 | 维度热词分组（只读缓存）；`/api/dims` |
+| `get_news_cards(lang="zh")` | 1750 | news 卡列表（读 `cache/news.json` 内容池 + 语言投影；**2026-09-07 P0：请求路径零 DB 读**，池缺失回退现装配；池内已做 id url 归一 + `_dedupe_news_titles` 标题级去重）；`/api/stream?view=news` |
+| `enrich_with_signals(items)` | 767 | 给事件卡加 HN/Reddit/复合分（公开，可外部调） |
+| `start_background_dims_refresher()` | 1948 | 启动后台预热线程（app.py 启动时调） |
 
 ### 内部函数（按分区归组）
-- 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`
+- 缓存：`_load_file_cache`/`_save_file_cache`/`_file_cache_get`/`_file_cache_set`（dims.json）+ news 内容池 `_load_news_pool_file`/`_build_news_pool_neutral`/`_write_news_pool_file`/`_news_pool_cards`（cache/news.json，2026-09-07 P0）
 - RSS：`_norm_date`/`_strip_cdata`/`_parse_rss`/`fetch_one_rss`/`fetch_all_rss`
 - 热度：`_has_cjk`/`_clean_title`/`_hn_points`/`_reddit_points`/`_buzz`/`_age_hours`/`_time_decay`/`_composite_score`/`_trend_score`
 - LLM：`_active_llm`/`_llm_success`/`_llm_failure`（可用性失败状态机）/`_llm_quality_failure`（质量失败高阈值熔断）/`_llm_skip_provider`/`_llm_cycle_reset`（每轮刷新复位回链首）/`_llm_classify_batch`/`_llm_apply_output`（逐条校验回填）/`enrich_with_llm`/`_translate_terms`/`explain_terms`（热词双语解释生成/优化，供 terms.refresh_words 的 term_explainer 回调）/`_LLMTransientError`/`_LLMAccountRateLimit`/`_LLMQualityError`（异常类）/`_strip_llm_title_suffix`（剥翻译标题尾部 `| 来源` 噪音）/`_is_mixed_translation`（硬编码中英混杂检查，issue 11：中文翻译残留 CJK、或英文翻译 ASCII 字母占比 >60% 且长度 >15 → 该条按坏计）；`_llm_classify_batch` 的 payload 会经 `config.llm_reasoning_params` 给 GLM-5.2+ 附 `reasoning_effort`（默认 low 降思考强度），提示词已加防回显/非空/JSON-only/完整翻译禁中英混杂规则，keywords 抽取限高价值实体/概念（禁泛化词）；**需求 5**：LLM 抽词结果回填前过 `terms_mod.case_match_original` 硬编码大小写校验——关键词必须与原文大小写完全一致；**2026-09-02（DeepSeek 用量事故修复）**：逐条校验回填 + 每轮复位链首 + HTTP 402 归账户级限流；**2026-09-03（DeepSeek 费用仍异常修复）**：质量失败（混杂/缺翻译/JSON）与 provider 故障（429/5xx/超时）分离计数——零星 1-2/6 混杂不再快速换档（换档救不了质量，只把账单抬到 3 倍价档），坏条目经「二次提示」（带失败原因喂回当前档，`LLM_REPAIR_ROUNDS` 轮）修正，GLM-5.3 只要在线就整轮主扛、DeepSeek 只兜底；**需求 4（2026-09-04，中文公司名英译优化）**：`_USER_PREFIX`（@977）keywords 规则要求中文标题里的公司/机构/产品专名保持中文原词（仅当标题原文含官方英文名/英文拼写时才用英文，严禁拼音化/自译成英文关键词）；`_translate_terms` 的 system 提示词（`_TRANSLATE_SYS_MSG`@1326）要求公司/机构/产品专名必须用官方英文名（如 创通联达→Thundercomm、中科创达→ThunderSoft）、无官方英文名的中文专名保留中文原词（禁拼音音译/自造英文，反例 Qujing Tech 钉在提示词里）——与 terms `_COMPANY_EN_GLOSSARY`（terms.py:939）词典优先配合，词典未收录词才走 LLM 兜底
 - 聚合：`_to_card`/`_fetch_dims_raw`/`_project_card`
-- 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`（每轮起始 `_llm_cycle_reset`）/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
+- 后台：`_cross_proc_lock`/`_persist_to_history`/`_dims_refresh_once`（每轮起始 `_llm_cycle_reset`，落库后写 news 内容池）/`_seconds_until_next_refresh_hour`/`_bg_dims_refresher`
 
 ### 模块级常量
-`RSS_SOURCES`（36 源，`dims.py:160`，含 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`LLM_QUALITY_FAILOVER_THRESHOLD`/`LLM_QUALITY_CYCLE_ESCAPE`/`LLM_REPAIR_ROUNDS`（自 config 导入）、`_LLM_ACTIVE_IDX`/`_LLM_FAILS`/`_LLM_CYCLE_FAILS`/`_LLM_QUALITY_FAILS`/`_LLM_QUALITY_CYCLE_FAILS`（故障转移进程级状态：可用性与质量分开计数，每轮 `_llm_cycle_reset` 复位）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）、`_USER_PREFIX`（分类/抽词 user 前缀常量 @976，逐字稳定构成 LLM 缓存前缀单元）、`_TRANSLATE_SYS_MSG`（热词翻译 system 提示词常量 @1326）。
+`RSS_SOURCES`（36 源，`dims.py:299`，含 4 个 Google News 关键词源：Anthropic/Meta AI/OpenClaw/Open Source AI）、`NEWS_STREAM_CACHE_FILE`（`dims.py:93`，news 内容池文件 cache/news.json，2026-09-07 P0）、`PER_SOURCE_LIMIT=6`、`DIMS_CACHE_TTL`、`DIMS_REFRESH_HOURS`、`LLM_BATCH=12`、`LLM_CHAIN`/`LLM_FAILOVER_THRESHOLD`/`LLM_QUALITY_FAILOVER_THRESHOLD`/`LLM_QUALITY_CYCLE_ESCAPE`/`LLM_REPAIR_ROUNDS`（自 config 导入）、`_LLM_ACTIVE_IDX`/`_LLM_FAILS`/`_LLM_CYCLE_FAILS`/`_LLM_QUALITY_FAILS`/`_LLM_QUALITY_CYCLE_FAILS`（故障转移进程级状态：可用性与质量分开计数，每轮 `_llm_cycle_reset` 复位）、`DIMENSIONS`（维度枚举，被 `/api/stream` 引用）、`_USER_PREFIX`（分类/抽词 user 前缀常量 @1115，逐字稳定构成 LLM 缓存前缀单元）、`_TRANSLATE_SYS_MSG`（热词翻译 system 提示词常量 @1465）。
 
 ---
 
@@ -244,6 +247,19 @@
 
 ---
 
+## ratelimit.py  （87 行）— 进程内固定窗口限流（2026-09-07 P1，新）
+
+纯 stdlib 的按 `(bucket, key)` 固定窗口计数限流，被 app.py 用于两个公开/半公开端点：
+`/api/event`（埋点上报，`EVENT_RATE_LIMIT`/分/IP）与 `/admin/login`（登录尝试，
+`LOGIN_RATE_LIMIT`/15 分/IP）；超限由 `app._rate_limit_deny` 返回 429 + Retry-After。
+
+- 公开函数：`allow(bucket, key, limit, window)` → `(allowed, retry_after)`（`ratelimit.py:47`，`limit<=0`/空 key 恒放行）；`reset()`@84（测试用）。
+- 线程安全（进程内锁）；多 worker 各自计数（单 IP 刷量已被收敛）。
+- 内存有界 fail-open：全表 `_MAX_KEYS=4096`@26 满后新 key 放行，防伪造 X-Forwarded-For 打爆内存；过期条目惰性清理。
+- 测试 `tests/test_rate_limit.py`（7 用例）。
+
+---
+
 ## stream_utils.py  （70 行）— 统一信息流口径辅助
 
 `card_identity`、`dedupe_cards`、`dimension_members`、`dimension_counts`、`dimension_list` 为后端 `/api/stream` 与测试共用的卡片去重、维度成员和计数规则；不依赖外部库。
@@ -258,4 +274,4 @@
 
 ## version.py  （23 行）— 版本号
 - `_read_version()` (10) 读 `VERSION` 文件；`__version__` (22) / `version` 别名。
-- 单一真相源：同目录 `VERSION` 文件（当前 `1.10.1`）。
+- 单一真相源：同目录 `VERSION` 文件（当前 `1.11.0`，2026-09-07 release：MVP P0~P2）。

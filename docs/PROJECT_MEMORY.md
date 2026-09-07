@@ -25,6 +25,7 @@
 | [`aitrendwatch-deploy-key`](memory/aitrendwatch-deploy-key.md) | reference | 生产主机 SSH、部署、版本和运行时注意事项 |
 | [`aitrendwatch-test-host`](memory/aitrendwatch-test-host.md) | reference | 测试主机 SSH、部署、挂载和公网访问 |
 | [`aitrendwatch-regression-checklist`](memory/aitrendwatch-regression-checklist.md) | reference | **上线前必过**的核心回归测试清单（自动化 pytest + 手工/线上逐项验证） |
+| [`aitrendwatch-mvp-p0p2-ops`](memory/aitrendwatch-mvp-p0p2-ops.md) | reference | MVP P0~P2 修复收尾：宿主侧上线步骤（nginx 安全头/CONTACT_EMAIL/UptimeRobot/SQLite 备份 cron）+ 验证 |
 | [`git-merge-doc-line-refs`](memory/git-merge-doc-line-refs.md) | feedback | 多 worktree 合并后的索引行号复核 |
 
 ## 按任务读取
@@ -33,6 +34,7 @@
 - 改后台刷新、gunicorn、锁、缓存扫描或小内存部署：读 `aitrendwatch-server-stability`。
 - 生产部署：读 `aitrendwatch-deploy-key`。
 - **上线生产前回归**：读 `aitrendwatch-regression-checklist`，逐项过清单（每次上线必做）。
+- 处理 MVP 评估 P0~P2 清单、或要补 nginx 安全头/隐私页/限流/备份 cron：读 `aitrendwatch-mvp-p0p2-ops`。
 - 测试机部署或容器挂载：读 `aitrendwatch-test-host`。
 - 合并多个改动同一模块的分支：读 `git-merge-doc-line-refs`。
 

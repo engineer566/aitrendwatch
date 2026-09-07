@@ -31,6 +31,7 @@ import tracker
 import dims
 import config
 import store
+import ratelimit
 import text_utils
 from stream_utils import (card_identity as _stream_card_identity,
                           dedupe_cards as _dedupe_stream_cards,
@@ -351,6 +352,8 @@ SITE_DESC_EN = "AI trend aggregation · Track HuggingFace model trends, related 
 
 # 服务条款最后更新日期（修改条款时同步更新）。
 SITE_TERMS_UPDATED = "2026-08-26"
+# 隐私政策页最后更新日期（2026-09-07 P1：独立 /privacy 页补齐运营合规）。
+SITE_PRIVACY_UPDATED = "2026-09-07"
 
 
 
@@ -614,6 +617,14 @@ def _client_country(ip):
     return store.geoip_country(ip)
 
 
+def _rate_limit_deny(retry_after):
+    """限流 429 响应（JSON + Retry-After）。调用方已按 (bucket, IP) 判定超限。"""
+    resp = jsonify({"ok": False, "error": "请求过于频繁，请稍后重试"})
+    resp.status_code = 429
+    resp.headers["Retry-After"] = str(retry_after)
+    return resp
+
+
 def get_source(source):
     """带缓存的单源抓取，超时快速失败"""
     if source not in SOURCES:
@@ -847,6 +858,29 @@ def terms():
                            updated_at=SITE_TERMS_UPDATED)
 
 
+@app.route("/privacy")
+def privacy():
+    """隐私政策页（中英双语，SEO 可索引；P1 2026-09-07 补齐运营/变现合规）。
+
+    独立于 /terms（条款页内嵌的隐私节是摘要），覆盖自建埋点（IP/GeoIP/
+    session_id/事件流/赞助位曝光点击）与 Google Analytics、第三方广告 Cookie、
+    本地存储偏好等实际数据处理；AdSense 审核与 GDPR 义务要求的页面入口。
+    单页内嵌双语、canonical 固定裸 URL /privacy（与 /terms 同构）。
+    """
+    return render_template("privacy.html", site_name=config.SITE_NAME,
+                           site_desc="Privacy Policy / 隐私政策",
+                           base_url=_base_url(), canonical=_abs("/privacy"),
+                           seo_enabled=_seo_enabled(),
+                           contact_email=config.CONTACT_EMAIL,
+                           updated_at=SITE_PRIVACY_UPDATED)
+
+
+@app.route("/privacy-policy")
+def privacy_policy_redirect():
+    """常见拼写别名 → /privacy（301）。AdSense/审核方可能先试 /privacy-policy。"""
+    return redirect("/privacy", code=301)
+
+
 @app.errorhandler(404)
 def not_found(e):
     """404 → 简单 HTML（noindex），避免爬虫索引不存在的 term 详情页。"""
@@ -859,6 +893,32 @@ def not_found(e):
         "<p><a href=\"/\">← 返回首页</a></p></body></html>"
     )
     return Response(html, status=404, mimetype="text/html; charset=utf-8")
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    """500 → 记录完整堆栈 + 简洁降级页/JSON（P2：此前只有 404 handler，
+    未捕获异常会裸露 Flask/nginx 默认错误页）。
+
+    API 请求（/api/* 或 Accept: application/json）返 JSON {ok:false}，
+    页面请求返 noindex HTML，避免爬虫索引错误页。
+    """
+    app.logger.exception("Internal Server Error: %s", e)
+    wants_json = request.path.startswith("/api/") or \
+        "application/json" in (request.headers.get("Accept") or "")
+    if wants_json:
+        resp = jsonify({"ok": False, "error": "服务器内部错误，请稍后重试"})
+        resp.status_code = 500
+        return resp
+    html = (
+        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
+        "<meta name=\"robots\" content=\"noindex,nofollow\">"
+        "<title>500 · 服务器内部错误</title></head>"
+        "<body style=\"font-family:sans-serif;text-align:center;padding:60px\">"
+        "<h1>500</h1><p>服务器开小差了，请稍后刷新重试。</p>"
+        "<p><a href=\"/\">← 返回首页</a></p></body></html>"
+    )
+    return Response(html, status=500, mimetype="text/html; charset=utf-8")
 
 
 @app.route("/api/dims")
@@ -1416,8 +1476,9 @@ def sitemap():
     if base:
         urls.append(f"{base}/?lang=en")
         if _seo_enabled():
-            # 服务条款页（单页双语，裸 URL）+ HF 模型榜（常驻索引，en 显式变体）
+            # 服务条款/隐私政策页（均单页双语，裸 URL）+ HF 模型榜（常驻索引，en 显式变体）
             urls.append(f"{base}/terms")
+            urls.append(f"{base}/privacy")
             urls.append(f"{base}/hf?lang=en")
             for slug in _sitemap_terms():
                 if not slug:
@@ -1578,6 +1639,13 @@ def admin_login():
     if not config.ADMIN_TOKEN:
         abort(404)
     if request.method == "POST":
+        # 限流：每 IP 每 LOGIN_RATE_WINDOW 最多 LOGIN_RATE_LIMIT 次尝试
+        # （防暴力猜 ADMIN_TOKEN；含成功尝试，量级远低于阈值）。
+        allowed, retry_after = ratelimit.allow(
+            "admin_login", _client_ip(),
+            config.LOGIN_RATE_LIMIT, config.LOGIN_RATE_WINDOW)
+        if not allowed:
+            return _rate_limit_deny(retry_after)
         token = (request.form.get("token") or "").strip()
         if token and hmac.compare_digest(token, config.ADMIN_TOKEN):
             session["admin_token"] = token
@@ -1712,6 +1780,12 @@ def api_event():
     except Exception:
         body = {}
     cip = _client_ip()
+    # 限流：每 IP 每 EVENT_RATE_WINDOW 最多 EVENT_RATE_LIMIT 次上报
+    # （防刷量把 SQLite/事件表撑爆；浏览器会话远低于阈值）。
+    allowed, retry_after = ratelimit.allow(
+        "api_event", cip, config.EVENT_RATE_LIMIT, config.EVENT_RATE_WINDOW)
+    if not allowed:
+        return _rate_limit_deny(retry_after)
     cc = _client_country(cip)
     sid = (body.get("session_id") or "").strip()[:64]
     path = (body.get("path") or request.path).strip()[:200]

@@ -145,6 +145,17 @@ def _as_bool(v, default=True):
 
 ANALYTICS_ENABLED = _as_bool(os.environ.get("ANALYTICS_ENABLED", "true"))
 
+# ---------- 公开端点限流（MVP P1）----------
+# 进程内固定窗口计数（ratelimit.py），按客户端 IP（_client_ip，信任自建 Nginx
+# 的 X-Forwarded-For）限流。多 worker 各自计数；重启清零——对防单 IP 刷量足够。
+# /api/event：埋点上报，防刷量撑爆 SQLite。浏览器单次页面加载+交互上报通常
+# <50 条/会话，300/分/IP 已很宽裕；批量模式单请求最多 50 条。
+EVENT_RATE_LIMIT = int(os.environ.get("EVENT_RATE_LIMIT", "300") or 300)
+EVENT_RATE_WINDOW = 60  # 秒
+# /admin/login：失败次数限制（POST 尝试计数），防暴力猜 ADMIN_TOKEN。
+LOGIN_RATE_LIMIT = int(os.environ.get("LOGIN_RATE_LIMIT", "5") or 5)
+LOGIN_RATE_WINDOW = 900  # 15 分钟
+
 # ---------- SEO ----------
 # 关闭后不输出 canonical/OG/JSON-LD，robots 禁止索引，sitemap 仅含首页。
 SEO_ENABLED = _as_bool(os.environ.get("SEO_ENABLED", "true"))

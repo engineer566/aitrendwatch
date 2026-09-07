@@ -11,35 +11,39 @@ AI 热点聚合单页应用：Flask 后端聚合 36 个 RSS 源（含 4 个 Goog
 
 ```
 aitrendwatch/
-├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1755 行；2026-09-05 SEO：词条页 indexable 可索引门槛 + hreflang 传参 + sitemap 主语言 en + 热度口径 desc；2026-09-05：_hf_models_for/_word_detail 社区链接按页面语言分流）
-├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度 + 质量/可用性分离阈值 + 二次提示轮数 + SEO 词条可索引阈值 TERM_INDEX_MIN_NEWS/HOT（186 行）
-├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1852 行；2026-09-04 需求 1：逐条流卡 id url 归一 + 标题级去重；需求 4：中文标题公司专名关键词保持中文原词、热词翻译提示词禁拼音化/自造英文——两段提示词提升为模块常量 _USER_PREFIX/_TRANSLATE_SYS_MSG）
+├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1829 行；2026-09-05 SEO：词条页 indexable 可索引门槛 + hreflang 传参 + sitemap 主语言 en + 热度口径 desc；2026-09-05：_hf_models_for/_word_detail 社区链接按页面语言分流；2026-09-07 P1/P2：/privacy 双语页 + /privacy-policy 301 + 500 errorhandler + /api/event 与 /admin/login 按 IP 限流 + sitemap 收录 /privacy）
+├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度 + 质量/可用性分离阈值 + 二次提示轮数 + SEO 词条可索引阈值 TERM_INDEX_MIN_NEWS/HOT + 2026-09-07 P1 公开端点限流 EVENT_RATE_LIMIT/LOGIN_RATE_LIMIT（197 行）
+├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1956 行；2026-09-04 需求 1：逐条流卡 id url 归一 + 标题级去重；需求 4：中文标题公司专名关键词保持中文原词、热词翻译提示词禁拼音化/自造英文——两段提示词提升为模块常量 _USER_PREFIX/_TRANSLATE_SYS_MSG；2026-09-07 P0：news 视图内容池 cache/news.json 预装配——后台刷新后写池，get_news_cards 读池零 DB 读，修复 /api/stream?view=news 7-21s）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（621 行；2026-09-05：community_links 按语言分流 zh 知乎/B站/GitHub（中文名）en YouTube/Reddit/X/GitHub + localize_model_cards 读取时投影）
 ├── terms.py        # 词粒度聚合层：热词池归并 + 三榜打分 + 周期快照 + 词典回填 + 词条解释（动态词典：词池即词典，2336 行，新增；rise 用近 7 天滑动窗口报道数环比；需求 5：抽词关键词经 case_match_original 对齐原文大小写；需求 5 改进：词典外词 display 优先原文表面形态（WorkBuddy 不再显示 Workbuddy），词典权威词存量脏 display 随刷新回归词典规则（Saas→SaaS）；2026-09-02：display_en 增量翻译上限 TRANSLATE_BATCH_MAX_WORDS；2026-09-04 需求 1：_title_key 去重键剥标点加严（委托 text_utils.normalized_title_key），当轮 url 归一到存储键同口径（normalize_url_key）；需求 2：分隔符孪生 canonical 归并——normalize_term 折叠词典治理紧凑孪生（hugging-face→huggingface），refresh_words 按去 '-' 紧凑分组归并自由孪生（ai-agent/aiagent），删残留行/迁快照，榜单无同词两行；需求 4：中文公司/机构专名 display_en 由 _COMPANY_EN_GLOSSARY 官方英名词典确定性映射（词典优先不进 LLM 批次，存量拼音脏值随刷新回归），未收录中文专名不拼音化走 LLM 兜底；2026-09-05 SEO：term_row_indexable 词条可索引判定（sitemap/详情页共用）、get_term_trend 按日聚合近 7 天活跃度趋势、list_terms_for_sitemap 过滤达标词）
 ├── store.py        # SQLite：赞助位 + 访问统计 + GeoIP + 用户行为事件（826 行；埋点白名单含 hf_entry_click（2026-09-05 需求 1 HF 入口点击）；record_search_query 过滤含花括号的模板占位符查询——首页 JSON-LD SearchAction target 被爬虫字面量抓取 {search_term_string} 不入库，防后台搜索统计/建议污染）
 ├── news_store.py   # SQLite：事件卡历史库（upsert/list_history，含 keywords 列，落库前 canonical 归一 + churn 防护；2026-09-04 需求 1：url 主键实体解码+去片段+去 utm 归一 + 批次去重 + 存量孪生行自愈删除）（574 行）
+├── ratelimit.py    # 进程内固定窗口按 IP 限流（2026-09-07 P1 新增：/api/event 与 /admin/login 429；纯 stdlib，表满 fail-open 防内存 DoS）（87 行）
 ├── stream_utils.py # 统一信息流卡片去重与维度计数规则（70 行）
 ├── text_utils.py   # RSS 文本/URL HTML entity 解码 + 2026-09-04 需求 1 归一键（url/标题去重键唯一实现源）（147 行）
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
-├── VERSION         # 版本号单一真相源（1.10.1）
-├── templates/      # 8 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1660 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 开源第三项跨页跳转 /hf（板块入口语义，↗ 角标；2026-09-05 需求 1 迁入 seg、需求 2 改名，header 独立 HF 按钮已移除），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
+├── VERSION         # 版本号单一真相源（1.11.0）
+├── templates/      # 9 个 Jinja2 模板
+│   ├── index.html         # 首页主单页（1662 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 开源第三项跨页跳转 /hf（板块入口语义，↗ 角标；2026-09-05 需求 1 迁入 seg、需求 2 改名，header 独立 HF 按钮已移除），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
 │   ├── hf.html            # HuggingFace 独立排序页（458 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；页首三视图镜像导航 view-nav（热词/逐条新闻链回首页对应视图，「开源」入口 active，2026-09-05 需求 1 建、需求 2 改名；替换原「← 返回首页」按钮）；hreflang zh↔en）
 │   ├── terms.html         # 服务条款页（383 行）
+│   ├── privacy.html       # 隐私政策页（2026-09-07 P1 新增：中英双语，覆盖自建埋点 IP/GeoIP/session_id + GA/广告 Cookie + 权利联系；canonical 裸 URL；联系位用 CONTACT_EMAIL）（363 行）
 │   ├── term_detail.html   # 通用热词聚合页（424 行：相关报道聚合 + HF 区块 + 词解释 + 近 7 天活跃度趋势迷你图 + 热度口径脚注 + hreflang + indexable 门槛 noindex 分支；2026-09-05 SEO）
 │   ├── search.html        # 搜索结果页（583 行：含热词命中卡区）
 │   ├── admin.html         # 赞助位管理后台（353 行，已废弃，合并到 monitor.html）
 │   ├── admin_login.html   # 管理员登录（68 行）
 │   └── monitor.html       # 统一管理后台：流量监控 + 赞助位管理 Tab 切换（1052 行）
 ├── data/           # SQLite 库（sponsors.db, news.db）+ GeoLite2（运行产物，.gitkeep 占位）
-├── cache/          # 文件缓存产物（terms.json, dims.json, words.json + .refresh.lock）
+├── cache/          # 文件缓存产物（terms.json, dims.json, words.json, news.json（2026-09-07 P0）+ .refresh.lock）
 ├── history/        # 开发任务备忘（非代码）
 ├── skills/         # 项目技能（aitrendwatch-task-workflow：需求开发闭环 SKILL.md + 合并清理脚本）
+├── scripts/         # 运维/同步小工具（backup_db.py——2026-09-07 P2 SQLite 在线备份+轮转；sync_terms_canonical.py）
 ├── docs/           # 代码索引 + Codex 项目记忆
 │   ├── PROJECT_MEMORY.md # 迁移来的项目记忆索引
 │   ├── mvp-assessment-20260906.md # MVP 全面评估（2026-09-06 实测：news 视图慢 P0、隐私政策/安全头/限流/监控/备份清单）
-│   └── memory/           # 6 条按主题拆分的记忆条目（含上线前回归清单）
+│   └── memory/           # 7 条按主题拆分的记忆条目（含上线前回归清单 + mvp-p0p2-ops 收尾清单）
 ├── vendor/         # ⚠️ vendored 依赖（flask/gunicorn/requests…），勿索引勿读
+├── deploy/          # 部署产物（2026-09-07 P1 新增：nginx-security-headers.conf 反代安全头 snippet，宿主 nginx include 用）
 ├── requirements.txt
 ├── Dockerfile / docker-compose.yml / docker-compose.prod.yml
 ├── .env.example    # 环境变量样板
@@ -60,15 +64,16 @@ aitrendwatch/
 
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
-| `app.py` | 1755 | Flask 入口、路由、8 直连源抓取、词详情装配 + 2026-09-05 SEO（词条 indexable 门槛传参、hreflang zh↔en、sitemap 主语言 en）+ 社区链接语言分流（_hf_models_for/_word_detail） | 40 个路由 view 函数（含 `admin_sponsors_list`）+ `_word_detail` + `_explain_fallback` + `_hf_models_for` | tracker, dims, terms, config, store, stream_utils, text_utils |
-| `config.py` | 186 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` + SEO 词条可索引阈值 `TERM_INDEX_MIN_NEWS`/`TERM_INDEX_MIN_HOT` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
-| `dims.py` | 1852 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（09-02：链每轮复位/逐条校验/402 账户级；09-03：质量失败与 provider 故障分离 + 坏条目二次提示修正；09-04 需求 1：逐条流 id url 归一 + `_dedupe_news_titles` 标题级去重；需求 4：抽词/翻译提示词规则防中文公司专名拼音化——`_USER_PREFIX`/`_TRANSLATE_SYS_MSG` 模块常量） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, text_utils |
+| `app.py` | 1829 | Flask 入口、路由、8 直连源抓取、词详情装配 + 2026-09-05 SEO（词条 indexable 门槛传参、hreflang zh↔en、sitemap 主语言 en）+ 社区链接语言分流（_hf_models_for/_word_detail）+ **2026-09-07 P1/P2（/privacy 双语页、/privacy-policy 301、500 errorhandler、/api/event 与 /admin/login 按 IP 限流）** | 39 个路由 view 函数 + 404/500 两个 errorhandler（`admin_sponsors_list` 等，见 api_routes.md）+ `_word_detail` + `_explain_fallback` + `_hf_models_for` + `_rate_limit_deny` | tracker, dims, terms, config, store, ratelimit, stream_utils, text_utils |
+| `config.py` | 197 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` + SEO 词条可索引阈值 `TERM_INDEX_MIN_NEWS`/`TERM_INDEX_MIN_HOT` + 2026-09-07 P1 公开端点限流 `EVENT_RATE_LIMIT`/`LOGIN_RATE_LIMIT` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
+| `dims.py` | 1956 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（09-02：链每轮复位/逐条校验/402 账户级；09-03：质量失败与 provider 故障分离 + 坏条目二次提示修正；09-04 需求 1：逐条流 id url 归一 + `_dedupe_news_titles` 标题级去重；需求 4：抽词/翻译提示词规则防中文公司专名拼音化——`_USER_PREFIX`/`_TRANSLATE_SYS_MSG` 模块常量；**2026-09-07 P0：news 视图内容池 `cache/news.json` 预装配，请求路径零 DB 读**） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, news_store, text_utils |
 | `tracker.py` | 621 | HF 热词 + arXiv 论文（词池数据源）+ 社区链接语言分流（community_links/localize_model_cards） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
 | `terms.py` | 2336 | 词粒度聚合：热词池归并 + 三榜打分 + 快照 + 词典回填 + 动态解释维护（词池即词典）+ 热窗新鲜度加权 + 关键词大小写校验 + 词典外词 display 保留原文大小写（词典权威词存量脏值随刷新回归词典规则）+ 需求 2：分隔符孪生 canonical 归并（normalize 折叠词典治理紧凑孪生 hugging-face→huggingface；refresh 按去 '-' 紧凑分组归并自由孪生 ai-agent/aiagent，删残留行/迁快照，榜单无同词两行）+ 需求 1：`_title_key` 剥标点加严（委托 `text_utils.normalized_title_key`）、当轮 url 归一（`normalize_url_key`）+ 需求 4：中文公司/机构专名官方英文名词典优先（`_COMPANY_EN_GLOSSARY`：display_en 确定性映射、不进 LLM 批次、存量拼音脏值随刷新回归；未收录专名不拼音化）+ 2026-09-05 SEO：`term_row_indexable` 可索引判定 + `get_term_trend` 快照按日聚合趋势 + `list_terms_for_sitemap` 过滤达标词 | `refresh_words`, `get_word_cards`, `get_term_row`, `get_term_explanation`, `get_term_news`, `get_term_trend`, `term_row_indexable`, `list_terms_for_sitemap`, `backfill_history`, `normalize_term`, `extract_keywords_dict`, `case_match_original` | config, sqlite3, news_store, text_utils |
 | `store.py` | 826 | 赞助位/统计/GeoIP/用户行为事件 SQLite | `list_slots`, `upsert_slot`, `record_visit`, `monitor_stats`, `geoip_country`, `record_event`, `record_events_batch`, `event_stats` | config, sqlite3 |
 | `news_store.py` | 574 | 事件卡历史库 SQLite（url 归一键主键 + 批次去重 + 存量孪生行自愈删除 + keywords 列 + churn 防护） | `upsert_cards`, `list_history_cards`, `count_history`, `search_history` | config, sqlite3, text_utils |
 | `stream_utils.py` | 70 | 统一信息流卡片身份、去重、维度成员与计数 | `card_identity`, `dedupe_cards`, `dimension_members`, `dimension_counts`, `dimension_list` | — |
 | `text_utils.py` | 147 | 文本有界双层解码、URL 单层解码与危险 scheme 拦截 + 需求 1 归一键（`normalize_url_key` url 键 / `normalized_title_key` 标题键） | `decode_html_entities`, `decode_url_entities`, `normalize_url_key`, `normalized_title_key` | — |
+| `ratelimit.py` | 87 | **2026-09-07 P1** 进程内固定窗口按 IP 限流（表满 fail-open 防内存 DoS） | `allow`, `reset` | threading, time |
 | `version.py` | 23 | 版本号 | `__version__` | pathlib |
 
 ## 按任务跳转表
@@ -88,9 +93,9 @@ aitrendwatch/
 ## L2 索引清单
 
 - [architecture.md](index/architecture.md) — 模块依赖图、请求生命周期、后台预热、缓存层级
-- [api_routes.md](index/api_routes.md) — 39 条路由全表（路径/方法/函数/行号/分组）
-- [modules.md](index/modules.md) — 9 个 Python 模块函数索引（签名/行号/职责/分区）
-- [frontend.md](index/frontend.md) — 8 个模板索引（用途/区块/行号/API 引用）
+- [api_routes.md](index/api_routes.md) — 41 条全表（39 路由 + 404/500 errorhandler，路径/方法/函数/行号/分组）
+- [modules.md](index/modules.md) — 10 个 Python 模块函数索引（签名/行号/职责/分区，2026-09-07 增 ratelimit.py）
+- [frontend.md](index/frontend.md) — 9 个模板索引（用途/区块/行号/API 引用，2026-09-07 增 privacy.html）
 - [data_flow.md](index/data_flow.md) — 外部数据源、SQLite schema、缓存产物、环境变量
 
 ## Agent 使用约定

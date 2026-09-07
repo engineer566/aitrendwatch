@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>
+// 主题初始化：置于 <head> 最前，先于任何 CSS 与首帧渲染执行；
+// 同时给 <html> 设内联背景/文字色，避免亮色用户「先按暗色渲染再切亮」的加载闪烁
+(function () {
+  const saved = localStorage.getItem("aitw_theme");
+  const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  const theme = saved || sys;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.backgroundColor = theme === "light" ? "#f5f6f8" : "#0f1117";
+  document.documentElement.style.color = theme === "light" ? "#1c2130" : "#e6e8ee";
+})();
+</script>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-J18WEGQ852"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-J18WEGQ852');
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy · {{ site_name }}</title>
+<meta name="description" content="{{ site_name }} Privacy Policy — what we collect (IP, analytics, cookies) and your choices / 隐私政策——我们收集哪些信息（IP、统计、Cookie）以及您的选择">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+{% if seo_enabled %}
+<meta name="robots" content="index,follow">
+{% if canonical %}<link rel="canonical" href="{{ canonical }}">{% endif %}
+<!-- Open Graph -->
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="{{ site_name }}">
+<meta property="og:title" content="Privacy Policy · {{ site_name }}">
+<meta property="og:description" content="{{ site_name }} Privacy Policy — what we collect (IP, analytics, cookies) and your choices">
+<meta property="og:locale" content="en_US">
+{% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png">{% endif %}
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Privacy Policy · {{ site_name }}">
+<meta name="twitter:description" content="{{ site_name }} Privacy Policy — what we collect (IP, analytics, cookies) and your choices">
+{% else %}
+<meta name="robots" content="noindex,nofollow">
+{% endif %}
+<style>
+  :root {
+    --bg: #0f1117; --bg-card: #1a1d27; --bg-hover: #232734; --border: #2a2f3c;
+    --text: #e6e8ee; --text-dim: #8b91a3; --accent: #4f8cff; --accent-2: #ff5d8f;
+    --green: #3ecf8e; --orange: #ffa940; --purple: #a78bfa; --cyan: #22d3ee;
+    --shadow: 0 1px 3px rgba(0,0,0,.3); --radius: 12px;
+  }
+  [data-theme="light"] {
+    --bg: #f5f6f8; --bg-card: #ffffff; --bg-hover: #eef0f4; --border: #e3e6ec;
+    --text: #1c2130; --text-dim: #6b7280; --accent: #3b76e1; --accent-2: #e0457a;
+    --green: #18a568; --orange: #d9820f; --purple: #7c5ce0; --cyan: #0e9db8;
+    --shadow: 0 1px 3px rgba(20,25,40,.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.7;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 12px 24px;
+  }
+  .header-inner { max-width: 860px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+  h1 { font-size: 19px; font-weight: 700; white-space: nowrap;
+       background: linear-gradient(90deg, var(--accent), var(--purple));
+       -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  h1 a { color: inherit; text-decoration: none; }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); }
+  .btn {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 12px; color: var(--text-dim); transition: all .15s; font-size: 13px;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  }
+  .btn:hover { color: var(--text); border-color: var(--accent); }
+  .btn.active { color: var(--accent); border-color: var(--accent); }
+  main { max-width: 860px; margin: 14px auto 40px; padding: 0 24px; }
+  .paper-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px 32px; box-shadow: var(--shadow);
+  }
+  .paper-card h2 { font-size: 22px; margin-bottom: 6px; color: var(--text); }
+  .updated { font-size: 13px; color: var(--text-dim); margin-bottom: 22px; }
+  .lang-switch { margin-bottom: 22px; display: flex; gap: 8px; }
+  .toc { background: color-mix(in srgb, var(--text) 4%, transparent); border-radius: 8px; padding: 14px 18px; margin-bottom: 24px; font-size: 13px; }
+  .toc strong { color: var(--text); display: block; margin-bottom: 6px; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { margin: 3px 0; }
+  .toc a { color: var(--text-dim); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .section { margin-bottom: 22px; }
+  .section h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+  .section p { font-size: 14px; color: var(--text); margin-bottom: 8px; }
+  .section ul { font-size: 14px; color: var(--text); margin: 6px 0 8px; padding-left: 22px; }
+  .section li { margin: 4px 0; }
+  .section a { color: var(--accent); }
+  .section strong { color: var(--text); }
+  .divider { border: none; border-top: 1px dashed var(--border); margin: 28px 0; }
+  footer { text-align: center; padding: 24px; color: var(--text-dim); font-size: 12px; }
+  .footer-link { color: var(--text-dim); text-decoration: none; border-bottom: 1px dashed var(--border); }
+  .footer-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  .hidden { display: none; }
+  @media (max-width: 640px) {
+    header { padding: 10px 16px; }
+    main { padding: 0 16px; }
+    .paper-card { padding: 20px 18px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1>🤖 <a href="/">{{ site_name }}</a></h1>
+    <div class="header-right">
+      <a class="btn" href="/">← Home</a>
+    </div>
+  </div>
+</header>
+
+<main>
+<div class="paper-card">
+
+  <!-- Language switch: English first (default), Chinese second -->
+  <div class="lang-switch">
+    <button class="btn active" id="btn-en" onclick="switchLang('en')">English</button>
+    <button class="btn" id="btn-zh" onclick="switchLang('zh')">中文</button>
+  </div>
+
+  <!-- ============ English version (default, shown first) ============ -->
+  <div id="lang-en">
+    <h2>Privacy Policy</h2>
+    <div class="updated">Last updated: {{ updated_at }}</div>
+
+    <div class="toc">
+      <strong>Contents</strong>
+      <ol>
+        <li><a href="#en-1">Scope</a></li>
+        <li><a href="#en-2">Information We Collect</a></li>
+        <li><a href="#en-3">Cookies &amp; Local Storage</a></li>
+        <li><a href="#en-4">Google Analytics</a></li>
+        <li><a href="#en-5">Advertising &amp; Third-Party Services</a></li>
+        <li><a href="#en-6">How We Use Information</a></li>
+        <li><a href="#en-7">Sharing &amp; Retention</a></li>
+        <li><a href="#en-8">International Data Transfer</a></li>
+        <li><a href="#en-9">Your Choices &amp; Rights</a></li>
+        <li><a href="#en-10">Changes &amp; Contact</a></li>
+      </ol>
+    </div>
+
+    <div class="section" id="en-1">
+      <h3>1. Scope</h3>
+      <p>This Privacy Policy explains how {{ site_name }} ("the Site", "we", "us") collects, uses, and protects information when you visit the Site. It applies to the Site's own analytics and to third-party services integrated into the Site (Google Analytics, advertising networks). The Site is an AI trend aggregation platform: it links to articles, papers, and model pages hosted on third-party websites, and it does not control the privacy practices of those external sources.</p>
+    </div>
+
+    <div class="section" id="en-2">
+      <h3>2. Information We Collect</h3>
+      <p>We collect the following categories of information when you use the Site:</p>
+      <ul>
+        <li><strong>Traffic analytics:</strong> page views, approximate geographic location (country/region inferred from IP), and unique visitor counts, used for the public traffic monitor and operational analysis.</li>
+        <li><strong>Visit logs:</strong> IP address and inferred country for each page view, stored to detect abuse (e.g., excessive automated requests) and to power the monitor dashboard.</li>
+        <li><strong>User behavior events:</strong> when you interact with the Site (view switches, sponsor/ad card clicks, search submissions, HF entry clicks), we may record the event type, a session identifier, the page path, your IP address and country, and the event payload you send. This powers internal statistics.</li>
+        <li><strong>Sponsored placement data:</strong> impressions and clicks on sponsored slots (first-party ad placements), counted in aggregate.</li>
+        <li><strong>Search queries:</strong> the search page and homepage suggestion flow may log the terms you submit for trending-query statistics. Template placeholder queries that never correspond to real user input are filtered out automatically.</li>
+        <li><strong>Newsletter-style preferences:</strong> none — we do not operate an account system or newsletter.</li>
+      </ul>
+      <p>We do <strong>not</strong> require registration, and we do not collect your name, email address, or payment information through the Site itself.</p>
+    </div>
+
+    <div class="section" id="en-3">
+      <h3>3. Cookies &amp; Local Storage</h3>
+      <ul>
+        <li><strong>Local storage (first-party, stays on your device):</strong> the Site stores your language and theme preferences in your browser's localStorage. This data is not transmitted to our servers.</li>
+        <li><strong>Google Analytics cookies:</strong> Google Analytics uses cookies and similar technologies to measure how visitors use the Site. See <a href="https://policies.google.com/technologies/partner-sites" rel="noopener" target="_blank">how Google uses data when you use our partners' sites or apps</a>.</li>
+        <li><strong>Advertising cookies:</strong> third-party advertising networks may set cookies or use device identifiers to serve and measure ads. These cookies are governed by each network's own privacy policy, not by this Policy.</li>
+      </ul>
+      <p>You can delete or block cookies in your browser settings. Blocking cookies may reduce the relevance of ads you see but will not prevent the Site from working.</p>
+    </div>
+
+    <div class="section" id="en-4">
+      <h3>4. Google Analytics</h3>
+      <p>The Site uses Google Analytics (Google Ireland Limited / Google LLC) to understand aggregate usage. Google Analytics collects data such as pages visited, approximate location, browser and device type, and referrer. This data is processed by Google under its own privacy policy. You can opt out of Google Analytics across websites by installing the official browser add-on: <a href="https://tools.google.com/dlpage/gaoptout" rel="noopener" target="_blank">Google Analytics Opt-out Browser Add-on</a>.</p>
+    </div>
+
+    <div class="section" id="en-5">
+      <h3>5. Advertising &amp; Third-Party Services</h3>
+      <p>The Site may display first-party sponsored placements as well as advertisements served by third-party networks (such as Google AdSense or similar). When you click or view such content, the relevant network may collect data under its own policy. The Site itself does not merge advertising network data with your session data beyond aggregate statistics. All external links on the Site (news articles, papers, model pages, community links) point to third-party websites governed by their own terms and privacy policies.</p>
+    </div>
+
+    <div class="section" id="en-6">
+      <h3>6. How We Use Information</h3>
+      <ul>
+        <li>Operating and improving the Site (content freshness, sorting quality, search suggestions).</li>
+        <li>Traffic monitoring and abuse prevention (rate limiting of event reporting and admin endpoints).</li>
+        <li>Producing aggregate statistics for the monitor dashboard and sponsor reporting.</li>
+        <li>Fulfilling legal obligations (e.g., responding to valid copyright takedown notices).</li>
+      </ul>
+      <p>We do <strong>not</strong> use collected data for individualized profiling or targeted advertising beyond what third-party ad networks do under their own policies.</p>
+    </div>
+
+    <div class="section" id="en-7">
+      <h3>7. Sharing &amp; Retention</h3>
+      <ul>
+        <li><strong>No sale of data:</strong> we do not sell your personal information. We do not share raw IP/session data with third parties except processors operating the Site on our behalf.</li>
+        <li><strong>Aggregated statistics:</strong> non-identifiable aggregate metrics may be shown publicly (traffic monitor) or shared in anonymized form.</li>
+        <li><strong>Retention:</strong> visit logs and event records are kept for a limited operational window and then pruned as the database is refreshed; the exact period is defined by the Site's configuration. Search query logs are retained for trending analysis only.</li>
+        <li><strong>Legal requests:</strong> we may disclose information where required by law or to protect the Site's rights and safety.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="en-8">
+      <h3>8. International Data Transfer</h3>
+      <p>The Site is operated outside mainland China and does not intentionally target users in any specific jurisdiction. By using the Site, you acknowledge that data processed through Google Analytics and advertising networks may be transferred to and processed in countries other than your own, in accordance with those providers' policies.</p>
+    </div>
+
+    <div class="section" id="en-9">
+      <h3>9. Your Choices &amp; Rights</h3>
+      <ul>
+        <li>Manage or block cookies and site data through your browser settings.</li>
+        <li>Opt out of Google Analytics with the browser add-on linked in Section 4.</li>
+        <li>Control ad personalization via your Google ad settings.</li>
+        <li>Request access to, correction of, or deletion of personal data we hold about you (see contact below). We respond to such requests where we can identify the data and within the timeframes required by applicable law.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="en-10">
+      <h3>10. Changes &amp; Contact</h3>
+      <p>We may update this Privacy Policy from time to time. Changes take effect upon publication on this page, and the "Last updated" date at the top indicates the latest revision. For any questions or privacy requests, contact us{% if contact_email %} at <strong>{{ contact_email }}</strong>{% endif %}. See also our <a href="/terms">Terms of Service</a>.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ============ 中文版 ============ -->
+  <div id="lang-zh" class="hidden">
+    <h2>隐私政策</h2>
+    <div class="updated">最后更新：{{ updated_at }}</div>
+
+    <div class="toc">
+      <strong>目录</strong>
+      <ol>
+        <li><a href="#zh-1">适用范围</a></li>
+        <li><a href="#zh-2">我们收集的信息</a></li>
+        <li><a href="#zh-3">Cookie 与本地存储</a></li>
+        <li><a href="#zh-4">Google Analytics</a></li>
+        <li><a href="#zh-5">广告与第三方服务</a></li>
+        <li><a href="#zh-6">信息的使用方式</a></li>
+        <li><a href="#zh-7">分享与留存</a></li>
+        <li><a href="#zh-8">跨境数据传输</a></li>
+        <li><a href="#zh-9">您的选择与权利</a></li>
+        <li><a href="#zh-10">变更与联系</a></li>
+      </ol>
+    </div>
+
+    <div class="section" id="zh-1">
+      <h3>1. 适用范围</h3>
+      <p>本隐私政策说明 {{ site_name }}（以下简称「本站」「我们」）在您访问本站时如何收集、使用与保护信息。它适用于本站自建统计以及集成到本站的第三方服务（Google Analytics、广告联盟）。本站是 AI 热点聚合平台：站内链接指向第三方网站托管的文章、论文与模型主页，我们无法控制这些外部信源的隐私做法。</p>
+    </div>
+
+    <div class="section" id="zh-2">
+      <h3>2. 我们收集的信息</h3>
+      <p>您使用本站时，我们会收集以下类别的信息：</p>
+      <ul>
+        <li><strong>流量统计：</strong>页面浏览量、大致地域（由 IP 推断的国家/地区）与独立访客数，用于公开流量监控与运营分析。</li>
+        <li><strong>访问日志：</strong>每次页面访问记录 IP 地址与推断地域，用于滥用检测（如高频自动化请求）并为监控后台提供数据。</li>
+        <li><strong>用户行为事件：</strong>当您与本站交互（视图切换、赞助位/广告卡点击、搜索提交、HF 入口点击等）时，我们可能记录事件类型、会话标识、页面路径、您的 IP 与地域以及您上报的事件负载，用于站内统计。</li>
+        <li><strong>赞助位数据：</strong>对自建赞助位的曝光与点击按聚合口径计数（第一方广告位）。</li>
+        <li><strong>搜索词：</strong>搜索页与首页建议流可能记录您提交的词条用于热门查询统计；不会对应真实输入的模板占位查询会被自动过滤，不入库。</li>
+        <li><strong>账户类信息：</strong>无——本站不设注册/账号体系，也不运营邮件订阅。</li>
+      </ul>
+      <p>我们<strong>不</strong>要求注册，也不通过本站收集您的姓名、邮箱或支付信息。</p>
+    </div>
+
+    <div class="section" id="zh-3">
+      <h3>3. Cookie 与本地存储</h3>
+      <ul>
+        <li><strong>本地存储（第一方，仅存于您的设备）：</strong>本站将语言与主题偏好存于浏览器 localStorage，不上传服务器。</li>
+        <li><strong>Google Analytics Cookie：</strong>Google Analytics 使用 Cookie 及类似技术衡量访客如何使用本站。详见 <a href="https://policies.google.com/technologies/partner-sites" rel="noopener" target="_blank">Google 如何使用合作伙伴网站数据</a>。</li>
+        <li><strong>广告 Cookie：</strong>第三方广告联盟可能设置 Cookie 或使用设备标识符投放与衡量广告，受各联盟自身隐私政策约束。</li>
+      </ul>
+      <p>您可在浏览器设置中删除或屏蔽 Cookie。屏蔽 Cookie 可能降低您所看到广告的相关性，但不会妨碍本站正常使用。</p>
+    </div>
+
+    <div class="section" id="zh-4">
+      <h3>4. Google Analytics</h3>
+      <p>本站使用 Google Analytics（Google Ireland Limited / Google LLC）了解整体使用情况。其收集的数据包括访问页面、大致位置、浏览器与设备类型及来源页等，由 Google 依其自身隐私政策处理。如需在全部网站禁用 Google Analytics，可安装官方浏览器插件：<a href="https://tools.google.com/dlpage/gaoptout" rel="noopener" target="_blank">Google Analytics Opt-out 浏览器插件</a>。</p>
+    </div>
+
+    <div class="section" id="zh-5">
+      <h3>5. 广告与第三方服务</h3>
+      <p>本站可能展示自建赞助位，以及由第三方广告联盟（如 Google AdSense 及类似网络）投放的广告。当您点击或浏览此类内容时，相应联盟可能依其自身政策收集数据；除聚合统计外，本站不会将广告联盟数据与您的会话数据合并。站内所有外链（新闻、论文、模型页、社区链接）均指向第三方网站，受其自身条款与隐私政策约束。</p>
+    </div>
+
+    <div class="section" id="zh-6">
+      <h3>6. 信息的使用方式</h3>
+      <ul>
+        <li>运行与改进本站（内容新鲜度、排序质量、搜索建议）。</li>
+        <li>流量监控与滥用防护（对事件上报与后台登录端点做限流）。</li>
+        <li>为监控后台与赞助位报告产出聚合统计。</li>
+        <li>履行法律义务（如响应有效的版权删除通知）。</li>
+      </ul>
+      <p>除第三方广告联盟依其自身政策行事外，我们<strong>不</strong>基于收集的数据对您做个体画像或定向投放。</p>
+    </div>
+
+    <div class="section" id="zh-7">
+      <h3>7. 分享与留存</h3>
+      <ul>
+        <li><strong>不出售数据：</strong>我们不会出售您的个人信息；除代表本站运营的处理方外，不向第三方提供原始 IP/会话数据。</li>
+        <li><strong>聚合统计：</strong>不可识别的聚合指标可能公开显示（流量监控）或以匿名形式分享。</li>
+        <li><strong>留存：</strong>访问日志与事件记录仅保留有限运营窗口，随后随数据库刷新修剪；确切周期由本站配置决定。搜索词日志仅用于趋势分析。</li>
+        <li><strong>法律请求：</strong>在法律要求或为保护本站权利与安全时，我们可能披露相关信息。</li>
+      </ul>
+    </div>
+
+    <div class="section" id="zh-8">
+      <h3>8. 跨境数据传输</h3>
+      <p>本站在中国大陆以外运营，且不有意针对任何特定司法管辖区的用户。您知悉：通过 Google Analytics 与广告联盟处理的数据可能被传输至并处理于您所在国家/地区以外的国家/地区，遵循相应服务商的政策。</p>
+    </div>
+
+    <div class="section" id="zh-9">
+      <h3>9. 您的选择与权利</h3>
+      <ul>
+        <li>通过浏览器设置管理或屏蔽 Cookie 与站点数据。</li>
+        <li>使用第 4 节链接的官方插件禁用 Google Analytics。</li>
+        <li>通过 Google 广告设置控制广告个性化。</li>
+        <li>请求查阅、更正或删除我们持有的与您相关的个人数据（联系方式见下）。我们将在可识别相应数据的前提下，于适用法律要求的时限内响应此类请求。</li>
+      </ul>
+    </div>
+
+    <div class="section" id="zh-10">
+      <h3>10. 变更与联系</h3>
+      <p>我们可能不时更新本隐私政策。变更<strong>自发布于本页之日起生效</strong>，页首的「最后更新」日期标注最近一次修订。如有任何疑问或隐私请求，请通过{% if contact_email %}<strong>{{ contact_email }}</strong>{% endif %}与我们联系。另请参阅我们的<a href="/terms">服务条款</a>。</p>
+    </div>
+  </div>
+
+</div>
+</main>
+
+<footer>
+  © <span id="footer-year"></span> {{ site_name }} · <a href="/" class="footer-link">Home</a> · <a href="/terms" class="footer-link">Terms</a>
+</footer>
+
+<script>
+function switchLang(lang) {
+  document.getElementById('lang-en').classList.toggle('hidden', lang !== 'en');
+  document.getElementById('lang-zh').classList.toggle('hidden', lang !== 'zh');
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  document.getElementById('btn-zh').classList.toggle('active', lang === 'zh');
+  document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+}
+document.getElementById('footer-year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

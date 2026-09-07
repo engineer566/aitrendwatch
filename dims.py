@@ -83,6 +83,14 @@ DIMS_CACHE_FILE = os.path.join(CACHE_DIR, "dims.json")
 DIMS_REFRESH_INTERVAL = 3600    # 后台预热周期：1 小时（新闻类更新较快）
 DIMS_RETRY_INTERVAL = 300       # 预热失败后快速重试：5 分钟
 DIMS_CACHE_TTL = 7200           # 文件缓存兜底有效期：2 小时
+# news 视图内容池缓存（P0 2026-09-07）：/api/stream?view=news 每次请求不再扫
+# news.db + 现装配 400+ 历史卡（线上实测 7-21s），改为后台刷新后把「neutral
+# 内容池」（dims.json 当轮 + news.db 历史库，已实体解码 + url/标题级去重，
+# 未按语言投影）预装配写盘。请求路径读此文件缓存秒回，读侧只做语言投影 +
+# 与 model 卡合并排序（O(N)），零 DB 读。dims/terms 两套刷新共用同一周期，
+# 池文件在每次 dims 刷新（定点 4 次/天 + 失败重试）后失效重建，跨 worker 由
+# mtime 感知收敛（与 dims.json 同机制）。
+NEWS_STREAM_CACHE_FILE = os.path.join(CACHE_DIR, "news.json")
 
 _file_cache = {}
 _file_cache_lock = threading.Lock()
@@ -147,6 +155,137 @@ def _file_cache_set(data, fetched_at):
             _file_cache_mtime = os.path.getmtime(DIMS_CACHE_FILE)
     except OSError:
         pass
+
+
+# ---------- news 视图内容池（P0 性能修复，见 NEWS_STREAM_CACHE_FILE 注释）----------
+_news_pool = None            # ([neutral cards], fetched_at) 或 None
+_news_pool_loaded = False
+_news_pool_mtime = 0
+_news_pool_lock = threading.Lock()
+
+
+def _load_news_pool_file():
+    """把 cache/news.json 读到内存；磁盘 mtime 变化才重读（跨 worker 感知刷新）。
+
+    返回 True 表示已就绪（_news_pool 可能为 None = 文件缺失/损坏），
+    False 表示需要走回退装配路径。读侧零 DB 读。
+    """
+    global _news_pool, _news_pool_loaded, _news_pool_mtime
+    with _news_pool_lock:
+        try:
+            cur_mtime = os.path.getmtime(NEWS_STREAM_CACHE_FILE)
+        except OSError:
+            cur_mtime = 0
+        if _news_pool_loaded and cur_mtime == _news_pool_mtime:
+            return True
+        _news_pool_loaded = True
+        _news_pool_mtime = cur_mtime
+        if cur_mtime:
+            try:
+                with open(NEWS_STREAM_CACHE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and isinstance(data.get("cards"), list):
+                    _news_pool = (data["cards"], data.get("fetched_at", 0))
+                    return True
+            except (json.JSONDecodeError, OSError, TypeError):
+                pass
+        _news_pool = None
+        return True
+
+
+def _build_news_pool_neutral():
+    """dims.json 当轮 + news.db 历史库 → neutral news 内容池（现装配路径）。
+
+    写盘与冷启动回退共用同一实现，保证两种路径语义一致：
+    - 实体解码一遍（_project_card 语义），双语言 slot 原样保留（读侧按 lang 投影）；
+    - 每卡补 kind/id/hot/official_label/from_history（历史卡标记），id 与历史库
+      存储键同口径（normalize_url_key）；
+    - 按 url 去重（当轮优先）后做标题级去重（_dedupe_news_titles 同口径），
+      同标题镜像只保留首条。
+    返回 (cards, fetched_at)。缓存缺失时 cards=[]、fetched_at=0（不触发抓取）。
+    """
+    data, fetched_at = _file_cache_get()
+    cards = []
+    if data:
+        for arr in data.get("dimensions", {}).values():
+            for c in arr:
+                pc = _project_card(c, "zh")
+                pc["kind"] = "news"
+                pc["id"] = normalize_url_key(
+                    pc.get("official_url") or pc.get("title", ""))
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", ""))
+                cards.append(pc)
+
+    # 合并历史库（issue 6）：扩大内容池让 rise/hot/new 有区分度。去重按归一
+    # url（id），当轮优先；历史卡补 kind/id/official_label/summary + from_history。
+    if news_store:
+        try:
+            hist = news_store.list_history_cards(
+                limit=NEWS_HISTORY_LIMIT, include_inactive=True,
+                days=NEWS_HISTORY_DAYS)
+            seen = {c.get("id") for c in cards if c.get("id")}
+            for hc in hist:
+                url = normalize_url_key(hc.get("official_url") or "")
+                if not url or url in seen:
+                    continue
+                pc = _project_card(hc, "zh")
+                pc["kind"] = "news"
+                pc["id"] = url
+                pc["hot"] = pc.get("hot") or pc.get("score", 0)
+                pc["official_label"] = pc.get("source", "")
+                pc.setdefault("summary", pc.get("summary_zh", ""))
+                # 历史卡标记：API 排序时按 published 固定顺序，避免每次刷新
+                # 重算时效分导致 60 条之后的历史卡反复重排。
+                pc["from_history"] = True
+                cards.append(pc)
+                seen.add(url)
+        except Exception:
+            pass
+
+    return _dedupe_news_titles(cards), fetched_at
+
+
+def _write_news_pool_file():
+    """后台刷新（拿到锁的 worker）后把 neutral news 内容池预装配写盘。
+
+    news.db 本轮 upsert 完成后调用，把请求路径每请求一次的
+    list_history_cards 全表排序 + 400+ 卡现装配，收敛为每刷新周期一次。
+    写 tmp + os.replace 原子替换；失败静默（读侧回退现装配路径）。
+    """
+    try:
+        cards, fetched_at = _build_news_pool_neutral()
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        tmp = NEWS_STREAM_CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"fetched_at": fetched_at, "cards": cards},
+                      f, ensure_ascii=False)
+        os.replace(tmp, NEWS_STREAM_CACHE_FILE)
+        # 本 worker 内存缓存同步（避免下次请求重复读盘解析）
+        with _news_pool_lock:
+            global _news_pool, _news_pool_loaded, _news_pool_mtime
+            _news_pool = (cards, fetched_at)
+            _news_pool_loaded = True
+            try:
+                _news_pool_mtime = os.path.getmtime(NEWS_STREAM_CACHE_FILE)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
+def _news_pool_cards():
+    """读 news 内容池：优先 cache/news.json（秒回），缺失/损坏回退现装配。
+
+    返回 (cards, fetched_at)。cards 为 neutral（未按语言投影）列表。
+    """
+    _load_news_pool_file()
+    with _news_pool_lock:
+        pool = _news_pool
+    if pool is not None:
+        return pool
+    return _build_news_pool_neutral()
 
 
 # ---------- RSS 源定义 ----------
@@ -1618,53 +1757,14 @@ def get_news_cards(lang="zh"):
     （与词条关联列表/词卡 top_news 同口径的标题键）——不同 url 的同标题
     镜像/孪生报道在逐条新闻流里只出现一次，顺序/计数随之收敛；model 卡与
     words 视图不经过这里，不受影响。
+    2026-09-07（P0 性能修复）：内容池改为读后台预热预装配的 cache/news.json
+    （_news_pool_cards），不再每次请求扫 news.db 现装配——线上 news 视图
+    7-21s 的主要来源（400+ 历史卡全表排序 + 逐卡投影每次现算）。池文件缺失
+    （首刷前）自动回退旧的现装配路径，语义与历史行为一致。
     """
     lang = lang if lang in ("zh", "en") else "zh"
-    data, fetched_at = _file_cache_get()
-    cards = []
-    if data:
-        for arr in data.get("dimensions", {}).values():
-            for c in arr:
-                pc = _project_card(c, lang)
-                pc["kind"] = "news"
-                pc["id"] = normalize_url_key(
-                    pc.get("official_url") or pc.get("title", ""))
-                pc["hot"] = pc.get("hot") or pc.get("score", 0)
-                pc["official_label"] = pc.get("source", "")
-                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
-                              else pc.get("summary_en", ""))
-                cards.append(pc)
-
-    # 合并历史库（issue 6）：当轮 cards 可能只有几十条（每维度前 10），
-    # 叠加历史库回溯近 NEWS_HISTORY_DAYS 天、上限 NEWS_HISTORY_LIMIT 条，
-    # 扩大内容池让 rise/hot/new 有区分度、内容更丰富。
-    # 去重按归一 url（id），当轮优先；历史卡补 kind/id/official_label/summary。
-    if news_store:
-        try:
-            hist = news_store.list_history_cards(
-                limit=NEWS_HISTORY_LIMIT, include_inactive=True,
-                days=NEWS_HISTORY_DAYS)
-            seen = {c.get("id") for c in cards if c.get("id")}
-            for hc in hist:
-                url = normalize_url_key(hc.get("official_url") or "")
-                if not url or url in seen:
-                    continue
-                pc = _project_card(hc, lang)
-                pc["kind"] = "news"
-                pc["id"] = url
-                pc["hot"] = pc.get("hot") or pc.get("score", 0)
-                pc["official_label"] = pc.get("source", "")
-                pc.setdefault("summary", pc.get("summary_zh", "") if lang == "zh"
-                              else pc.get("summary_en", ""))
-                # 历史卡标记：API 排序时按 published 固定顺序，
-                # 避免每次刷新重算时效分导致 60 条之后的历史卡反复重排。
-                pc["from_history"] = True
-                cards.append(pc)
-                seen.add(url)
-        except Exception:
-            pass
-
-    return _dedupe_news_titles(cards), fetched_at
+    cards, fetched_at = _news_pool_cards()
+    return [_project_card(c, lang) for c in cards], fetched_at
 
 
 def _dedupe_news_titles(cards):
@@ -1783,6 +1883,11 @@ def _dims_refresh_once():
                                 term_explainer=explain_terms)
                         except Exception:
                             pass
+                    # news 视图内容池（P0）：news.db 本轮 upsert 完成后预装配
+                    # cache/news.json，请求路径 /api/stream?view=news 不再每次
+                    # 扫库现算（线上 7-21s）。也在拿到锁的 worker 执行，读侧
+                    # mtime 感知收敛；失败静默回退旧现装配路径。
+                    _write_news_pool_file()
                     return True
                 return False
         except BlockingIOError:

@@ -1,17 +1,18 @@
-﻿# 前端模板索引
+# 前端模板索引
 
-> 8 个 Jinja2 模板，用途 / 区块 / 行号 / API 引用。配合 [INDEX.md](../INDEX.md) 使用。
+> 9 个 Jinja2 模板，用途 / 区块 / 行号 / API 引用。配合 [INDEX.md](../INDEX.md) 使用。
 
 ## 通用机制
 
 - **主题**：`localStorage["aitw_theme"]` → `document.documentElement.dataset.theme`（dark/light），各页都有 `#theme-btn` 切换按钮。CSS `[data-theme="light"]` 覆盖暗色默认。head 最前的主题初始化脚本（在 `<style>` 之前）同时给 `<html>` 设内联背景/文字色（`#f5f6f8`/`#1c2130` 或 `#0f1117`/`#e6e8ee`），避免亮色用户首帧「先暗后亮」闪烁；`#theme-btn` 切换时同步更新内联色（20260901 #12）。
+- **页脚法律链接（2026-09-07 P1）**：`index.html` 页脚 Terms + **Privacy**（SSR 与 JS `localizeStatic` 双路径，`footer_privacy` i18n key）、`hf.html` 页脚同；terms/privacy 页脚互链；合规审核入口见 `/privacy`（`search.html` 无页脚，属既有形态）。
 - **i18n**（`index.html`、`term_detail.html`、`search.html`）：首页 `I18N` 对象（zh/en 双版本，`index.html:526`，2026-09-05 P3 起含 `hot_note`/`hot_news_note`/`footer_l4` 热度口径 key，需求 1 起含 `view_hf`（🤗 开源/Open Source，需求 2 改名）导航文案）+ `t(k)` 翻译函数（`index.html:578`）+ `LANG` 状态（`index.html:593`，SSR 注入 `default_lang`，可被 localStorage/`?lang=` 覆盖）；详情页和搜索页由服务端 `lang` 直接渲染对应语言。
 - **SSR 数据注入**（仅 `index.html`）：`<script id="sponsor-data" type="application/json">` + `<script id="initial-terms-data">` + `<script id="initial-dimensions-data">` + `<script id="initial-dimension-counts-data">`（514 起，词卡 SSR 首屏）。
 - **SEO（2026-09-05 P1~P5 后）**：全站统一 meta 体系为 title/description/OG/Twitter Card/og:image（**`<meta name="keywords">` 已全站移除**，P5）；`index.html`/`term_detail.html`/`hf.html` head 在 `seo_enabled` 且 BASE_URL 已设时输出 **hreflang zh↔en + x-default→en**（主语言英文，P4，`index.html:61`/`term_detail.html:46`/`hf.html:71`）；canonical 仍自指当前显式语言变体；`term_detail.html` 含最多 4 段 `application/ld+json`（DefinedTerm@197 + ItemList@210 通用词；SoftwareApplication@231 + ScholarlyArticle 仅 HF 词）；`index.html` WebSite@346 + ItemList@360；`hf.html` CollectionPage@237 + ItemList；搜索页 `noindex,follow` 防重复索引。所有页面引用 `/og-image.png` 社交分享图。
 
 ---
 
-## templates/index.html  （1660 行）— 首页主单页（词视图为主）
+## templates/index.html  （1662 行）— 首页主单页（词视图为主）
 
 | 区块 | 行号 | 说明 |
 |------|------|------|
@@ -21,7 +22,8 @@
 | 🤗 开源入口（视图 seg 第三项 `#hf-link`，板块语义） | 417–423（markup）/ 199–206（`.seg a.seg-link` 样式）/ ~1001（点击埋点 `hf_entry_click`） | **2026-09-05 需求 1** 迁入 seg（与「🔤热词/📰逐条新闻」并列的 `<a class="seg-link">`，跨页跳转 /hf，↗ 角标暗示离开当前视图）；**需求 2（改名）** 导航文案「🤗 HF 榜」→「🤗 开源 / Open Source」（`view_hf` key + SSR 标签），tooltip 保留 HF 实体名；href/title/文案由 `updateHfLink()` 跟随 `LANG` 动态同步。**header 右上角原独立 `.btn` HF 按钮已移除** |
 | 样式 `<style>` | ~88–327 | 暗色默认 + light 覆盖 + 卡片/词卡/赞助位/响应式 |
 | SEO ld+json | 346, 360 | WebSite + ItemList 结构化数据 |
-| 热度口径标注（P3） | i18n `footer_l4`/`hot_note`/`hot_news_note`（547/572）+ JS footer 行（733）+ SSR word-meta title + footer 静态口径行 | 🔥 数字带 title 口径说明（词热度 vs 报道热度分开），可见脚注 SSR/JS 双路径 |
+| 热度口径标注（P3） | i18n `footer_l4`/`hot_note`/`hot_news_note`（548/573）+ JS footer 行（735）+ SSR word-meta title + footer 静态口径行 | 🔥 数字带 title 口径说明（词热度 vs 报道热度分开），可见脚注 SSR/JS 双路径 |
+| 页脚链接（Terms + Privacy，2026-09-07 P1） | SSR 页脚（504/510）+ i18n `footer_terms`/`footer_privacy`（546/547、572/573）+ JS `localizeStatic` 重建（735） | `index.html` SSR/JS 双路径页脚都含「服务条款/Terms + 隐私政策/Privacy Policy」链接（带 `?lang=`），隐私页入口合规补齐 |
 | 来源标注（P5） | SSR 词卡 top（~452）/ JS 词卡 top + 展开列表（1116/1179） | 报道条目显示来源 `.src`；展开列表日期改 `.pm` |
 | 视图切换 seg | ~416 | 「🔤热词 / 📰逐条新闻」+ 🤗 开源第三项（2026-09-05 需求 2 改名），`#view-seg` |
 | SSR 数据注入 | 514–518 | sponsor-data / initial-terms-data（词卡） / initial-dimensions-data / initial-dimension-counts-data（维度元数据） |
@@ -83,7 +85,24 @@
 | 切换 JS | 365 | `<script>` 双区块显隐 |
 
 **引用 API**：无（静态文案）。
-**渲染路由**：`/terms`（`app.py:836`）。
+**渲染路由**：`/terms`（`app.py:847`）。
+
+---
+
+## templates/privacy.html  （363 行）— 隐私政策页（2026-09-07 P1，新）
+
+| 区块 | 行号 | 说明 |
+|------|------|------|
+| 主题 JS | 4 | 同通用机制（data-theme + `<html>` 内联背景/文字色，head 最前） |
+| GA gtag | 16–23 | 与全站一致加载 Google Analytics（页内数据做法如实披露） |
+| 样式 | 42–111 | 复用 terms.html 同款 `.paper-card`/`.lang-switch` |
+| 语言切换 | 128 | `.lang-switch` 按钮（英文默认） |
+| 英文内容（10 节） | ~134–296 | 收集信息（自建埋点 IP/GeoIP/session_id/事件流/赞助位 + GA + 广告 Cookie + localStorage）/用途/分享与留存/跨境/权利与联系 |
+| 中文内容 | ~300 | `#lang-zh`（默认 hidden） |
+| 页脚 | 368 | Home · Terms 互链 |
+
+**引用 API**：无（静态文案；联系邮箱来自 `config.CONTACT_EMAIL`）。
+**渲染路由**：`/privacy`（`app.py:862`）+ `/privacy-policy` 301 别名（`app.py:879`）。
 
 ---
 

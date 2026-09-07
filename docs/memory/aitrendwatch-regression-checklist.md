@@ -20,7 +20,7 @@ metadata:
 （降级断言即预期行为，零 token）：
 
 ```powershell
-python -m pytest -q        # 全量，应全绿（当前 168 tests + 8 subtests）
+python -m pytest -q        # 全量，应全绿（当前 308 tests + 8 subtests）
 ```
 
 覆盖矩阵（测试文件 → 回归点）：
@@ -46,11 +46,16 @@ python -m pytest -q        # 全量，应全绿（当前 168 tests + 8 subtests�
 | `test_html_entities.py` / `test_jsonld.py` | HTML/URL 实体双层解码；结构化数据（DefinedTerm/ItemList/SoftwareApplication 无越界评分） |
 | `test_word_break.py` / `test_show_more_view_page.py` / `test_view_term_text.py` | 模板合约：英文换行不拆词、展开按钮条件、文案措辞 |
 | `test_monitor_chart.py` | 监控页 30 天趋势图（UV 口径） |
+| `test_news_pool_cache.py` | **（2026-09-07 P0）** news 视图内容池：写池后 `get_news_cards` 只读 `cache/news.json`（list_history_cards 不被调用，零 DB 读）、语言投影/from_history/去重语义、二次写池 mtime 收敛、池缺失回退旧路径 |
+| `test_privacy_legal.py` | **（2026-09-07 P1）** `/privacy` 双语页 + canonical 裸 URL、`/privacy-policy` 301、首页/terms/hf 页脚隐私链接、sitemap 收录 /privacy |
+| `test_rate_limit.py` | **（2026-09-07 P1）** ratelimit 固定窗口/超限 429/窗口滑过/key 隔离/表满 fail-open；`/api/event` 与 `/admin/login` 端点级 429 + Retry-After、IP 独立计数 |
+| `test_error_handling.py` | **（2026-09-07 P2）** 500 errorhandler：页面 noindex HTML / API JSON，路径前缀与 Accept 判定 |
 
 ## 二、手工/线上验证清单（按模块）
 
 ### 1. 数据源与缓存
 - [ ] 首页 / `/api/stream?view=news` 的 `fetched_at` 是最近刷新时间（重启后应立即有预热）
+- [ ] `/api/stream?view=news` 延迟回归（2026-09-07 P0）：秒回；`cache/news.json` 出现且 fetched_at 为最近刷新时刻（重启后首轮 dims 预热完成前走回退路径属预期）
 - [ ] `/api/hot/<baidu|bilibili|zhihu|douyin|hackernews|github>` 各单源 ok（微博常失败属预期）
 - [ ] `cache/terms.json` / `dims.json` / `words.json` 均为本次刷新产物（mtime 对应刷新时刻）
 - [ ] 历史库 `news_cards` 有近 30 天数据；`/api/dims` 各维度非空
