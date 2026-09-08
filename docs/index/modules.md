@@ -5,7 +5,7 @@
 
 ---
 
-## app.py  （1829 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （2889 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
@@ -17,11 +17,11 @@
 | 665–955 | 页面 + 词流路由（`index`@677 含 hreflang 传参 / `term_detail`@776 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@847 / `privacy`@862 + `/privacy-policy`@879 301（2026-09-07 P1）/ 404@885 / **500@899（2026-09-07 P2）** / `api_dims`@925 / `api_stream`@934） |
 | ~1000–~1100 | HuggingFace 独立排序页（`_hf_models_for`@1016——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub** / `hf_page`@1041 含 hreflang / `api_hf`@1077） |
 | ~1103–~1446 | 单词聚合 + 全站搜索 v2（`api_word`@1103 / `health`@1117 / `search_page`@1329 / `api_search_suggest`@1375 / `api_search_click`@1394 / `api_search`@1412） |
-| ~1447–~1608 | SEO 路由（`robots`@1447 / `sitemap`@1467——**主语言 en：只交 `?lang=en` 变体 + 达标词；2026-09-07 追加 /privacy** / favicon 三件套 / `og_image`@1545） |
-| ~1609–~1637 | 赞助位点击跳转 `sponsor_click`@1609 + `admin_required`@1619 |
-| ~1638–~1718 | 管理后台（`admin_login`@1638——**2026-09-07 P1 POST 按 IP 限流** /logout@1662/home@1669 + sponsors list@1676/CRUD@1684-1703/stats@1712） |
-| ~1719–~1770 | 统一管理后台（`monitor`@1719 + `monitor/api*`@1725-1752） |
-| ~1771–1829 | 用户行为事件上报（`api_event`@1771 埋点 v3——**2026-09-07 P1 按 IP 限流** + `monitor_events_api`@1814）+ `__main__` 入口 |
+| ~1447–~2666 | SEO 路由（`robots`@1447 / `sitemap`@1467——**主语言 en：只交 `?lang=en` 变体 + 达标词；2026-09-07 追加 /privacy** / 站点 logo 三件套（logo-icon-512.jpg 内联 base64：`favicon`@2576 32px / `favicon_png`@2585 192px / `apple_touch_icon`@2593 180px）/ `og_image`@2605） |
+| ~2667–~2697 | 赞助位点击跳转 `sponsor_click`@2669 + `admin_required`@2679 |
+| ~2698–~2778 | 管理后台（`admin_login`@2698——**2026-09-07 P1 POST 按 IP 限流** /logout@2722/home@2729 + sponsors list@2736/CRUD@2744-2763/stats@2772） |
+| ~2779–~2830 | 统一管理后台（`monitor`@2779 + `monitor/api*`@2785-2812） |
+| ~2831–2893 | 用户行为事件上报（`api_event`@2831 埋点 v3——**2026-09-07 P1 按 IP 限流** + `monitor_events_api`@2874）+ `__main__` 入口 |
 
 ### 公开函数（被路由/外部调用）
 | 函数 | 行号 | 职责 |

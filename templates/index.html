@@ -49,7 +49,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}</title>
 <meta name="description" content="{{ site_desc }}">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 {% if seo_enabled %}
@@ -155,7 +155,9 @@
     font-size: 19px; font-weight: 700; white-space: nowrap;
     background: linear-gradient(90deg, var(--accent), var(--purple));
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    display: flex; align-items: center; gap: 9px;
   }
+  h1 .site-logo { width: 30px; height: 30px; border-radius: 7px; display: block; }
   .search-box {
     flex: 1; min-width: 140px; display: flex; align-items: center; gap: 7px;
     background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
@@ -380,7 +382,7 @@
 <body>
 <header>
   <div class="header-inner">
-    <h1>🤖 {{ site_name }}</h1>
+    <h1><img class="site-logo" src="/favicon.png" alt="{{ site_name }} logo" width="30" height="30">{{ site_name }}</h1>
     <div class="search-box">
       <span>🔍</span>
       <input id="search-input" type="text" placeholder="{{ 'Search trends / authors…' if is_en else '搜索热点 / 作者…' }}" autocomplete="off" aria-label="{{ 'Search' if is_en else '搜索' }}">
