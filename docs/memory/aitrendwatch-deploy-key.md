@@ -64,6 +64,8 @@ metadata:
 
 **权限提示**：生产主机 SSH 每次读写常被分类器软拦截，需用户 AskUserQuestion 显式授权「生产」目标后才放行；只读日志/文件检查也可能被拦，可用公网 API（`https://aitrendwatch.top/api/*`）替代验证。
 
+**2026-09-08（release 1.11.2：热词翻译 CJK 回显钉死修复，merge `b083d7c`→main / dev `fe0c3b2`）**：用户报生产「大量中文词且没有解释」。**排查**（容器日志 + terms 表 explain_updated_at 按日分布）：① 解释环节曾在 09-02~09-03 停摆（DeepSeek 402 欠费 + GLM 429 熔断，两天仅 1+3 词更新），积压 3025 词无解释，09-04 起恢复、09-08 晚重启预热后词池 top200 已全补齐——**已自愈，非当前缺陷**；② 真正现存缺陷在**翻译环节**：`智象/外滩大会/中科类脑/深度智控` 的 display_en 是中文回显。**根因**：`_TRANSLATE_SYS_MSG`（需求 4）要求「无官方英文名的中文专名保留中文原词」防拼音化，LLM 忠实回显中文 → `_translate_terms` 只查非空即收、`terms.py` 5.6 直接写库 → 下轮增量翻译把它判为「已翻译」进 `_upgradable` 长尾，预算被 `_needs` 新词挤占后**永久钉死**；且翻译输入零上下文（只给光秃词面，看不到标题里的官方名如 智象（HiDream.ai））。**修复（terms.py 5.6）**：含 CJK 的译文视为未翻译不写库（词留 `_needs` 下轮重试，英文页回退中文 display 视觉一致）；存量 display_en 含 CJK 的回显脏值回 `_needs` 优先队列自愈；`_upgradable` 词不被回显降级覆盖。词典补录 4 词（官方名均经 web 核实）：智象→HiDream.ai、中科类脑→Leinao（leinao.ai）、深度智控→DeepCtrls、外滩大会→Bund Summit。回归：**311 tests + 8 subtests 全绿**（无 key，更新 1 用例 + 新增 3 用例：防降级/词典外存量回显自愈/词典补录断言）。部署：scp terms.py + VERSION → prod/test 双机 `--force-recreate`（两机 terms.py sha256 均 f4f51724… 与 main 一致），容器内确定性校验 GLOSSARY_CHECK_OK。**教训**：「防坏翻译」的保守回显必须与「回显不写库」配套——否则回显会被状态机误判为已完成而钉死；凡 LLM 输出落库的字段都应校验「输出语言/形态符合字段语义」。
+
 **⚠️ 上线前必读**：[`aitrendwatch-regression-checklist`](aitrendwatch-regression-checklist.md)——每次生产部署前先过全量核心回归（pytest 全绿 + 测试机逐项验证），再合入 main 部署。
 
 相关：[`hot-aggregator-aitrendwatch`](hot-aggregator-aitrendwatch.md)、[`aitrendwatch-test-host`](aitrendwatch-test-host.md)、[`aitrendwatch-server-stability`](aitrendwatch-server-stability.md)、[`aitrendwatch-regression-checklist`](aitrendwatch-regression-checklist.md)、[`git-merge-doc-line-refs`](git-merge-doc-line-refs.md)
