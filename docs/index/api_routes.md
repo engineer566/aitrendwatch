@@ -21,10 +21,10 @@
 | `/privacy` | GET | `privacy` | `app.py:862` | **隐私政策页（中英双语，2026-09-07 P1）**：覆盖自建埋点（IP/GeoIP/session_id/事件流/赞助位）与 GA/广告 Cookie、本地存储偏好、权利与联系 | `SITE_PRIVACY_UPDATED` 常量；canonical 固定裸 URL；SEO 可索引；联系位用 `CONTACT_EMAIL`（未配 → 占位文案） |
 | `/privacy-policy` | GET | `privacy_policy_redirect` | `app.py:879` | 常见拼写别名 → `/privacy`（301） | AdSense/审核方可能先试此 URL |
 | `/search` | GET | `search_page` | `app.py:1329` | 搜索结果页（独立页，热词命中卡置顶 + 高亮 + 历史归档标记；2026-09-04 需求 1：news 结果按归一化标题去重，镜像报道不双显） | `?q=` `?lang=zh/en` |
-| `/admin/login` | GET,POST | `admin_login` | `app.py:1638` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身，登录后默认跳 `/monitor`；POST 按 IP 限流（2026-09-07 P1：`LOGIN_RATE_LIMIT`/15 分，超限 429 + Retry-After） |
-| `/admin/logout` | GET | `admin_logout` | `app.py:1662` | 退出登录 | 清 session 回登录页 |
-| `/admin` | GET | `admin_home` | `app.py:1669` | ~~赞助位管理后台~~ → 重定向到 `/monitor#sponsors` | 需 admin，合并后统一入口 |
-| `/monitor` | GET | `monitor` | `app.py:1719` | **统一管理后台**（流量监控 + 赞助位管理 Tab 切换） | 需 admin |
+| `/admin/login` | GET,POST | `admin_login` | `app.py:2698` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身，登录后默认跳 `/monitor`；POST 按 IP 限流（2026-09-07 P1：`LOGIN_RATE_LIMIT`/15 分，超限 429 + Retry-After） |
+| `/admin/logout` | GET | `admin_logout` | `app.py:2722` | 退出登录 | 清 session 回登录页 |
+| `/admin` | GET | `admin_home` | `app.py:2729` | ~~赞助位管理后台~~ → 重定向到 `/monitor#sponsors` | 需 admin，合并后统一入口 |
+| `/monitor` | GET | `monitor` | `app.py:2779` | **统一管理后台**（流量监控 + 赞助位管理 Tab 切换） | 需 admin |
 
 ## 数据 API（JSON）
 
@@ -57,28 +57,28 @@
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/api/event` | POST | `api_event` | `app.py:1771` | 用户行为事件上报（批量兼容：单条/`{events:[...]}`；`event_type` 白名单校验） | 前端埋点统一入口（2026-09-01 任务 9）；**按 IP 限流（2026-09-07 P1）**：`EVENT_RATE_LIMIT`/分，防刷量撑爆 SQLite，超限 429 + Retry-After |
+| `/api/event` | POST | `api_event` | `app.py:2831` | 用户行为事件上报（批量兼容：单条/`{events:[...]}`；`event_type` 白名单校验） | 前端埋点统一入口（2026-09-01 任务 9）；**按 IP 限流（2026-09-07 P1）**：`EVENT_RATE_LIMIT`/分，防刷量撑爆 SQLite，超限 429 + Retry-After |
 
 ### 系统
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
 | `/health` | GET | `health` | `app.py:1117` | 健康检查 |
-| `/api/click/<path:slot_id>` | GET | `sponsor_click` | `app.py:1609` | 赞助位点击计数 + 302 跳转 |
-| `/admin/stats` | GET | `admin_stats` | `app.py:1712` | 赞助位 30 天统计（需 admin） |
-| `/admin/sponsors/list` | GET | `admin_sponsors_list` | `app.py:1676` | 赞助位列表 JSON（供合并后 monitor 页 AJAX 加载，需 admin） |
-| `/monitor/api` | GET | `monitor_api` | `app.py:1725` | 监控页数据（`?days=1..90`，需 admin） |
-| `/monitor/api/search` | GET | `monitor_search_api` | `app.py:1736` | 搜索词统计（热门搜索 Top-N + 近期搜索，需 admin） |
-| `/monitor/api/search/funnel` | GET | `monitor_search_funnel_api` | `app.py:1752` | 搜索→点击漏斗（需 admin） |
-| `/monitor/api/events` | GET | `monitor_events_api` | `app.py:1814` | 用户行为事件统计（近 N 天事件量/类型分布，需 admin） |
+| `/api/click/<path:slot_id>` | GET | `sponsor_click` | `app.py:2669` | 赞助位点击计数 + 302 跳转 |
+| `/admin/stats` | GET | `admin_stats` | `app.py:2772` | 赞助位 30 天统计（需 admin） |
+| `/admin/sponsors/list` | GET | `admin_sponsors_list` | `app.py:2736` | 赞助位列表 JSON（供合并后 monitor 页 AJAX 加载，需 admin） |
+| `/monitor/api` | GET | `monitor_api` | `app.py:2785` | 监控页数据（`?days=1..90`，需 admin） |
+| `/monitor/api/search` | GET | `monitor_search_api` | `app.py:2796` | 搜索词统计（热门搜索 Top-N + 近期搜索，需 admin） |
+| `/monitor/api/search/funnel` | GET | `monitor_search_funnel_api` | `app.py:2812` | 搜索→点击漏斗（需 admin） |
+| `/monitor/api/events` | GET | `monitor_events_api` | `app.py:2874` | 用户行为事件统计（近 N 天事件量/类型分布，需 admin） |
 
 ### Admin 写操作（需 admin，POST）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:1684` | 新建/更新赞助位 |
-| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:1694` | 上下架切换 |
-| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:1703` | 删除赞助位 |
+| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:2744` | 新建/更新赞助位 |
+| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:2754` | 上下架切换 |
+| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:2763` | 删除赞助位 |
 
 ## SEO 路由
 
@@ -86,10 +86,10 @@
 |------|------|------|------|------|
 | `/robots.txt` | GET | `robots` | `app.py:1447` | 爬虫规则（SEO 关 → 禁止索引） |
 | `/sitemap.xml` | GET | `sitemap` | `app.py:1467` | 站点地图（**主语言 en，2026-09-05 P4**：首页 `/?lang=en`、词条 `/term/<slug>?lang=en`、`/hf?lang=en`、`/terms` 裸 URL；**2026-09-07**：追加 `/privacy` 裸 URL；词条仅达标词 `term_row_indexable`，上限 `SITEMAP_MAX_URLS`） |
-| `/favicon.ico` | GET | `favicon` | `app.py:1512` | favicon |
-| `/favicon.svg` | GET | `favicon_svg` | `app.py:1521` | favicon SVG |
-| `/apple-touch-icon.png` | GET | `apple_touch_icon` | `app.py:1533` | Apple 触屏图标 |
-| `/og-image.png` | GET | `og_image` | `app.py:1545` | Open Graph 分享图（动态生成，SEO 任务 11） |
+| `/favicon.ico` | GET | `favicon` | `app.py:2576` | favicon（站点 logo 32×32 PNG，源 `assets/logo-icon-512.jpg` 内联 base64） |
+| `/favicon.png` | GET | `favicon_png` | `app.py:2585` | 站点 logo 192×192 PNG（模板高优先级 icon + 首页 header logo） |
+| `/apple-touch-icon.png` | GET | `apple_touch_icon` | `app.py:2593` | Apple 触屏图标（logo 180×180 PNG） |
+| `/og-image.png` | GET | `og_image` | `app.py:2605` | Open Graph 分享图（动态生成，SEO 任务 11） |
 
 ## 错误处理
 
@@ -100,7 +100,7 @@
 
 ## 鉴权机制
 
-- `admin_required` 装饰器（`app.py:1619`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
+- `admin_required` 装饰器（`app.py:2679`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
 - token 来源优先级：`Authorization: Bearer` → `?token=` → `session["admin_token"]`。
 - `hmac.compare_digest` 防时序攻击；未登录页面请求 → 跳登录页（带 next），API 请求 → 401。
 - 登录 POST 另有按 IP 的固定窗口限流（见 `/admin/login` 行）。

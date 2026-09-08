@@ -11,7 +11,7 @@ AI 热点聚合单页应用：Flask 后端聚合 36 个 RSS 源（含 4 个 Goog
 
 ```
 aitrendwatch/
-├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（1829 行；2026-09-05 SEO：词条页 indexable 可索引门槛 + hreflang 传参 + sitemap 主语言 en + 热度口径 desc；2026-09-05：_hf_models_for/_word_detail 社区链接按页面语言分流；2026-09-07 P1/P2：/privacy 双语页 + /privacy-policy 301 + 500 errorhandler + /api/event 与 /admin/login 按 IP 限流 + sitemap 收录 /privacy）
+├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（2889 行；2026-09-05 SEO：词条页 indexable 可索引门槛 + hreflang 传参 + sitemap 主语言 en + 热度口径 desc；2026-09-05：_hf_models_for/_word_detail 社区链接按页面语言分流；2026-09-07 P1/P2：/privacy 双语页 + /privacy-policy 301 + 500 errorhandler + /api/event 与 /admin/login 按 IP 限流 + sitemap 收录 /privacy；站点 logo 三件套内联 base64：/favicon.ico 32px + /favicon.png 192px + /apple-touch-icon.png 180px，源 assets/logo-icon-512.jpg）
 ├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度 + 质量/可用性分离阈值 + 二次提示轮数 + SEO 词条可索引阈值 TERM_INDEX_MIN_NEWS/HOT + 2026-09-07 P1 公开端点限流 EVENT_RATE_LIMIT/LOGIN_RATE_LIMIT（197 行）
 ├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1956 行；2026-09-04 需求 1：逐条流卡 id url 归一 + 标题级去重；需求 4：中文标题公司专名关键词保持中文原词、热词翻译提示词禁拼音化/自造英文——两段提示词提升为模块常量 _USER_PREFIX/_TRANSLATE_SYS_MSG；2026-09-07 P0：news 视图内容池 cache/news.json 预装配——后台刷新后写池，get_news_cards 读池零 DB 读，修复 /api/stream?view=news 7-21s）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（621 行；2026-09-05：community_links 按语言分流 zh 知乎/B站/GitHub（中文名）en YouTube/Reddit/X/GitHub + localize_model_cards 读取时投影）
@@ -24,7 +24,7 @@ aitrendwatch/
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.11.0）
 ├── templates/      # 9 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1662 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 开源第三项跨页跳转 /hf（板块入口语义，↗ 角标；2026-09-05 需求 1 迁入 seg、需求 2 改名，header 独立 HF 按钮已移除），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
+│   ├── index.html         # 首页主单页（1664 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；header 站点 logo（/favicon.png 192px）+ h1 站名；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 开源第三项跨页跳转 /hf（板块入口语义，↗ 角标；2026-09-05 需求 1 迁入 seg、需求 2 改名，header 独立 HF 按钮已移除），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
 │   ├── hf.html            # HuggingFace 独立排序页（458 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；页首三视图镜像导航 view-nav（热词/逐条新闻链回首页对应视图，「开源」入口 active，2026-09-05 需求 1 建、需求 2 改名；替换原「← 返回首页」按钮）；hreflang zh↔en）
 │   ├── terms.html         # 服务条款页（383 行）
 │   ├── privacy.html       # 隐私政策页（2026-09-07 P1 新增：中英双语，覆盖自建埋点 IP/GeoIP/session_id + GA/广告 Cookie + 权利联系；canonical 裸 URL；联系位用 CONTACT_EMAIL）（363 行）
@@ -64,7 +64,7 @@ aitrendwatch/
 
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
-| `app.py` | 1829 | Flask 入口、路由、8 直连源抓取、词详情装配 + 2026-09-05 SEO（词条 indexable 门槛传参、hreflang zh↔en、sitemap 主语言 en）+ 社区链接语言分流（_hf_models_for/_word_detail）+ **2026-09-07 P1/P2（/privacy 双语页、/privacy-policy 301、500 errorhandler、/api/event 与 /admin/login 按 IP 限流）** | 39 个路由 view 函数 + 404/500 两个 errorhandler（`admin_sponsors_list` 等，见 api_routes.md）+ `_word_detail` + `_explain_fallback` + `_hf_models_for` + `_rate_limit_deny` | tracker, dims, terms, config, store, ratelimit, stream_utils, text_utils |
+| `app.py` | 2889 | Flask 入口、路由、8 直连源抓取、词详情装配 + 2026-09-05 SEO（词条 indexable 门槛传参、hreflang zh↔en、sitemap 主语言 en）+ 社区链接语言分流（_hf_models_for/_word_detail）+ **2026-09-07 P1/P2（/privacy 双语页、/privacy-policy 301、500 errorhandler、/api/event 与 /admin/login 按 IP 限流）** + 站点 logo 图标三件套（内联 base64 PNG：/favicon.ico、/favicon.png、/apple-touch-icon.png） | 39 个路由 view 函数 + 404/500 两个 errorhandler（`admin_sponsors_list` 等，见 api_routes.md）+ `_word_detail` + `_explain_fallback` + `_hf_models_for` + `_rate_limit_deny` | tracker, dims, terms, config, store, ratelimit, stream_utils, text_utils |
 | `config.py` | 197 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` + SEO 词条可索引阈值 `TERM_INDEX_MIN_NEWS`/`TERM_INDEX_MIN_HOT` + 2026-09-07 P1 公开端点限流 `EVENT_RATE_LIMIT`/`LOGIN_RATE_LIMIT` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
 | `dims.py` | 1956 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（09-02：链每轮复位/逐条校验/402 账户级；09-03：质量失败与 provider 故障分离 + 坏条目二次提示修正；09-04 需求 1：逐条流 id url 归一 + `_dedupe_news_titles` 标题级去重；需求 4：抽词/翻译提示词规则防中文公司专名拼音化——`_USER_PREFIX`/`_TRANSLATE_SYS_MSG` 模块常量；**2026-09-07 P0：news 视图内容池 `cache/news.json` 预装配，请求路径零 DB 读**） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, news_store, text_utils |
 | `tracker.py` | 621 | HF 热词 + arXiv 论文（词池数据源）+ 社区链接语言分流（community_links/localize_model_cards） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
