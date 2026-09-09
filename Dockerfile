@@ -3,9 +3,9 @@ FROM python:3.13-slim
 # 设置工作目录
 WORKDIR /app
 
-# 设置时区
+# 设置时区 + 字体包（og-image 动态生成需要 DejaVu 字体，否则降级到 PIL 默认字体导致分享卡片字极小）
 ENV TZ=Asia/Shanghai
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata fonts-dejavu-core \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
 
