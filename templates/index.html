@@ -67,12 +67,12 @@
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
-{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png">{% endif %}
+{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png?v=2">{% endif %}
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}">
 <meta name="twitter:description" content="{{ site_desc }}">
-{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image.png">{% endif %}
+{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image.png?v=2">{% endif %}
 {% else %}
 <meta name="robots" content="noindex,nofollow">
 {% endif %}
