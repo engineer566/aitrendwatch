@@ -2602,6 +2602,7 @@ def apple_touch_icon():
 _OG_IMAGE_CACHE = {}
 
 @app.route("/og-image.png")
+@app.route("/og-image-v2.png")
 def og_image():
     """生成站点级 OG 社交分享图（1200×630）。
 
