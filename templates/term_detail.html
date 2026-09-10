@@ -30,7 +30,7 @@
 {% set page_title = (word.term.display_zh ~ '（' ~ word.term.term ~ '）' if (lang == 'zh' and word.term.display_zh and word.term.display_zh != word.term.term) else word.term.term) %}
 <title>{{ page_title }} · {{ 'AI Trends & News' if is_en else 'AI 热点动态' }} · {{ site_name }}</title>
 <meta name="description" content="{{ site_desc }}">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 {% if seo_enabled and indexable %}
@@ -52,12 +52,12 @@
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{% if lang == 'en' %}en_US{% else %}zh_CN{% endif %}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
-{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image.png">{% endif %}
+{% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image-v2.png">{% endif %}
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ page_title }} · {{ 'AI Trends & News' if is_en else 'AI 热点动态' }} · {{ site_name }}">
 <meta name="twitter:description" content="{{ site_desc }}">
-{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image.png">{% endif %}
+{% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image-v2.png">{% endif %}
 {% endif %}
 <style>
   :root {

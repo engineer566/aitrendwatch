@@ -999,6 +999,11 @@ _COMPANY_EN_GLOSSARY = {
     "哔哩哔哩": "Bilibili",
     "拼多多": "Pinduoduo",
     "小红书": "Xiaohongshu",
+    # —— 2026-09-08 补录（生产翻译回显案例，官方英文名均已核实）——
+    "智象": "HiDream.ai",      # HiDream.ai（智象未来），原报道标题即带官方名
+    "中科类脑": "Leinao",      # Leinao（合肥中科类脑），官网 leinao.ai / 注册商标
+    "深度智控": "DeepCtrls",   # DeepCtrls（南京深度智控，物理 AI）
+    "外滩大会": "Bund Summit", # Bund Summit（上海外滩大会官方英文名）
 }
 
 
@@ -1522,7 +1527,11 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 _disp = (hf_terms.get(canon, {}).get("display")
                          or _display_of(canon, [canon]))
                 if _disp and re.search(r"[\u4e00-\u9fff]", _disp):
-                    if (old.get(canon) or {}).get("display_en"):
+                    _old_en = (old.get(canon) or {}).get("display_en")
+                    # 2026-09-08：存量 display_en 若含 CJK（历史 LLM 回显脏值，
+                    # 如 智象→"智象"）视为未翻译，回 _needs 优先队列重译自愈，
+                    # 而非进 _upgradable 长尾等预算。
+                    if _old_en and not re.search(r"[\u4e00-\u9fff]", _old_en):
                         _upgradable.append((canon, _disp))
                     else:
                         _needs.append((canon, _disp))
@@ -1535,7 +1544,18 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 for canon, disp in _todo:
                     _en = _translated.get(disp)
                     if isinstance(_en, str) and _en.strip():
-                        kept[canon]["display_en"] = _en.strip()[:80]
+                        _en = _en.strip()[:80]
+                        # 2026-09-08：CJK 回显不写库。翻译提示词要求「无官方英文
+                        # 名的中文专名保留中文原词」（防拼音化），LLM 会原样回显
+                        # 中文；回显一旦写入 display_en，下轮即被判「已翻译」进
+                        # _upgradable 长尾，预算被 _needs 新词挤占后永久钉死
+                        # （生产案例：智象/外滩大会/中科类脑/深度智控）。含 CJK 的
+                        # 译文视为未翻译：不写库（英文页回退中文 display，视觉一致），
+                        # 词留在 _needs 下轮重试；同时防止 _upgradable 词被回显
+                        # 覆盖降级已有英文。
+                        if re.search(r"[\u4e00-\u9fff]", _en):
+                            continue
+                        kept[canon]["display_en"] = _en
         except Exception:
             pass
 

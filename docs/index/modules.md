@@ -5,7 +5,7 @@
 
 ---
 
-## app.py  （1829 行）— Flask 入口 + 路由 + 直连抓取
+## app.py  （2889 行）— Flask 入口 + 路由 + 直连抓取
 
 ### 分区清单
 | 行号范围 | 分区（`# ----------` 注释段） |
@@ -17,11 +17,11 @@
 | 665–955 | 页面 + 词流路由（`index`@677 含 hreflang 传参 / `term_detail`@776 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@847 / `privacy`@862 + `/privacy-policy`@879 301（2026-09-07 P1）/ 404@885 / **500@899（2026-09-07 P2）** / `api_dims`@925 / `api_stream`@934） |
 | ~1000–~1100 | HuggingFace 独立排序页（`_hf_models_for`@1016——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub** / `hf_page`@1041 含 hreflang / `api_hf`@1077） |
 | ~1103–~1446 | 单词聚合 + 全站搜索 v2（`api_word`@1103 / `health`@1117 / `search_page`@1329 / `api_search_suggest`@1375 / `api_search_click`@1394 / `api_search`@1412） |
-| ~1447–~1608 | SEO 路由（`robots`@1447 / `sitemap`@1467——**主语言 en：只交 `?lang=en` 变体 + 达标词；2026-09-07 追加 /privacy** / favicon 三件套 / `og_image`@1545） |
-| ~1609–~1637 | 赞助位点击跳转 `sponsor_click`@1609 + `admin_required`@1619 |
-| ~1638–~1718 | 管理后台（`admin_login`@1638——**2026-09-07 P1 POST 按 IP 限流** /logout@1662/home@1669 + sponsors list@1676/CRUD@1684-1703/stats@1712） |
-| ~1719–~1770 | 统一管理后台（`monitor`@1719 + `monitor/api*`@1725-1752） |
-| ~1771–1829 | 用户行为事件上报（`api_event`@1771 埋点 v3——**2026-09-07 P1 按 IP 限流** + `monitor_events_api`@1814）+ `__main__` 入口 |
+| ~1447–~2666 | SEO 路由（`robots`@1447 / `sitemap`@1467——**主语言 en：只交 `?lang=en` 变体 + 达标词；2026-09-07 追加 /privacy** / 站点 logo 三件套（logo-icon-512.jpg 内联 base64：`favicon`@2576 32px / `favicon_png`@2585 192px / `apple_touch_icon`@2593 180px）/ `og_image`@2605） |
+| ~2667–~2697 | 赞助位点击跳转 `sponsor_click`@2669 + `admin_required`@2679 |
+| ~2698–~2778 | 管理后台（`admin_login`@2698——**2026-09-07 P1 POST 按 IP 限流** /logout@2722/home@2729 + sponsors list@2736/CRUD@2744-2763/stats@2772） |
+| ~2779–~2830 | 统一管理后台（`monitor`@2779 + `monitor/api*`@2785-2812） |
+| ~2831–2893 | 用户行为事件上报（`api_event`@2831 埋点 v3——**2026-09-07 P1 按 IP 限流** + `monitor_events_api`@2874）+ `__main__` 入口 |
 
 ### 公开函数（被路由/外部调用）
 | 函数 | 行号 | 职责 |
@@ -208,7 +208,7 @@
 
 ---
 
-## terms.py  （2336 行）— 词粒度聚合层（词维度重构，新增）
+## terms.py  （2355 行）— 词粒度聚合层（词维度重构，新增）
 
 ### 分区清单
 | 行号范围 | 分区 |
@@ -219,10 +219,10 @@
 | 252–361 | 关键词词典 `_LEXICON`@257（2026-09-10：收录 `apple`（表面 apple/苹果）——跨语言孪生归并依赖词典人工收录，此前未收录导致「苹果」与 apple 各成一词、生产榜两个 Apple） |
 | 362–376 | 通用热词停用词表 `_TERM_STOPWORDS`@366（低价值通用词过滤，如 "AI"/"llm"/"model"） |
 | 377–520 | 热词解释 `_EXPLANATIONS`@381 / `_ALIAS`@482（2026-09-10：手工别名 可折叠iphone/可折叠-iphone/折叠-iphone → 折叠iphone，同概念中文措辞归并） / `_ASCII_PATTERNS`@504（版本感知词边界） |
-| 521–1164 | 大写缩写 `_UPPER_ACRONYMS`@526（gpu/ui/glm 等统一大写）+ 归一化与抽词（`_ASCII_PUNCT`@519 / `normalize_term`@574（**需求 2：词典治理的紧凑孪生折叠**——ASCII canonical 去 '-' 的 compact 若是治理词（_LEXICON 键/缩写表值/_LEXICON_DISPLAY 键/_OVERRIDES 键，如 huggingface）则折叠，'hugging-face'→'huggingface'；非治理词紧凑孪生 ai-agent/aiagent 不动）/ `is_stopword`@621 / `_ci_surface_in_text`@631 / `case_match_original`@649（需求 5：命中返回原文确切大小写片段）/ `extract_keywords_dict`@694 / `_term_surfaces`@722（**需求 2：补 '-'/空格/紧凑分隔变体表面**）/ `_title_matches_term`@775 / `_title_key`@802（**2026-09-04 需求 1 加严**：委托 `text_utils.normalized_title_key`——剥常见全角/半角标点与引号变体、`·/・` 按空白等价、残余空白全去除；连字符等有语义字符保留不误压真实不同标题；空/纯标点返回 None）/ `_compile_surface_patterns`@817 / `_title_matches_patterns`@832 / `_keyword_canons`@848 / `_news_row_canons`@868）+ display 名决策与中文公司词典（模块级展示名表 `_OVERRIDES`@889 / `_LEXICON_DISPLAY`@918——原为 `_display_of` 局部，需求5 改进上提供权威判定共用；**936–1164 需求 4：中文公司/机构官方英名词典区**——`_COMPANY_EN_GLOSSARY`@957（37 键，CJK display → 官方英文名 display_en 确定性映射）+ `_company_glossary_en`@1005（display/display_zh 双形态精确键查）；`_display_of`@1022 / `_is_dictionary_governed`@1056 / **需求 2 归并辅助 `_compact_group_key`@1070 / `_merge_old_rows`@1086 / `_merge_agg_rows`@1113** / `_surface_upper_trusted`@1139 / `_display_zh_of`@1157）——**需求5 改进**：词典外词 display 优先原文表面形态（WorkBuddy 不被 capitalize 美化抹成 Workbuddy；词典权威词 OpenAI/Hugging Face 等仍由词典决定，不被标题表面偶然大小写污染） |
-| 1165–1918 | 词聚合 + 三榜打分 + 快照（`_match_hf_term`@1166 / `_HF_SUFFIX_RE`@1180 / `_hf_canon`@1185 / `refresh_words`@1194 / `_refresh_words_inner`@1219；**rise 环比用近 7 天滑动窗口报道数 `win7_cnt` 口径**（2026-09-01：单刷新轮次 cur_cnt 环比会把「发布日已进池」的词——如 Openclaw 8-31 发布、9-1 轮 cur 从 2→1——误判为降温；改用窗口内报道数，语义＝近一周声量是否增长，`term_snapshots.win7_cnt` 列支撑）；停用词在 `_keyword_canons`（848）聚合入口与 HF 词（`_hf_canon` 1185 后）两级剔除；top news 排序截断前按标题去重（**2026-09-04 需求 1 起去重键剥标点加严**，且当轮 `cur_urls`/`cur_signal_by_url` 按 `normalize_url_key` 归一到存储键同口径，防止孪生 url 漏计/双计）；**display_en 增量翻译（5.6 @1491）**：`TRANSLATE_BATCH_MAX_WORDS`@55，2026-09-02 缺 en 词优先/预算内回译（不再每轮全量重译）；**2026-09-04 需求 4**：5.6 段先做词典预写——display/display_zh 命中 `_COMPANY_EN_GLOSSARY`@957 的公司专名确定性写官方英文名、不进 LLM 翻译批次（不受限流/预算影响，存量拼音脏值随刷新回归；判定独立于 term_translator，无 key 降级环境同样生效），未收录中文词才走 LLM 兜底；**6.5 解释批次**（~1802）：词池即词典——非静态词新词生成解释、存量解释 >24h 低频优化，`term_explainer` 回调驱动；**需求5 改进（display 原文大小写）**：第 2 步收集当轮卡 keywords 表面（`cur_kw_surfaces`），第 6 步词典外词（`_is_dictionary_governed` 判定）display 优先表面形态（全大写标题党形态不入选）；词典权威词（OpenAI/Hugging Face/GLM/xAI）仍由词典决定展示——顺带修正存量脏 display（SaaS/DevOps 曾顶成 Saas/Devops，随刷新回归）；**需求 2（4.5 孪生归并@1389 + 4.7 旧行视图@1475 + 第 6 步残留行清理@1576）**：按「去 '-' 紧凑形式」分组选代表键（治理 > 旧词池 > mentions > 字典序），聚合/HF/表面全并——ai-agent/aiagent 不再同展示名两行；旧 terms 表孪生/折叠残留行删除、term_snapshots 迁移（同 cycle 相加）、first_seen_at 取组内最早、解释列随归并保留） |
-| 1919–2226 | 读：`get_word_cards`@1932 / `get_term_row`@1978 / `term_row_indexable`@1994（**2026-09-05 SEO P1**：词条可索引判定，sitemap 与详情页共用——origin hf/both 且 hf_json 非空放行，否则需 total_mentions≥`TERM_INDEX_MIN_NEWS` 且 cur_hot≥`TERM_INDEX_MIN_HOT`）/ `get_term_explanation`@2027（静态词典 → terms 表 explain_* → 空串三级取词）/ `get_term_news`@2059（limit 截断前按标题去重——需求 1 起去重键剥标点加严，全角/半角标点镜像标题同样只留 score 最高者；同标题转载不占 limit 位；keywords LIKE 候选覆盖孪生分隔拼写，Python 侧权威归一校验）/ `get_term_trend`@2186（**2026-09-05 SEO P2**：term_snapshots 按日聚合近 7 天活跃度——同日取末 cycle，<2 点或全 0 返回 []） |
-| 2227–2349 | 读：`list_terms_for_sitemap`@2236（**2026-09-05 P1**：按 `term_row_indexable` 过滤达标词后取前 limit，热度降序）+ 历史回填 `backfill_history`@2262 + CLI |
+| 521–1169 | 大写缩写 `_UPPER_ACRONYMS`@526（gpu/ui/glm 等统一大写）+ 归一化与抽词（`_ASCII_PUNCT`@519 / `normalize_term`@574（**需求 2：词典治理的紧凑孪生折叠**——ASCII canonical 去 '-' 的 compact 若是治理词（_LEXICON 键/缩写表值/_LEXICON_DISPLAY 键/_OVERRIDES 键，如 huggingface）则折叠，'hugging-face'→'huggingface'；非治理词紧凑孪生 ai-agent/aiagent 不动）/ `is_stopword`@621 / `_ci_surface_in_text`@631 / `case_match_original`@649（需求 5：命中返回原文确切大小写片段）/ `extract_keywords_dict`@694 / `_term_surfaces`@722（**需求 2：补 '-'/空格/紧凑分隔变体表面**）/ `_title_matches_term`@775 / `_title_key`@802（**2026-09-04 需求 1 加严**：委托 `text_utils.normalized_title_key`——剥常见全角/半角标点与引号变体、`·/・` 按空白等价、残余空白全去除；连字符等有语义字符保留不误压真实不同标题；空/纯标点返回 None）/ `_compile_surface_patterns`@817 / `_title_matches_patterns`@832 / `_keyword_canons`@848 / `_news_row_canons`@868）+ display 名决策与中文公司词典（模块级展示名表 `_OVERRIDES`@889 / `_LEXICON_DISPLAY`@918——原为 `_display_of` 局部，需求5 改进上提供权威判定共用；**936–1169 需求 4：中文公司/机构官方英名词典区**——`_COMPANY_EN_GLOSSARY`@957（41 键，CJK display → 官方英文名 display_en 确定性映射；2026-09-08 补录智象→HiDream.ai/中科类脑→Leinao/深度智控→DeepCtrls/外滩大会→Bund Summit）+ `_company_glossary_en`@1010（display/display_zh 双形态精确键查）；`_display_of`@1027 / `_is_dictionary_governed`@1061 / **需求 2 归并辅助 `_compact_group_key`@1075 / `_merge_old_rows`@1091 / `_merge_agg_rows`@1118** / `_surface_upper_trusted`@1144 / `_display_zh_of`@1162）——**需求5 改进**：词典外词 display 优先原文表面形态（WorkBuddy 不被 capitalize 美化抹成 Workbuddy；词典权威词 OpenAI/Hugging Face 等仍由词典决定，不被标题表面偶然大小写污染） |
+| 1170–1947 | 词聚合 + 三榜打分 + 快照（`_match_hf_term`@1171 / `_HF_SUFFIX_RE`@1185 / `_hf_canon`@1190 / `refresh_words`@1199 / `_refresh_words_inner`@1224；**rise 环比用近 7 天滑动窗口报道数 `win7_cnt` 口径**（2026-09-01：单刷新轮次 cur_cnt 环比会把「发布日已进池」的词——如 Openclaw 8-31 发布、9-1 轮 cur 从 2→1——误判为降温；改用窗口内报道数，语义＝近一周声量是否增长，`term_snapshots.win7_cnt` 列支撑）；停用词在 `_keyword_canons`（848）聚合入口与 HF 词（`_hf_canon` 1190 后）两级剔除；top news 排序截断前按标题去重（**2026-09-04 需求 1 起去重键剥标点加严**，且当轮 `cur_urls`/`cur_signal_by_url` 按 `normalize_url_key` 归一到存储键同口径，防止孪生 url 漏计/双计）；**display_en 增量翻译（5.6 @1496）**：`TRANSLATE_BATCH_MAX_WORDS`@55，2026-09-02 缺 en 词优先/预算内回译（不再每轮全量重译）；**2026-09-04 需求 4**：5.6 段先做词典预写——display/display_zh 命中 `_COMPANY_EN_GLOSSARY`@957 的公司专名确定性写官方英文名、不进 LLM 翻译批次（不受限流/预算影响，存量拼音脏值随刷新回归；判定独立于 term_translator，无 key 降级环境同样生效），未收录中文词才走 LLM 兜底（**2026-09-08 回显修复**：LLM 按「无官方名保留中文原词」规则回显的中文不再写入 display_en——含 CJK 视为未翻译、词留 _needs 下轮重试，存量回显脏值回优先队列自愈，_upgradable 词不被回显降级）；**6.5 解释批次**（~1822）：词池即词典——非静态词新词生成解释、存量解释 >24h 低频优化，`term_explainer` 回调驱动；**需求5 改进（display 原文大小写）**：第 2 步收集当轮卡 keywords 表面（`cur_kw_surfaces`），第 6 步词典外词（`_is_dictionary_governed` 判定）display 优先表面形态（全大写标题党形态不入选）；词典权威词（OpenAI/Hugging Face/GLM/xAI）仍由词典决定展示——顺带修正存量脏 display（SaaS/DevOps 曾顶成 Saas/Devops，随刷新回归）；**需求 2（4.5 孪生归并@1394 + 4.7 旧行视图@1480 + 第 6 步残留行清理@1596）**：按「去 '-' 紧凑形式」分组选代表键（治理 > 旧词池 > mentions > 字典序），聚合/HF/表面全并——ai-agent/aiagent 不再同展示名两行；旧 terms 表孪生/折叠残留行删除、term_snapshots 迁移（同 cycle 相加）、first_seen_at 取组内最早、解释列随归并保留） |
+| 1948–2280 | 读：`get_word_cards`@1952 / `get_term_row`@1998 / `term_row_indexable`@2014（**2026-09-05 SEO P1**：词条可索引判定，sitemap 与详情页共用——origin hf/both 且 hf_json 非空放行，否则需 total_mentions≥`TERM_INDEX_MIN_NEWS` 且 cur_hot≥`TERM_INDEX_MIN_HOT`）/ `get_term_explanation`@2047（静态词典 → terms 表 explain_* → 空串三级取词）/ `get_term_news`@2079（limit 截断前按标题去重——需求 1 起去重键剥标点加严，全角/半角标点镜像标题同样只留 score 最高者；同标题转载不占 limit 位；keywords LIKE 候选覆盖孪生分隔拼写，Python 侧权威归一校验）/ `get_term_trend`@2206（**2026-09-05 SEO P2**：term_snapshots 按日聚合近 7 天活跃度——同日取末 cycle，<2 点或全 0 返回 []）/ `list_terms_for_sitemap`@2256（**2026-09-05 P1**：按 `term_row_indexable` 过滤达标词后取前 limit，热度降序） |
+| 2281–2369 | 历史回填 `backfill_history`@2282（幂等，--force 全量重算 + 清残留 keywords）+ CLI |
 
 ### 公开函数（被 app.py / dims.py 调用）
 | 函数 | 行号 | 职责 |
@@ -232,15 +232,15 @@
 | `is_stopword(term)` | 621 | 通用热词停用判断：归一化后查 `_TERM_STOPWORDS`（低价值通用词，如 "AI"/"llm"） |
 | `extract_keywords_dict(title)` | 694 | 词典匹配抽词（无 LLM key 降级 + 回填；命中停用词不返回；openclaw 等词典词可命中）；**需求 5**：返回与原文大小写一致的表面形式（canonical 词键经 `case_match_original` 对齐原文大小写，未命中保持 canonical），去重上限 3 |
 | `case_match_original(keyword, text)` | 649 | 硬编码大小写校验（需求 5）：在原文中大小写不敏感查找关键词（含词典表面/空格变体），命中返回原文确切大小写片段，未命中保持原词；纯 CJK 原样返回；LLM/词典抽词收口 |
-| `refresh_words(all_cards, model_cards, term_translator, term_explainer)` | 1194 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json + 动态解释维护（display_en 增量翻译 + 解释批次均带词数上限）；**需求5 改进**：词典外词 display 优先原文表面形态（当轮卡 keywords / top 标题命中片段，如 WorkBuddy），词典权威词仍由词典决定；**2026-09-04 需求 1**：当轮 url 按 `normalize_url_key` 归一后与存量行比对（cur_cnt/cur_signal 不漏计孪生行）；**需求 2**：4.5 分隔符孪生归并（去 '-' 紧凑分组 → 代表键：治理 > 旧词池 > mentions > 字典序，ai-agent/aiagent 归并单行）+ 第 6 步残留行清理（删孪生/折叠行、快照迁移、first_seen 取最早）——榜单无同词两行；**需求 4**：中文公司/机构专名 display_en 先查 `_COMPANY_EN_GLOSSARY`@957 确定性写官方英文名（不进 LLM 批次、不拼音化；存量拼音脏值随刷新回归），词典未收录中文词才走 term_translator 兜底 |
-| `get_word_cards(sort, lang, limit)` | 1932 | `/api/stream?view=words` 数据源（读 words.json，先完整排序再截取再投影） |
-| `get_term_row(term)` | 1978 | 查 terms 主表（canonical 键；'hugging-face'/'huggingface' 归一后同键） |
-| `term_row_indexable(row)` | 1994 | **2026-09-05 SEO P1**：词条可索引判定——origin hf/both 且 hf_json 非空 → True；否则 `total_mentions >= TERM_INDEX_MIN_NEWS` 且 `cur_hot >= TERM_INDEX_MIN_HOT`；None/缺键 → False，永不抛 |
-| `get_term_explanation(term, lang)` | 2027 | 热词解释三级取词：静态 `_EXPLANATIONS` → terms 表 explain_*（LLM 维护）→ 空串；详情页模板兜底 |
-| `get_term_news(term, limit, lang)` | 2059 | 词 → 关联报道（canonical/别名 + 标题边界兜底；按归一化标题去重后按 hot 降序——2026-09-04 需求 1 起去重键剥标点加严，全角/半角标点差异镜像标题同样去重；hot 缺失回退 score，同 hot 按 published 降序，排序先于 limit 截断；LIKE 候选覆盖孪生分隔拼写） |
-| `get_term_trend(term, days)` | 2186 | **2026-09-05 SEO P2**：term_snapshots 按日聚合近 7 天活跃度（同日取最后 cycle 行，升序返回 {date, win7_cnt, news_cnt}；<2 点或全 0 → []） |
-| `list_terms_for_sitemap(limit)` | 2236 | sitemap 词表（**按 `term_row_indexable` 过滤达标词**后按热度降序取前 limit） |
-| `backfill_history(days, force)` | 2262 | 词典回填 keywords（同样产出原文大小写一致的表面形式）+ 合成历史快照（幂等，--force 全量） |
+| `refresh_words(all_cards, model_cards, term_translator, term_explainer)` | 1199 | 词池归并 + 热度/上升/新奇度打分 + 快照 + 写 words.json + 动态解释维护（display_en 增量翻译 + 解释批次均带词数上限）；**需求5 改进**：词典外词 display 优先原文表面形态（当轮卡 keywords / top 标题命中片段，如 WorkBuddy），词典权威词仍由词典决定；**2026-09-04 需求 1**：当轮 url 按 `normalize_url_key` 归一后与存量行比对（cur_cnt/cur_signal 不漏计孪生行）；**需求 2**：4.5 分隔符孪生归并（去 '-' 紧凑分组 → 代表键：治理 > 旧词池 > mentions > 字典序，ai-agent/aiagent 归并单行）+ 第 6 步残留行清理（删孪生/折叠行、快照迁移、first_seen 取最早）——榜单无同词两行；**需求 4**：中文公司/机构专名 display_en 先查 `_COMPANY_EN_GLOSSARY`@957 确定性写官方英文名（不进 LLM 批次、不拼音化；存量拼音脏值随刷新回归），词典未收录中文词才走 term_translator 兜底（**2026-09-08 回显修复**：含 CJK 译文视为未翻译不写库、存量回显自愈） |
+| `get_word_cards(sort, lang, limit)` | 1952 | `/api/stream?view=words` 数据源（读 words.json，先完整排序再截取再投影） |
+| `get_term_row(term)` | 1998 | 查 terms 主表（canonical 键；'hugging-face'/'huggingface' 归一后同键；2026-09-10 起 '苹果' 同键归 'apple'） |
+| `term_row_indexable(row)` | 2014 | **2026-09-05 SEO P1**：词条可索引判定——origin hf/both 且 hf_json 非空 → True；否则 `total_mentions >= TERM_INDEX_MIN_NEWS` 且 `cur_hot >= TERM_INDEX_MIN_HOT`；None/缺键 → False，永不抛 |
+| `get_term_explanation(term, lang)` | 2047 | 热词解释三级取词：静态 `_EXPLANATIONS` → terms 表 explain_*（LLM 维护）→ 空串；详情页模板兜底 |
+| `get_term_news(term, limit, lang)` | 2079 | 词 → 关联报道（canonical/别名 + 标题边界兜底；按归一化标题去重后按 hot 降序——2026-09-04 需求 1 起去重键剥标点加严，全角/半角标点差异镜像标题同样去重；hot 缺失回退 score，同 hot 按 published 降序，排序先于 limit 截断；LIKE 候选覆盖孪生分隔拼写） |
+| `get_term_trend(term, days)` | 2206 | **2026-09-05 SEO P2**：term_snapshots 按日聚合近 7 天活跃度（同日取最后 cycle 行，升序返回 {date, win7_cnt, news_cnt}；<2 点或全 0 → []） |
+| `list_terms_for_sitemap(limit)` | 2256 | sitemap 词表（**按 `term_row_indexable` 过滤达标词**后按热度降序取前 limit） |
+| `backfill_history(days, force)` | 2282 | 词典回填 keywords（同样产出原文大小写一致的表面形式）+ 合成历史快照（幂等，--force 全量） |
 
 ### SQLite 表
 `terms`（词主表：term/display/display_zh/display_en/origin/first_seen_at/total_mentions/hf_json/cur_hot/cur_rise/cur_novelty + 动态解释列 explain_zh/explain_en/explain_updated_at——词池即词典资产；**display_en：中文公司词由 `_COMPANY_EN_GLOSSARY`@957 词典确定性写入官方英文名优先，词典外词走 LLM 增量翻译，LLM 翻译失败轮次保留旧值**）、`term_snapshots`（(term,cycle) 周期快照支撑环比）。

@@ -142,4 +142,4 @@ pipeline_tag 主徽标 + tags 标签，作为「开源动向」可靠数据源�
 
 - 生产：gunicorn 多 worker（`docker-compose.prod.yml`），每 worker 一个 Python 进程，各起后台线程。
 - 锁策略：`threading.Lock` 只进程内有效，故跨 worker 用 `fcntl.flock` 文件锁（历史教训：曾因多 worker × threading.Lock 导致内存耗尽，见 memory `aitrendwatch-server-stability`）。
-- 本地：`python app.py` 单进程 debug 模式，`app.py:1755` `app.run(port=5000, debug=True)`。
+- 本地：`python app.py` 单进程 debug 模式，`app.py:2889` `app.run(host="0.0.0.0", port=5000, debug=True)`。

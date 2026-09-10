@@ -7,7 +7,9 @@
    翻译批次**（可控 fake translator 只应看到非 glossary 中文词）；
 3. 词典优先的确定性：存量拼音/自译脏 display_en 随刷新回归官方英文名；
    无 key 降级（无 term_translator）环境下 glossary 仍生效、词典外词不写；
-   词典外中文公司词仍走 LLM 翻译兜底（规则下保留中文原词）；
+   词典外中文公司词仍走 LLM 翻译兜底，但 LLM 按规则回显的中文原词
+   不写 display_en（含 CJK 视为未翻译，留下轮重试；存量回显脏值回
+   优先队列自愈）——2026-09-08 修复；
 4. dims 提示词规则文案（keywords / 热词翻译）：公司专名官方英文名优先、
    无官方名保留中文原词、禁拼音化/自造英文——零 key、零网络断言。
 
@@ -109,6 +111,11 @@ class CompanyEnGlossaryTests(unittest.TestCase):
         # QA 点名案例必收
         self.assertEqual(g["创通联达"], "Thundercomm")
         self.assertEqual(g["中科创达"], "ThunderSoft")
+        # 2026-09-08 补录（生产翻译回显案例）
+        self.assertEqual(g["智象"], "HiDream.ai")
+        self.assertEqual(g["中科类脑"], "Leinao")
+        self.assertEqual(g["深度智控"], "DeepCtrls")
+        self.assertEqual(g["外滩大会"], "Bund Summit")
         # 无冲突重复英文：同一官方名只允许出现在同公司别名键上（智谱/智谱AI）
         rev = {}
         for k, v in g.items():
@@ -182,6 +189,9 @@ class CompanyEnGlossaryTests(unittest.TestCase):
     def test_unknown_company_still_goes_through_translator_fallback(self):
         # 词典未收录的公司专名仍走 LLM 兜底翻译（提示词规则下应保留中文原词，
         # 不拼音化）——保证 glossary 只是「词典优先」，未覆盖词不丢翻译通道。
+        # 2026-09-08 起：LLM 按规则回显的中文原词**不写 display_en**（含 CJK
+        # 即视为未翻译），词留在优先队列下轮重试，避免回显被误判「已翻译」
+        # 钉死（生产案例：智象/外滩大会/中科类脑/深度智控）。
         cards = [self._card("https://g.example/6", "云岭智驾获新一轮融资",
                             ["云岭智驾"])]
         self.news_store.upsert_cards(cards)
@@ -193,8 +203,76 @@ class CompanyEnGlossaryTests(unittest.TestCase):
 
         self.terms.refresh_words(cards, [], fetched_at=1750000000,
                                  term_translator=fake_translator)
+        # 词仍进翻译批次（通道不丢），但 CJK 回显不落库（英文页回退中文）
         self.assertEqual(seen, ["云岭智驾"])
-        self.assertEqual(self._display_en("云岭智驾"), "云岭智驾")
+        self.assertEqual(self._display_en("云岭智驾"), "")
+
+    def test_echo_does_not_downgrade_existing_display_en(self):
+        # _upgradable 词已有正常英文时，某轮 LLM 回显中文不得覆盖降级。
+        cards = [self._card("https://g.example/7", "国产算力迎来新突破",
+                            ["国产算力"])]
+        self.news_store.upsert_cards(cards)
+        # 第一轮：翻译成功落库
+        self.terms.refresh_words(
+            cards, [], fetched_at=1750000000,
+            term_translator=lambda ts: {t: "Domestic AI Compute" for t in ts})
+        self.assertEqual(self._display_en("国产算力"), "Domestic AI Compute")
+        # 第二轮：LLM 异常回显中文 → 保留旧英文，不降级
+        self.terms.refresh_words(
+            cards, [], fetched_at=1750000100,
+            term_translator=lambda ts: {t: t for t in ts})
+        self.assertEqual(self._display_en("国产算力"), "Domestic AI Compute")
+
+    def test_stale_echo_display_en_heals_via_retranslate(self):
+        # 存量回显脏值（display_en 含 CJK）视为未翻译：回 _needs 优先队列，
+        # 下轮 LLM 给出真英文即自愈。
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO terms (term, display, display_zh, display_en, origin, "
+            "total_mentions) VALUES (?,?,?,?,?,?)",
+            ("智象", "智象", "", "智象", "news", 1))
+        conn.commit()
+        conn.close()
+        cards = [self._card("https://g.example/8", "智象发布新模型", ["智象"])]
+        self.news_store.upsert_cards(cards)
+        seen = []
+
+        def fake_translator(chinese_terms):
+            seen.extend(chinese_terms)
+            return {t: "HiDream Echo Test" for t in chinese_terms}
+
+        # 注意：智象已在 _COMPANY_EN_GLOSSARY 收录（HiDream.ai），词典优先
+        # 确定性覆盖，不进 LLM 批次——此处验证的是词典修复路径
+        self.terms.refresh_words(cards, [], fetched_at=1750000200,
+                                 term_translator=fake_translator)
+        self.assertEqual(seen, [])  # 词典词不进 LLM 翻译批次
+        self.assertEqual(self._display_en("智象"), "HiDream.ai")
+
+    def test_stale_echo_nonglossary_heals_via_translator(self):
+        # 词典外词的存量回显脏值：回 _needs 优先队列由 LLM 重译自愈
+        #（旧逻辑会进 _upgradable 长尾被预算挤占、永久钉死）。
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO terms (term, display, display_zh, display_en, origin, "
+            "total_mentions) VALUES (?,?,?,?,?,?)",
+            ("云岭智驾", "云岭智驾", "", "云岭智驾", "news", 1))
+        conn.commit()
+        conn.close()
+        cards = [self._card("https://g.example/9", "云岭智驾获新一轮融资",
+                            ["云岭智驾"])]
+        self.news_store.upsert_cards(cards)
+        seen = []
+
+        def fake_translator(chinese_terms):
+            seen.extend(chinese_terms)
+            return {t: "Yunling Autonomous Driving" for t in chinese_terms}
+
+        self.terms.refresh_words(cards, [], fetched_at=1750000300,
+                                 term_translator=fake_translator)
+        # 存量回显词回到优先翻译队列（_needs），拿到真英文后自愈
+        self.assertEqual(seen, ["云岭智驾"])
+        self.assertEqual(self._display_en("云岭智驾"),
+                         "Yunling Autonomous Driving")
 
     # ---- ④ 辅助函数（display/display_zh 两种形态兜底） ----
 
