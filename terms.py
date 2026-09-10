@@ -292,6 +292,12 @@ _LEXICON = {
     "nvidia":       ["nvidia", "英伟达"],
     "CUDA":         ["cuda"],
     "AMD":          ["amd"],
+    # apple：中英双语表面（英文报道抽 "Apple"、中文报道抽「苹果」）归并到同一
+    # canonical——此前 apple 未收录词典，「苹果」独立成词，英文页出现两个 Apple
+    # 词条（2026-09-10 生产事故：折叠 iPhone 发布潮中 rise 榜 #1 苹果 + #37 apple）。
+    # 注：「苹果」是「苹果智能」的子串，含苹果智能的标题两词都会关联，属预期
+    # （Apple Intelligence 报道本就与 Apple 相关）。
+    "apple":        ["apple", "苹果"],
     "apple-intelligence": ["apple intelligence", "苹果智能"],
     "siri":         ["siri"],
     "meta-ai":      ["meta ai", "meta人工智能"],
@@ -410,6 +416,7 @@ _EXPLANATIONS = {
     "nvidia": {"zh": "美国芯片公司，GPU 与 AI 加速卡市场的领导者。", "en": "The American chip company that leads the GPU and AI accelerator market."},
     "CUDA": {"zh": "NVIDIA 的并行计算平台与编程模型，是 AI 训练与推理的事实标准之一。", "en": "NVIDIA's parallel computing platform and programming model, a de facto standard for AI compute."},
     "AMD": {"zh": "美国芯片公司，NVIDIA 在 GPU 与加速卡市场的主要竞争对手。", "en": "The American chip company, NVIDIA's main rival in the GPU and accelerator market."},
+    "apple": {"zh": "美国科技公司，iPhone/Mac 的制造商，近年以 Apple Intelligence 布局端侧 AI。", "en": "The American tech company behind iPhone and Mac, expanding into on-device AI with Apple Intelligence."},
     "apple-intelligence": {"zh": "苹果推出的 AI 能力体系，覆盖系统级智能与端侧模型。", "en": "Apple's AI feature stack spanning system-wide intelligence and on-device models."},
     "siri": {"zh": "苹果的语音助手，正逐步接入 Apple Intelligence 能力。", "en": "Apple's voice assistant, increasingly powered by Apple Intelligence."},
     "meta-ai": {"zh": "Meta 的 AI 助手，整合进 Facebook、WhatsApp、Instagram 等应用。", "en": "Meta's AI assistant integrated across Facebook, WhatsApp and Instagram."},
@@ -484,6 +491,12 @@ _ALIAS.update({
     "月之暗面": "kimi",
     "深度求索": "deepseek",
     "苹果智能": "apple-intelligence",
+    # 折叠 iPhone 同词异形归并（2026-09-10 生产词池 折叠iphone/可折叠iphone 两行）：
+    # LLM 对同一产品概念抽出两种中文措辞，CJK 词无分隔符紧凑归并，手工别名收口。
+    # 键须是 normalize_term 内部形态（空白/下划线已归 '-'、小写）。
+    "可折叠iphone": "折叠iphone",
+    "可折叠-iphone": "折叠iphone",
+    "折叠-iphone": "折叠iphone",
 })
 
 # ASCII 表面形式预编译词边界正则（复用 tracker.py 词边界模式）；
@@ -906,6 +919,7 @@ _LEXICON_DISPLAY = {
     "agents.md": "AGENTS.md",
     "alibaba": "Alibaba",
     "anthropic": "Anthropic",
+    "apple": "Apple",
     "apple-intelligence": "Apple Intelligence",
     "baidu": "Baidu",
     "bytedance": "ByteDance",
