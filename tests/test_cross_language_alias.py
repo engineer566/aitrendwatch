@@ -144,6 +144,12 @@ class CrossLanguageAliasTests(unittest.TestCase):
         self.assertEqual(t.normalize_term("可折叠-iPhone"), "折叠iphone")
         self.assertEqual(t.normalize_term("折叠 iPhone"), "折叠iphone")
         self.assertEqual(t.normalize_term("折叠iphone"), "折叠iphone")
+        # 测试机全词池扫描发现的漏网孪生（折叠屏-iphone/折叠屏iphone）
+        self.assertEqual(t.normalize_term("折叠屏iphone"), "折叠iphone")
+        self.assertEqual(t.normalize_term("折叠屏 iPhone"), "折叠iphone")
+        self.assertEqual(t.normalize_term("折叠屏-iPhone"), "折叠iphone")
+        # 回归：通用概念词 折叠屏 不被误并入折叠iphone
+        self.assertEqual(t.normalize_term("折叠屏"), "折叠屏")
 
     def test_normalize_term_keeps_apple_intelligence_distinct(self):
         t = self.terms
@@ -247,26 +253,36 @@ class CrossLanguageAliasTests(unittest.TestCase):
                           published="2026-09-08")
         self._insert_card("https://zh.example/fold-3",
                           "可折叠iPhone 价格分析", ["可折叠iPhone"])
+        self._insert_card("https://zh.example/fold-4",
+                          "折叠屏 iPhone 拆解报告", ["折叠屏iphone"])
         self._insert_terms_row("折叠iphone", "折叠iphone",
                                first_seen_at="2026-09-09")
         self._insert_terms_row("可折叠iphone", "可折叠iphone",
                                first_seen_at="2026-09-08")
+        self._insert_terms_row("折叠屏-iphone", "折叠屏-iPhone",
+                               first_seen_at="2026-09-09")
         self._insert_snapshot("可折叠iphone", "2026-09-09-13", win7_cnt=3)
 
         self._refresh()
 
         cards, _ = self.terms.get_word_cards(sort="hot", lang="zh", limit=200)
         fold_cards = [c for c in cards
-                      if c["id"] in ("折叠iphone", "可折叠iphone")]
+                      if c["id"] in ("折叠iphone", "可折叠iphone",
+                                     "折叠屏iphone", "折叠屏-iphone")]
         self.assertEqual(len(fold_cards), 1)
         self.assertEqual(fold_cards[0]["id"], "折叠iphone")
-        self.assertEqual(fold_cards[0]["news_cnt"], 3)
+        self.assertEqual(fold_cards[0]["news_cnt"], 4)
         # 残留行删除 + 快照迁移 + first_seen 取最早
         self.assertEqual(self._db_terms(), ["折叠iphone"])
         self.assertEqual(self._db_snapshots("可折叠iphone"), [])
-        row = self.terms.get_term_row("可折叠iphone")
+        self.assertEqual(self._db_snapshots("折叠屏-iphone"), [])
+        row = self.terms.get_term_row("折叠屏 iPhone")
         self.assertIsNotNone(row)
         self.assertEqual(row["term"], "折叠iphone")
+        row2 = self.terms.get_term_row("可折叠iphone")
+        self.assertIsNotNone(row2)
+        self.assertEqual(row2["term"], "折叠iphone")
+        self.assertEqual(row2["first_seen_at"], "2026-09-08")
         self.assertEqual(row["first_seen_at"], "2026-09-08")
 
 

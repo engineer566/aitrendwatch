@@ -492,11 +492,15 @@ _ALIAS.update({
     "深度求索": "deepseek",
     "苹果智能": "apple-intelligence",
     # 折叠 iPhone 同词异形归并（2026-09-10 生产词池 折叠iphone/可折叠iphone 两行）：
-    # LLM 对同一产品概念抽出两种中文措辞，CJK 词无分隔符紧凑归并，手工别名收口。
+    # LLM 对同一产品概念抽出多种中文措辞，CJK 词无分隔符紧凑归并，手工别名收口。
     # 键须是 normalize_term 内部形态（空白/下划线已归 '-'、小写）。
     "可折叠iphone": "折叠iphone",
     "可折叠-iphone": "折叠iphone",
     "折叠-iphone": "折叠iphone",
+    # 测试机全词池扫描发现的漏网孪生：折叠屏-iphone/折叠屏iphone（同一产品概念，
+    # 与 可折叠iphone 同口径并入 折叠iphone；注意不是 折叠屏 这个通用概念词）。
+    "折叠屏iphone": "折叠iphone",
+    "折叠屏-iphone": "折叠iphone",
 })
 
 # ASCII 表面形式预编译词边界正则（复用 tracker.py 词边界模式）；
