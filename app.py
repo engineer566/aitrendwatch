@@ -2602,6 +2602,7 @@ def apple_touch_icon():
 _OG_IMAGE_CACHE = {}
 
 @app.route("/og-image.png")
+@app.route("/og-image-v2.png")
 def og_image():
     """生成站点级 OG 社交分享图（1200×630）。
 
@@ -2625,9 +2626,21 @@ def og_image():
             # 尝试加载系统字体，降级到默认
             font_large = None
             font_small = None
-            for fp in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                       "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-                       "/System/Library/Fonts/Helvetica.ttc"):
+            font_paths = [
+                # Linux
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                # macOS
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/System/Library/Fonts/HelveticaNeue.ttc",
+                # Windows
+                "C:/Windows/Fonts/arialbd.ttf",
+                "C:/Windows/Fonts/segoeuib.ttf",
+                "C:/Windows/Fonts/calibrib.ttf",
+                "C:/Windows/Fonts/msyhbd.ttc",  # 微软雅黑粗体
+            ]
+            for fp in font_paths:
                 try:
                     font_large = ImageFont.truetype(fp, 72)
                     font_small = ImageFont.truetype(fp, 36)
