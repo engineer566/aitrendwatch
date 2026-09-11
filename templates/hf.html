@@ -5,6 +5,8 @@
    官方链接 / 社区讨论 / 相关论文（如有）。
 #}
 {% set is_en = lang == 'en' %}
+{% set lang_qs = '' if is_en else '?lang=zh' %}
+{% set lang_amp = '' if is_en else '&lang=zh' %}
 {# pipeline_tag → 中文标签映射（「合理标签」：主徽标用可读名称而非原始 key） #}
 {% set pipe_emoji = {
   'text-generation': '🗣', 'image-text-to-text': '🖼', 'image-to-text': '🖼',
@@ -57,7 +59,7 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ 'HuggingFace Open-Source Model Leaderboard – Trending, Likes & Downloads' if is_en else 'HuggingFace 开源模型榜 · 趋势 / 点赞 / 下载排行' }} · {{ site_name }}</title>
+<title>{{ ('HuggingFace Open-Source Model Leaderboard · ' ~ site_name) if is_en else ('HuggingFace 开源模型榜 · 趋势/点赞/下载排行 · ' ~ site_name) }}</title>
 <meta name="description" content="{{ site_desc }}">
 <link rel="icon" type="image/png" sizes="192x192" href="/favicon.png">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -73,14 +75,14 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ 'HuggingFace Open-Source Model Leaderboard – Trending, Likes & Downloads' if is_en else 'HuggingFace 开源模型榜 · 趋势 / 点赞 / 下载排行' }} · {{ site_name }}">
+<meta property="og:title" content="{{ ('HuggingFace Open-Source Model Leaderboard · ' ~ site_name) if is_en else ('HuggingFace 开源模型榜 · 趋势/点赞/下载排行 · ' ~ site_name) }}">
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
 {% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image-v2.png">{% endif %}
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="{{ 'HuggingFace Open-Source Model Leaderboard – Trending, Likes & Downloads' if is_en else 'HuggingFace 开源模型榜 · 趋势 / 点赞 / 下载排行' }} · {{ site_name }}">
+<meta name="twitter:title" content="{{ ('HuggingFace Open-Source Model Leaderboard · ' ~ site_name) if is_en else ('HuggingFace 开源模型榜 · 趋势/点赞/下载排行 · ' ~ site_name) }}">
 <meta name="twitter:description" content="{{ site_desc }}">
 {% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image-v2.png">{% endif %}
 {% else %}
@@ -293,15 +295,15 @@
 
   {# 三视图镜像导航：与首页 #view-seg 一致，「开源」板块入口为当前页 active（本页为 HF 数据源）；热词/逐条新闻跳回首页对应视图 #}
   <nav class="view-nav" aria-label="{{ 'View navigation' if is_en else '视图导航' }}">
-    <a href="/?view=words&lang={{ lang }}">🔤 {% if is_en %}Words{% else %}热词{% endif %}</a>
-    <a href="/?view=news&lang={{ lang }}">📰 {% if is_en %}News feed{% else %}逐条新闻{% endif %}</a>
-    <a class="active" href="/hf?lang={{ lang }}" aria-current="page">🤗 {% if is_en %}Open Source{% else %}开源{% endif %}</a>
+    <a href="/?view=words{{ lang_amp }}">🔤 {% if is_en %}Words{% else %}热词{% endif %}</a>
+    <a href="/?view=news{{ lang_amp }}">📰 {% if is_en %}News feed{% else %}逐条新闻{% endif %}</a>
+    <a class="active" href="/hf{{ lang_qs }}" aria-current="page">🤗 {% if is_en %}Open Source{% else %}开源{% endif %}</a>
   </nav>
 
   <nav class="sort-row" aria-label="{{ 'Sort options' if is_en else '排序选项' }}">
-    <a class="sort-pill {{ 'active' if sort == 'trending' }}" href="/hf?sort=trending&lang={{ lang }}">📈 {% if is_en %}Trending{% else %}趋势{% endif %}</a>
-    <a class="sort-pill {{ 'active' if sort == 'likes' }}" href="/hf?sort=likes&lang={{ lang }}">❤ {% if is_en %}Likes{% else %}点赞{% endif %}</a>
-    <a class="sort-pill {{ 'active' if sort == 'downloads' }}" href="/hf?sort=downloads&lang={{ lang }}">↓ {% if is_en %}Downloads{% else %}下载{% endif %}</a>
+    <a class="sort-pill {{ 'active' if sort == 'trending' }}" href="/hf?sort=trending{{ lang_amp }}">📈 {% if is_en %}Trending{% else %}趋势{% endif %}</a>
+    <a class="sort-pill {{ 'active' if sort == 'likes' }}" href="/hf?sort=likes{{ lang_amp }}">❤ {% if is_en %}Likes{% else %}点赞{% endif %}</a>
+    <a class="sort-pill {{ 'active' if sort == 'downloads' }}" href="/hf?sort=downloads{{ lang_amp }}">↓ {% if is_en %}Downloads{% else %}下载{% endif %}</a>
     <span class="updated" id="updated-at" data-ts="{{ fetched_at }}">—</span>
   </nav>
   <div class="count-line">{{ models|length }} {% if is_en %}models{% else %}个模型{% endif %}</div>
@@ -345,10 +347,10 @@
 <footer>
   {% if is_en %}
   🤗 HuggingFace open-source model leaderboard · official HF API data (via hf-mirror)<br>
-  <a href="/?lang=en" class="footer-link">AI Trends</a> · <a href="/terms?lang=en" class="footer-link">Terms of Service</a> · <a href="/privacy?lang=en" class="footer-link">Privacy Policy</a>
+  <a href="/" class="footer-link">AI Trends</a> · <a href="/terms" class="footer-link">Terms of Service</a> · <a href="/privacy" class="footer-link">Privacy Policy</a>
   {% else %}
   🤗 HuggingFace 开源模型榜 · 数据来自 HuggingFace 官方 API（hf-mirror 镜像）<br>
-  <a href="/?lang=zh" class="footer-link">AI 热点</a> · <a href="/terms?lang=zh" class="footer-link">服务条款</a> · <a href="/privacy?lang=zh" class="footer-link">隐私政策</a>
+  <a href="/?lang=zh" class="footer-link">AI 热点</a> · <a href="/terms" class="footer-link">服务条款</a> · <a href="/privacy" class="footer-link">隐私政策</a>
   {% endif %}
 </footer>
 
@@ -375,7 +377,9 @@ const searchInput = document.getElementById("search-input");
 searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     const q = searchInput.value.trim();
-    if (q) window.location.href = "/search?q=" + encodeURIComponent(q) + "&lang=" + LANG;
+    // 英文（裸 URL 主语言）不带 lang；中文显式带，保证搜索页语言一致
+    if (q) window.location.href = "/search?q=" + encodeURIComponent(q)
+      + (LANG === "zh" ? "&lang=zh" : "");
   } else if (e.key === "Escape") {
     searchInput.value = "";
     searchInput.blur();
