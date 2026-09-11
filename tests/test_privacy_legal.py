@@ -68,24 +68,22 @@ class PrivacyPageTests(unittest.TestCase):
         base = self.app_module.config.BASE_URL
         with patch.object(self.app_module.config, "BASE_URL",
                           "https://aitrendwatch.top"):
-            en = self.client.get("/?lang=en").get_data(as_text=True)
+            en = self.client.get("/").get_data(as_text=True)
             zh = self.client.get("/?lang=zh").get_data(as_text=True)
         self.app_module.config.BASE_URL = base
         # SSR 页脚 + JS i18n 文案都要带 Privacy 入口
-        self.assertIn('href="/terms?lang=en" class="footer-link">Terms of Service',
-                      en)
-        self.assertIn('href="/privacy?lang=en" class="footer-link">Privacy Policy',
-                      en)
+        # 单页双语页 canonical 是裸 URL → 页脚链接不带 lang（带 lang 会命中 301）
+        self.assertIn('href="/terms" class="footer-link">Terms of Service', en)
+        self.assertIn('href="/privacy" class="footer-link">Privacy Policy', en)
         self.assertIn("footer_privacy", en)  # JS 动态重建页脚用同一 i18n key
-        self.assertIn('href="/privacy?lang=zh" class="footer-link">隐私政策', zh)
+        self.assertIn('href="/privacy" class="footer-link">隐私政策', zh)
         self.assertIn("隐私政策", zh)
 
     def test_terms_and_hf_pages_have_privacy_links(self):
         terms = self.client.get("/terms").get_data(as_text=True)
         self.assertIn('href="/privacy" class="footer-link">Privacy Policy', terms)
         hf = self.client.get("/hf").get_data(as_text=True)
-        self.assertIn('href="/privacy?lang=en" class="footer-link">Privacy Policy',
-                      hf)
+        self.assertIn('href="/privacy" class="footer-link">Privacy Policy', hf)
 
     def test_sitemap_includes_privacy(self):
         base = self.app_module.config.BASE_URL

@@ -347,8 +347,33 @@ def _sitemap_terms():
 
 
 # 站点级元信息（描述等），集中维护。
-SITE_DESC = "AI 热点聚合 · 实时追踪 HuggingFace 模型趋势、arXiv 相关论文与社区讨论。上升最快、最热、最新 AI 模型一页尽览。"
-SITE_DESC_EN = "AI trend aggregation · Track HuggingFace model trends, related arXiv papers, and community discussion. Browse the fastest-rising, hottest, and newest AI models in one place."
+# 2026-09-11 SEO（BWT「重复 meta description」修复）：英文描述统一 150-158 字符
+# （BWT 建议 150-160，过长会在 SERP 被截断），中文描述 ~90-105 字；每个页面
+# 形态（首页 / HF 榜 / 词条页 / 条款 / 隐私 / 搜索）各有独立描述，保证同一语言下
+# 任意两个 URL 的描述互不相同——BWT 的重复判定是 URL 两两比对，逐页唯一描述
+# 是从源头消除重复告警的做法。
+SITE_DESC = ("AI 热点聚合平台：汇总 36 个 RSS 源、HuggingFace 模型榜与 arXiv 论文，"
+             "每日多次更新上升最快、最热、最新的 AI 热词榜与事件卡，"
+             "中英双语免费查看，无需注册。")
+SITE_DESC_EN = ("AI trend aggregation from 36 RSS sources: rising AI keywords, "
+                "HuggingFace model trends, arXiv papers and community buzz on "
+                "one bilingual board, updated daily.")
+# /terms 与 /privacy 是单页内嵌双语的裸 URL 页，描述中英并列（SERP 语言随查询词）；
+# 站名取 config.SITE_NAME（生产为 AITrendWatch），避免品牌写死导致漂移。
+_SITE_NAME = config.SITE_NAME or "AITrendWatch"
+SITE_TERMS_DESC = (f"{_SITE_NAME} Terms of Service: acceptable use, advertising, "
+                   "intellectual property, disclaimers and liability for this AI "
+                   "trend aggregation site. 服务条款中英双语。")
+SITE_PRIVACY_DESC = (f"{_SITE_NAME} Privacy Policy: what we collect (IP, GeoIP, "
+                     "analytics, cookies), how ads and analytics providers use it, "
+                     "retention and opt-out. 隐私政策中英双语。")
+# /search 为 noindex 页（见 search 路由），描述仅用于分享卡片与爬虫兜底。
+SEARCH_DESC = (f"在 {_SITE_NAME} 聚合的 AI 热点库中搜索热词、HuggingFace 模型与 "
+               "arXiv 论文，结果按热度与时效排序，支持中英双语检索，"
+               "覆盖模型发布、产品动向与行业动态。")
+SEARCH_DESC_EN = ("Search AI trends, hot keywords, HuggingFace models and arXiv papers "
+                  f"across {_SITE_NAME}'s aggregated news archive, ranked by heat and "
+                  "recency.")
 
 # 服务条款最后更新日期（修改条款时同步更新）。
 SITE_TERMS_UPDATED = "2026-08-26"
@@ -582,17 +607,83 @@ def detect_region():
 
 
 def _request_lang():
-    """解析页面/API 的语言参数，显式 lang 优先，未传时回退 Accept-Language。"""
-    lang = request.args.get("lang")
-    if lang in ("zh", "en"):
-        return lang
-    return "zh" if detect_region() == "zh" else "en"
+    """页面语言：显式 ?lang=zh → 中文；其余一律英文（主语言）。
+
+    2026-09-11 SEO：**不再按 Accept-Language 协商**。协商会让爬虫在裸 URL `/`
+    上拿到与 `/?lang=en` 逐字节相同的 HTML（同 title / 同 description），
+    Bing 因此报「重复 meta description」。现在裸 URL 是英文的规范页
+    （`/?lang=en` 由 `_canonical_lang_redirect` 301 收敛到 `/`），
+    中文只在显式 `?lang=zh` 上出现，两个 URL 各自唯一。
+    """
+    return "zh" if request.args.get("lang") == "zh" else "en"
 
 
 def _lang_url(path, lang):
-    """给站内链接附加明确语言，避免跨页面后丢失当前语言。"""
+    """给站内链接标注语言：英文用裸 URL（主语言），中文追加 lang=zh。
+
+    英文是裸 URL 规范页，因此 en 变体不再携带 `lang=en`——否则内链会指向
+    301（多一跳，且爬虫反复发现 `?lang=en` 变体）；zh 变体显式标注，
+    保证中文页面点击后不丢语言。
+    """
+    if lang != "zh":
+        return path
     sep = "&" if "?" in path else "?"
-    return f"{path}{sep}lang={lang}"
+    return f"{path}{sep}lang=zh"
+
+
+def _qs(parts):
+    """把已编码的 'k=v' 段拼成查询串（含前导 '?'），无段时返回 ''。"""
+    segs = [p for p in parts if p]
+    return ("?" + "&".join(segs)) if segs else ""
+
+
+def _with_query(path, parts):
+    """在 path 后追加已编码的 'k=v' 段（保持顺序），无段时原样返回。"""
+    segs = [p for p in parts if p]
+    if not segs:
+        return path
+    sep = "&" if "?" in path else "?"
+    return path + sep + "&".join(segs)
+
+
+def _clip_desc(text, limit):
+    """按长度裁剪描述：英文按词边界、CJK 按字符边界，末尾加省略号。"""
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:max(1, limit - 1)].rstrip()
+    if " " in cut:
+        cut = cut[:cut.rfind(" ")].rstrip()
+    return cut + "…"
+
+
+# 英文是裸 URL 主语言：显式 `?lang=en` 变体 301 收敛到裸 URL（保留其它查询参数）。
+# 2026-09-11 SEO：此前 `/` 与 `/?lang=en` 都返回 200 且 HTML 逐字节相同（同
+# title / 同 meta description / 同 canonical），Bing 因此报「重复 meta
+# description」；收敛后同一页面只有一个可索引 URL。只作用于可索引 HTML 页面——
+# `/api/*`（前端 JS 显式带 lang=en）、`/admin`、`/monitor` 不在白名单，行为不变。
+_BARE_URL_ENDPOINTS = {"index", "hf_page", "search_page", "term_detail"}
+# 单页内嵌双语的页面：没有语言变体，任何 ?lang= 都收敛到裸 URL（历史页脚
+# 链接曾写 /terms?lang=en|zh、/privacy?lang=en|zh，会与裸 URL 重复 description）。
+_MONOLINGUAL_ENDPOINTS = {"terms", "privacy"}
+
+
+@app.before_request
+def _canonical_lang_redirect():
+    if request.method not in ("GET", "HEAD"):
+        return None
+    if request.endpoint in _MONOLINGUAL_ENDPOINTS:
+        if "lang" not in request.args:
+            return None
+    elif request.endpoint in _BARE_URL_ENDPOINTS:
+        # 中文是显式变体（?lang=zh），只有英文变体需要收敛到裸 URL
+        if request.args.get("lang") != "en":
+            return None
+    else:
+        return None
+    rest = [(k, v) for k, v in request.args.items(multi=True) if k != "lang"]
+    target = request.path + _qs([f"{k}={quote(v)}" for k, v in rest])
+    return redirect(target, code=301)
 
 
 def _client_ip():
@@ -692,15 +783,19 @@ def index():
         requested_view = "words"
     if requested_sort not in ("rise", "hot", "new"):
         requested_sort = "rise"
-    # SSR 首屏词链接携带当前榜单状态（非默认项），返回恢复滚动位置需要原样状态
-    ssr_term_parts = [f"lang={lang}"]
+    # SSR 首屏词链接携带当前榜单状态（非默认项），返回恢复滚动位置需要原样状态。
+    # 英文是裸 URL 主语言 → 只有中文变体标注 lang=zh，英文链接不带 lang（带
+    # lang=en 的内链会命中 301，浪费一跳且让爬虫反复发现 ?lang=en 变体）。
+    ssr_term_parts = []
+    if lang == "zh":
+        ssr_term_parts.append("lang=zh")
     if requested_view != "words":
         ssr_term_parts.append(f"view={requested_view}")
     if requested_sort != "rise":
         ssr_term_parts.append(f"sort={requested_sort}")
     if requested_cat and requested_cat != "all":
         ssr_term_parts.append(f"cat={quote(requested_cat)}")
-    ssr_term_qs = "&".join(ssr_term_parts)
+    ssr_term_qs = _qs(ssr_term_parts)
     initial_terms = (
         _initial_terms_for_ssr(sort=requested_sort, lang=lang)
         if _seo_enabled() and requested_view != "news" else []
@@ -713,9 +808,9 @@ def index():
              sort=requested_sort, lang=lang)
     else:
         initial_dimensions, initial_dimension_counts, initial_total = [], {}, 0
-    # hreflang 互指：zh/en 两个显式语言变体互为 alternate（x-default → en 主语言），
-    # 让 Google 把两语言视为同一内容的语言变体而非独立页；_abs 在 BASE_URL 未设时
-    # 返回 None，模板据此跳过输出。
+    # hreflang 互指：zh/en 两个语言变体互为 alternate（x-default → en 主语言，
+    # 即裸 URL `/`）；2026-09-11 起英文是裸 URL 规范页、中文在 `/?lang=zh`，
+    # `_abs` 在 BASE_URL 未设时返回 None，模板据此跳过输出。
     hreflang = {
         "zh": _abs(_lang_url("/", "zh")),
         "en": _abs(_lang_url("/", "en")),
@@ -772,6 +867,55 @@ def api_all():
 # tracker 层仅作内部数据源（HF 模型卡进词池、详情页 HF 区块）。
 
 
+def _term_meta_desc(data, lang):
+    """词条页 meta description：含具体数据 + 最新报道标题，逐词唯一。
+
+    2026-09-11 SEO：此前描述是「词 + 报道数 + 热度」的固定模板（约 85 字符），
+    既偏短又与其它词条高度同构。改为「词 + 报道数 + 最新报道标题 + 追踪说明」，
+    标题按剩余预算裁剪（`_clip_desc`），总长 ≤160 字符；标题缺失或无报道时
+    退回 HF 数据/通用句式，恒非空。
+    """
+    t = data.get("term") or {}
+    news = data.get("news") or []
+    name = (t.get("term") or "").strip() or "AI"
+    cnt = int(t.get("news_cnt") or 0)
+    hf = data.get("hf_detail") or data.get("hf") or {}
+    limit = 160
+    if cnt > 0:
+        title = ""
+        for item in news:
+            title = (item.get("title") or "").strip()
+            if title:
+                break
+        if lang == "zh":
+            body = f"{name} 最新动态聚合：{cnt} 篇相关报道与社区讨论。"
+            tail = f"持续追踪 {name} 的模型、产品、融资与政策进展。"
+            prefix, suffix = "最新报道：", "。"
+        else:
+            body = f"{name}: {cnt} related reports aggregated from AI news sources. "
+            tail = f"Track {name} models, products, funding and policy moves."
+            prefix, suffix = "Latest: ", " "
+        # 预算分配：先保 body，再保 ≥36 字符的可读标题（不够时裁尾句让位），
+        # 最后按剩余空间裁标题——长词名（如 60+ 字符的 HF 模型 id）也不会挤掉标题。
+        min_head = len(prefix) + len(suffix) + 36
+        room = limit - len(body) - len(tail) - min_head
+        if title and room < 0:
+            tail_budget = len(tail) + room
+            tail = _clip_desc(tail, tail_budget) if tail_budget >= 20 else ""
+        room = limit - len(body) - len(tail) - len(prefix) - len(suffix)
+        head = prefix + _clip_desc(title, room) + suffix if title and room >= 24 else ""
+        return body + head + tail
+    # 无报道支撑（纯 HF 模型词 / 冷启动）：用 HF 数据兜底，仍保持句式唯一
+    likes = hf.get("likes") or 0
+    downloads = hf.get("downloads") or 0
+    if lang == "zh":
+        return (f"{name}（HuggingFace 开源模型）：{likes} 点赞、{downloads} 下载。"
+                f"查看官方模型卡、社区讨论与相关 arXiv 论文聚合。")
+    return (f"{name} on HuggingFace: {likes} likes and {downloads} downloads. "
+            f"See the official model card, community discussion and related "
+            f"arXiv papers aggregated on AITrendWatch.")
+
+
 @app.route("/term/<path:term_name>")
 def term_detail(term_name):
     """通用热词聚合 HTML 详情页（SEO 可索引长尾页）。
@@ -803,19 +947,14 @@ def term_detail(term_name):
     t = data["term"]
     slug = t.get("term") or term_name
     canonical = _abs(_lang_url(f"/term/{quote(slug)}", lang))
-    # hreflang 互指：zh/en 显式语言变体互为 alternate（x-default → en 主语言）；
+    # hreflang 互指：zh/en 语言变体互为 alternate（x-default → en 主语言，即裸 URL）；
     # slug 与 canonical 同用 quote(slug)，_abs 在 BASE_URL 未设时返回 None，
     # 模板据此跳过输出。
     hreflang = {
         "zh": _abs(_lang_url(f"/term/{quote(slug)}", "zh")),
         "en": _abs(_lang_url(f"/term/{quote(slug)}", "en")),
     }
-    if lang == "zh":
-        desc = (f"{slug} 最新动态聚合：{t.get('news_cnt', 0)} 篇相关报道，"
-                f"热度 {t.get('hot', 0)}，追踪 {slug} 的模型、产品与行业进展。")
-    else:
-        desc = (f"{slug}: {t.get('news_cnt', 0)} related reports aggregated, "
-                f"hotness {t.get('hot', 0)}. Track the latest on {slug}.")
+    desc = _term_meta_desc(data, lang)
     # 返回首页时回显进入词条页前的榜单状态（view/sort/cat 非默认项）。
     # 滚动恢复按保存的 scrollY 像素落位，若返回后榜单被重置为默认 Trending，
     # 像素会落在不同排序的列表上 → 位置错乱（20260901 #7 边界修复）。
@@ -829,11 +968,10 @@ def term_detail(term_name):
     back_cat = request.args.get("cat")
     if back_cat and back_cat != "all":
         back_parts.append(f"cat={quote(back_cat)}")
-    home_url = _lang_url("/", lang) + ("&" + "&".join(back_parts) if back_parts else "") \
-        + "&scroll_back=1"
+    home_url = _with_query(_lang_url("/", lang), back_parts + ["scroll_back=1"])
     return render_template("term_detail.html", word=data, lang=lang,
                            site_name=config.SITE_NAME,
-                           site_desc=desc[:160], base_url=_base_url(),
+                           site_desc=desc, base_url=_base_url(),
                            canonical=canonical, hreflang=hreflang,
                            seo_enabled=_seo_enabled(),
                            indexable=indexable,
@@ -851,7 +989,7 @@ def terms():
     英文版与隐私声明置于中文之前（适配境外主体 + Adsterra 广告合规要求）。
     """
     return render_template("terms.html", site_name=config.SITE_NAME,
-                           site_desc="Terms of Service / 服务条款",
+                           site_desc=SITE_TERMS_DESC,
                            base_url=_base_url(), canonical=_abs("/terms"),
                            seo_enabled=_seo_enabled(),
                            contact_email=config.CONTACT_EMAIL,
@@ -868,7 +1006,7 @@ def privacy():
     单页内嵌双语、canonical 固定裸 URL /privacy（与 /terms 同构）。
     """
     return render_template("privacy.html", site_name=config.SITE_NAME,
-                           site_desc="Privacy Policy / 隐私政策",
+                           site_desc=SITE_PRIVACY_DESC,
                            base_url=_base_url(), canonical=_abs("/privacy"),
                            seo_enabled=_seo_enabled(),
                            contact_email=config.CONTACT_EMAIL,
@@ -1050,19 +1188,21 @@ def hf_page():
         sort = "trending"
     models, fetched_at = _hf_models_for(sort, lang)
     canonical = _abs(_lang_url("/hf", lang))
-    # hreflang 互指：/hf?lang=zh|en 两个显式语言变体互为 alternate
+    # hreflang 互指：/hf（英文裸 URL）与 /hf?lang=zh 互为 alternate
     # （x-default → en 主语言）；_abs 在 BASE_URL 未设时返回 None，模板据此跳过。
     hreflang = {
         "zh": _abs(_lang_url("/hf", "zh")),
         "en": _abs(_lang_url("/hf", "en")),
     }
+    # 2026-09-11 SEO：英文 150-158 字符 / 中文 ~100 字，与首页、词条页描述互不相同
     if lang == "zh":
-        desc = ("HuggingFace 开源模型榜：按趋势分 / 点赞 / 下载量排序，"
-                "数据来自 HuggingFace 官方，追踪 AI 开源动向。")
+        desc = ("HuggingFace 开源模型榜：按趋势分、点赞数与下载量排序查看开源 AI 模型，"
+                "附 pipeline 标签、arXiv 论文与官方/社区讨论入口，"
+                "数据取自 HuggingFace 官方榜，每数小时更新。")
     else:
-        desc = ("HuggingFace open-source model leaderboard: sort by trend "
-                "score, likes, or downloads. Official HF data, tracking "
-                "AI open-source momentum.")
+        desc = ("HuggingFace open-source model leaderboard: browse trending AI models "
+                "by trend score, likes or downloads, with pipeline tags, arXiv papers "
+                "and community links.")
     toggle = _lang_url(f"/hf?sort={sort}", "en" if lang == "zh" else "zh")
     return render_template(
         "hf.html", models=models, sort=sort, fetched_at=fetched_at,
@@ -1361,6 +1501,10 @@ def search_page():
         q=q, lang=lang, terms=results, word_hits=word_hits,
         count=len(results), history_hits=history_hits,
         suggest=suggest, site_name=config.SITE_NAME,
+        # 空查询（/search 无 q）此前也会渲染出本地兜底描述；改由 app.py 的
+        # SEARCH_DESC / SEARCH_DESC_EN 统一提供（该页 noindex，描述只用于
+        # 分享卡片与爬虫兜底，长度与其它页面口径一致）。
+        search_desc=SEARCH_DESC if lang == "zh" else SEARCH_DESC_EN,
         base_url=_base_url(), canonical=search_canonical,
         seo_enabled=_seo_enabled(),
         home_url=_lang_url("/", lang),
@@ -1465,25 +1609,28 @@ def robots():
 
 @app.route("/sitemap.xml")
 def sitemap():
-    """站点地图（主语言 = 英文）。
+    """站点地图（主语言 = 英文，裸 URL 即英文规范页）。
 
-    只提交英文显式变体（?lang=en），中文变体不重复提交，由页面 head 的
-    hreflang zh↔en 互指关联；/terms 是单页内嵌双语（canonical 固定 /terms），
-    保持裸 URL。BASE_URL 未设 → 无法生成绝对 URL，返回空 urlset。
+    2026-09-11 SEO：英文变体从 `?lang=en` 改为裸 URL（`/`、`/hf`、
+    `/term/<slug>`），与 canonical 一致——此前提交的 `?lang=en` 已 301 到
+    裸 URL，继续提交会浪费抓取配额并让 Bing 保留旧变体。中文变体不重复
+    提交，由页面 head 的 hreflang zh↔en 互指关联；/terms 与 /privacy 是
+    单页内嵌双语（canonical 固定裸 URL），本就直接提交裸 URL。
+    BASE_URL 未设 → 无法生成绝对 URL，返回空 urlset。
     """
     base = _base_url()
     urls = []
     if base:
-        urls.append(f"{base}/?lang=en")
+        urls.append(f"{base}/")
         if _seo_enabled():
-            # 服务条款/隐私政策页（均单页双语，裸 URL）+ HF 模型榜（常驻索引，en 显式变体）
+            # 服务条款/隐私政策页（均单页双语，裸 URL）+ HF 模型榜（常驻索引，英文裸 URL）
             urls.append(f"{base}/terms")
             urls.append(f"{base}/privacy")
-            urls.append(f"{base}/hf?lang=en")
+            urls.append(f"{base}/hf")
             for slug in _sitemap_terms():
                 if not slug:
                     continue
-                urls.append(f"{base}/term/{quote(slug)}?lang=en")
+                urls.append(f"{base}/term/{quote(slug)}")
                 if len(urls) >= config.SITEMAP_MAX_URLS:
                     break
     now = time.strftime("%Y-%m-%d", time.gmtime())

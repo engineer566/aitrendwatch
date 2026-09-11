@@ -74,7 +74,7 @@ class LanguageRouteTest(unittest.TestCase):
         with patch.object(app_module, "_seo_enabled", return_value=True), \
                 patch.object(app_module, "_initial_terms_for_ssr",
                              return_value=[ssr_card]) as ssr:
-            response = self.client.get("/?lang=en")
+            response = self.client.get("/")
 
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -82,7 +82,8 @@ class LanguageRouteTest(unittest.TestCase):
         self.assertIn("Search trends / authors", body)
         self.assertIn("AI Trend Aggregator", body)
         self.assertIn("Agent startup funding", body)
-        self.assertIn("/term/agent?lang=en", body)
+        # 英文是裸 URL 主语言：SSR 词链接不带 lang
+        self.assertIn('href="/term/agent"', body)
         visible = body.split('<script id="sponsor-data"', 1)[0]
         self.assertNotIn("智能体创业公司融资", visible)
         ssr.assert_called_once_with(sort="rise", lang="en")
@@ -116,7 +117,7 @@ class LanguageRouteTest(unittest.TestCase):
                 patch.object(app_module, "_detail_set_cache"), \
                 patch.object(app_module, "_word_detail", return_value=detail) as build:
             response = self.client.get(
-                "/term/agent?lang=en", headers={"Accept-Language": "zh-CN"}
+                "/term/agent", headers={"Accept-Language": "zh-CN"}
             )
 
         body = response.get_data(as_text=True)
@@ -125,8 +126,10 @@ class LanguageRouteTest(unittest.TestCase):
         self.assertIn("Related reports", body)
         self.assertIn("Agent startup funding", body)
         self.assertIn("English summary", body)
-        self.assertIn("/?lang=en", body)
-        self.assertIn("/term/agent?lang=zh", body)
+        # 页脚/返回链接：中文切换带 lang=zh；页面内不出现会 301 的 ?lang=en
+        self.assertIn('href="/?scroll_back=1"', body)
+        self.assertIn('href="/term/agent?lang=zh"', body)
+        self.assertNotIn("?lang=en", body)
         self.assertNotIn("相关报道", body)
         self.assertNotIn("智能体创业公司融资", body)
         build.assert_called_once_with("agent", lang="en")
@@ -152,8 +155,8 @@ class LanguageRouteTest(unittest.TestCase):
             for query, expect in [
                 ("?lang=zh&sort=hot", "/?lang=zh&amp;sort=hot&amp;scroll_back=1"),
                 ("?lang=zh&sort=new", "/?lang=zh&amp;sort=new&amp;scroll_back=1"),
-                ("?lang=en&sort=hot&view=news&cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF",
-                 "/?lang=en&amp;view=news&amp;sort=hot&amp;cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF&amp;scroll_back=1"),
+                ("?sort=hot&view=news&cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF",
+                 "/?view=news&amp;sort=hot&amp;cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF&amp;scroll_back=1"),
                 ("?lang=zh", "/?lang=zh&amp;scroll_back=1"),
             ]:
                 body = self.client.get(f"/term/agent{query}").get_data(as_text=True)
@@ -181,9 +184,9 @@ class LanguageRouteTest(unittest.TestCase):
                 patch.object(app_module, "_initial_terms_for_ssr",
                              return_value=[ssr_card]) as ssr:
             body = self.client.get(
-                "/?lang=en&sort=new&cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF"
+                "/?sort=new&cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF"
             ).get_data(as_text=True)
-        self.assertIn('href="/term/agent?lang=en&amp;sort=new&amp;cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF"', body)
+        self.assertIn('href="/term/agent?sort=new&amp;cat=%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%8A%80%E6%9C%AF"', body)
         ssr.assert_called_once_with(sort="new", lang="en")
 
         # 默认 Trending（rise/all/words）保持简洁链接
@@ -212,14 +215,16 @@ class LanguageRouteTest(unittest.TestCase):
             "_score": 2.0,
         }
         with patch.object(app_module, "_do_search", return_value=([], [hit], 0)):
-            response = self.client.get("/search?q=agent&lang=en")
+            response = self.client.get("/search?q=agent")
 
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn('<html lang="en">', body)
         self.assertIn("Hot words", body)
-        self.assertIn('href="/term/agent?lang=en"', body)
-        self.assertIn('href="/?lang=en"', body)
+        # 英文页面内链不带 lang（带 lang=en 会 301）；中文切换链接带 lang=zh
+        self.assertIn('href="/term/agent"', body)
+        self.assertIn('href="/search?q=agent&amp;lang=zh"', body)
+        self.assertNotIn("?lang=en", body)
 
     def test_client_contract_passes_language_to_api_and_detail(self):
         source = Path(app_module.__file__).with_name("templates").joinpath("index.html").read_text(
@@ -230,10 +235,12 @@ class LanguageRouteTest(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'return `/term/${escapeTerm(term)}?${p.toString()}`;',
+            'return `/term/${escapeTerm(term)}${qs ? "?" + qs : ""}`;',
             source,
         )
-        self.assertIn('p.set("lang", LANG);', source)
+        # 英文是裸 URL 主语言：只有中文才写 lang 参数
+        self.assertIn('if (LANG === "zh") p.set("lang", "zh");', source)
+        self.assertNotIn('p.set("lang", LANG)', source)
         self.assertIn('if (currentView !== "words") p.set("view", currentView);', source)
         self.assertIn('if (currentSort !== "rise") p.set("sort", currentSort);', source)
         self.assertIn('if (currentCat !== "all") p.set("cat", currentCat);', source)
