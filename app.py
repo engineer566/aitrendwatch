@@ -867,6 +867,11 @@ def api_all():
 # tracker 层仅作内部数据源（HF 模型卡进词池、详情页 HF 区块）。
 
 
+def _has_cjk(text):
+    """文本是否含中日韩汉字（用于给英文摘要挑合适的标题）。"""
+    return any("\u4e00" <= ch <= "\u9fff" for ch in (text or ""))
+
+
 def _term_meta_desc(data, lang):
     """词条页 meta description：含具体数据 + 最新报道标题，逐词唯一。
 
@@ -874,6 +879,10 @@ def _term_meta_desc(data, lang):
     既偏短又与其它词条高度同构。改为「词 + 报道数 + 最新报道标题 + 追踪说明」，
     标题按剩余预算裁剪（`_clip_desc`），总长 ≤160 字符；标题缺失或无报道时
     退回 HF 数据/通用句式，恒非空。
+
+    英文页跳过含 CJK 的标题（该词的中文报道常无 title_en，直接回退中文标题会
+    产出中英混排 description）；若该词的报道标题全是中文，则改用加长尾句版，
+    描述仍唯一（含词名 + 报道数）且长度达标。
     """
     t = data.get("term") or {}
     news = data.get("news") or []
@@ -882,19 +891,18 @@ def _term_meta_desc(data, lang):
     hf = data.get("hf_detail") or data.get("hf") or {}
     limit = 160
     if cnt > 0:
-        title = ""
-        for item in news:
-            title = (item.get("title") or "").strip()
-            if title:
-                break
+        titles = [(item.get("title") or "").strip() for item in news]
+        titles = [x for x in titles if x]
         if lang == "zh":
             body = f"{name} 最新动态聚合：{cnt} 篇相关报道与社区讨论。"
             tail = f"持续追踪 {name} 的模型、产品、融资与政策进展。"
             prefix, suffix = "最新报道：", "。"
+            title = titles[0] if titles else ""
         else:
             body = f"{name}: {cnt} related reports aggregated from AI news sources. "
-            tail = f"Track {name} models, products, funding and policy moves."
+            tail = f"Track {name} models, products, funding and policy news."
             prefix, suffix = "Latest: ", " "
+            title = next((x for x in titles if not _has_cjk(x)), "")
         # 预算分配：先保 body，再保 ≥36 字符的可读标题（不够时裁尾句让位），
         # 最后按剩余空间裁标题——长词名（如 60+ 字符的 HF 模型 id）也不会挤掉标题。
         min_head = len(prefix) + len(suffix) + 36
@@ -904,7 +912,13 @@ def _term_meta_desc(data, lang):
             tail = _clip_desc(tail, tail_budget) if tail_budget >= 20 else ""
         room = limit - len(body) - len(tail) - len(prefix) - len(suffix)
         head = prefix + _clip_desc(title, room) + suffix if title and room >= 24 else ""
-        return body + head + tail
+        if head:
+            return body + head + tail
+        # 无可用标题：补一句覆盖范围说明，避免描述过短（该页 description 仍因词名/报道数唯一）
+        filler = ("Covers model releases, product launches, funding rounds and policy "
+                  "shifts, refreshed several times a day.")
+        return _clip_desc(body + " " + filler, limit) if lang != "zh" else \
+            _clip_desc(body + tail, limit)
     # 无报道支撑（纯 HF 模型词 / 冷启动）：用 HF 数据兜底，仍保持句式唯一
     likes = hf.get("likes") or 0
     downloads = hf.get("downloads") or 0
