@@ -142,7 +142,7 @@ class SeoMetaDescTest(unittest.TestCase):
                      origin="news", total=12, hf_json=None, hot=85.0, rise=2.5):
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            "INSERT INTO terms (term, display, display_zh, display_en, origin, "
+            "INSERT OR REPLACE INTO terms (term, display, display_zh, display_en, origin, "
             "first_seen_at, last_seen_at, total_mentions, hf_json, "
             "cur_hot, cur_rise, cur_novelty) "
             "VALUES (?, ?, '', ?, ?, '2026-08-31', '2026-08-31', ?, ?, ?, ?, 0)",
@@ -326,16 +326,42 @@ class SeoMetaDescTest(unittest.TestCase):
     def test_term_description_carries_term_count_and_headline(self):
         """词条描述含词名 + 报道数 + 最新报道标题，故逐词唯一且信息量足。"""
         self._insert_term(total=12)
-        self._insert_cards(titles=["GLM-5.3-Flash 发布：开源 MoE 模型上新"])
+        self._insert_cards(titles=["GLM-5.3-Flash 发布：开源 MoE 模型上新",
+                                   "GLM-5.3-Flash tops the open-source leaderboard"])
         en = _meta_desc(self._page("/term/glm-5.3-flash"))
         zh = _meta_desc(self._page("/term/glm-5.3-flash?lang=zh"))
         self.assertIn("GLM-5.3-Flash", en)
         self.assertIn("12 related reports", en)
-        self.assertIn("GLM-5.3-Flash 发布", en)
+        # 英文页取英文标题（中文标题被跳过，见 CJK 用例），标题按预算裁剪故比前缀
+        self.assertIn("GLM-5.3-Flash tops the open-source", en)
+        self.assertFalse(any("\u4e00" <= ch <= "\u9fff" for ch in en), en)
         self.assertIn("GLM-5.3-Flash", zh)
         self.assertIn("12 篇相关报道", zh)
         self.assertIn("最新报道：", zh)
+        self.assertIn("GLM-5.3-Flash 发布", zh)
         self.assertLessEqual(len(en), 160)
+
+    def test_english_term_description_skips_cjk_headlines(self):
+        """英文页不把中文标题塞进 description（中英混排）：跳过含 CJK 的标题，
+        全是中文报道时改用加长尾句版，描述仍唯一且长度达标。"""
+        self._insert_term(total=7)
+        self._insert_cards(titles=["某中文标题：智能体耳机发布", "Another Chinese 报道"])
+        desc = _meta_desc(self._page("/term/glm-5.3-flash"))
+        self.assertFalse(any("\u4e00" <= ch <= "\u9fff" for ch in desc), desc)
+        self.assertIn("GLM-5.3-Flash", desc)
+        self.assertIn("7 related reports", desc)
+        self.assertGreaterEqual(len(desc), 130, desc)
+        self.assertLessEqual(len(desc), 160, desc)
+
+
+    def test_english_term_description_prefers_english_headline(self):
+        """中英标题混排：英文页取英文标题，不取排在前面的中文标题。"""
+        self._insert_term(total=7)
+        self._insert_cards(titles=["某中文标题：智能体耳机发布",
+                                   "GLM-5.3-Flash tops the open-source leaderboard"])
+        desc = _meta_desc(self._page("/term/glm-5.3-flash"))
+        self.assertIn("GLM-5.3-Flash tops the open-source", desc)
+        self.assertFalse(any("\u4e00" <= ch <= "\u9fff" for ch in desc), desc)
 
     def test_term_description_without_reports_uses_hf_facts(self):
         """无报道支撑（纯 HF 模型词）时用 HF 点赞/下载兜底，描述仍非空且唯一。"""
