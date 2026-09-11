@@ -11,7 +11,7 @@ AI 热点聚合单页应用：Flask 后端聚合 36 个 RSS 源（含 4 个 Goog
 
 ```
 aitrendwatch/
-├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（2889 行；2026-09-05 SEO：词条页 indexable 可索引门槛 + hreflang 传参 + sitemap 主语言 en + 热度口径 desc；2026-09-05：_hf_models_for/_word_detail 社区链接按页面语言分流；2026-09-07 P1/P2：/privacy 双语页 + /privacy-policy 301 + 500 errorhandler + /api/event 与 /admin/login 按 IP 限流 + sitemap 收录 /privacy；站点 logo 三件套内联 base64：/favicon.ico 32px + /favicon.png 192px + /apple-touch-icon.png 180px，源 assets/logo-icon-512.jpg）
+├── app.py          # Flask 入口 + 路由 + 8 个直连抓取源、词详情装配（3049 行；**2026-09-11 SEO（BWT 重复 meta description 修复）：英文=裸 URL 主语言（`?lang=en` 与单页双语的 `?lang=` 301 收敛）+ 逐页唯一且定长的 meta description（首页/HF/词条/条款/隐私/搜索六形态，词条描述含词名+报道数+最新标题）+ sitemap 改交裸 URL + 标题单点收口 ≤60 字符**；2026-09-05 SEO：词条页 indexable 可索引门槛 + hreflang 传参 + sitemap 主语言 en + 热度口径 desc；2026-09-05：_hf_models_for/_word_detail 社区链接按页面语言分流；2026-09-07 P1/P2：/privacy 双语页 + /privacy-policy 301 + 500 errorhandler + /api/event 与 /admin/login 按 IP 限流 + sitemap 收录 /privacy；站点 logo 三件套内联 base64：/favicon.ico 32px + /favicon.png 192px + /apple-touch-icon.png 180px，源 assets/logo-icon-512.jpg）
 ├── config.py       # 全部配置/环境变量/降级开关 + LLM 故障转移链 + 思考强度 + 质量/可用性分离阈值 + 二次提示轮数 + SEO 词条可索引阈值 TERM_INDEX_MIN_NEWS/HOT + 2026-09-07 P1 公开端点限流 EVENT_RATE_LIMIT/LOGIN_RATE_LIMIT（197 行）
 ├── dims.py         # 维度事件层：RSS 抓取 + HN/Reddit 热度 + LLM 故障转移链打标/抽词 + 热词解释生成（1956 行；2026-09-04 需求 1：逐条流卡 id url 归一 + 标题级去重；需求 4：中文标题公司专名关键词保持中文原词、热词翻译提示词禁拼音化/自造英文——两段提示词提升为模块常量 _USER_PREFIX/_TRANSLATE_SYS_MSG；2026-09-07 P0：news 视图内容池 cache/news.json 预装配——后台刷新后写池，get_news_cards 读池零 DB 读，修复 /api/stream?view=news 7-21s）
 ├── tracker.py      # 热词追踪层：HF 模型榜 + arXiv 论文检索（621 行；2026-09-05：community_links 按语言分流 zh 知乎/B站/GitHub（中文名）en YouTube/Reddit/X/GitHub + localize_model_cards 读取时投影）
@@ -24,12 +24,12 @@ aitrendwatch/
 ├── version.py      # 版本号（读 VERSION 文件）（23 行）
 ├── VERSION         # 版本号单一真相源（1.11.2）
 ├── templates/      # 9 个 Jinja2 模板
-│   ├── index.html         # 首页主单页（1664 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；header 站点 logo（/favicon.png 192px）+ h1 站名；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 开源第三项跨页跳转 /hf（板块入口语义，↗ 角标；2026-09-05 需求 1 迁入 seg、需求 2 改名，header 独立 HF 按钮已移除），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签）
-│   ├── hf.html            # HuggingFace 独立排序页（458 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；页首三视图镜像导航 view-nav（热词/逐条新闻链回首页对应视图，「开源」入口 active，2026-09-05 需求 1 建、需求 2 改名；替换原「← 返回首页」按钮）；hreflang zh↔en）
-│   ├── terms.html         # 服务条款页（383 行）
-│   ├── privacy.html       # 隐私政策页（2026-09-07 P1 新增：中英双语，覆盖自建埋点 IP/GeoIP/session_id + GA/广告 Cookie + 权利联系；canonical 裸 URL；联系位用 CONTACT_EMAIL）（363 行）
-│   ├── term_detail.html   # 通用热词聚合页（424 行：相关报道聚合 + HF 区块 + 词解释 + 近 7 天活跃度趋势迷你图 + 热度口径脚注 + hreflang + indexable 门槛 noindex 分支；2026-09-05 SEO）
-│   ├── search.html        # 搜索结果页（583 行：含热词命中卡区）
+│   ├── index.html         # 首页主单页（1689 行：词卡/逐条新闻双视图，JS fetch + i18n + 埋点追踪；header 站点 logo（/favicon.png 192px）+ h1 站名；视图 seg 三项导航——🔤热词/📰逐条新闻本地切换 + 🤗 开源第三项跨页跳转 /hf（板块入口语义，↗ 角标；2026-09-05 需求 1 迁入 seg、需求 2 改名，header 独立 HF 按钮已移除），页尾悬浮回到顶部按钮；2026-09-05 SEO：热度口径标注 tooltip/footer 脚注 + hreflang head + meta keywords 移除 + 报道来源标签；2026-09-11：标题/描述单点收口（`page_title_en/zh` + JS `PAGE_TITLES`）+ 内链不带 lang=en + 页脚 terms/privacy 裸链接）
+│   ├── hf.html            # HuggingFace 独立排序页（462 行：趋势/点赞/下载排序 + pipeline 标签，开源动向；页首三视图镜像导航 view-nav（热词/逐条新闻链回首页对应视图，「开源」入口 active，2026-09-05 需求 1 建、需求 2 改名；替换原「← 返回首页」按钮）；hreflang zh↔en（en = 裸 URL `/hf`）；英文标题收窄到 ≤60 字符）
+│   ├── terms.html         # 服务条款页（383 行；description 改用 `SITE_TERMS_DESC`，任何 `?lang=` → 301 裸 URL）
+│   ├── privacy.html       # 隐私政策页（description 改用 `SITE_PRIVACY_DESC`，任何 `?lang=` → 301；2026-09-07 P1 新增：中英双语，覆盖自建埋点 IP/GeoIP/session_id + GA/广告 Cookie + 权利联系；canonical 裸 URL；联系位用 CONTACT_EMAIL）（363 行）
+│   ├── term_detail.html   # 通用热词聚合页（424 行：相关报道聚合 + HF 区块 + 词解释 + 近 7 天活跃度趋势迷你图 + 热度口径脚注 + hreflang（en = 裸 URL）+ indexable 门槛 noindex 分支；2026-09-05 SEO + 2026-09-11 词条描述唯一化）
+│   ├── search.html        # 搜索结果页（585 行：含热词命中卡区；noindex,follow；2026-09-11：空 q 的标题/描述不再留空、语言链接按裸 URL 规则）
 │   ├── admin.html         # 赞助位管理后台（353 行，已废弃，合并到 monitor.html）
 │   ├── admin_login.html   # 管理员登录（68 行）
 │   └── monitor.html       # 统一管理后台：流量监控 + 赞助位管理 Tab 切换（1052 行）
@@ -64,7 +64,7 @@ aitrendwatch/
 
 | 文件 | 行数 | 职责 | 顶层公开函数（被 app.py 或外部调用） | 依赖 |
 |------|------|------|---------------------------------------|------|
-| `app.py` | 2889 | Flask 入口、路由、8 直连源抓取、词详情装配 + 2026-09-05 SEO（词条 indexable 门槛传参、hreflang zh↔en、sitemap 主语言 en）+ 社区链接语言分流（_hf_models_for/_word_detail）+ **2026-09-07 P1/P2（/privacy 双语页、/privacy-policy 301、500 errorhandler、/api/event 与 /admin/login 按 IP 限流）** + 站点 logo 图标三件套（内联 base64 PNG：/favicon.ico、/favicon.png、/apple-touch-icon.png） | 39 个路由 view 函数 + 404/500 两个 errorhandler（`admin_sponsors_list` 等，见 api_routes.md）+ `_word_detail` + `_explain_fallback` + `_hf_models_for` + `_rate_limit_deny` | tracker, dims, terms, config, store, ratelimit, stream_utils, text_utils |
+| `app.py` | 3049 | Flask 入口、路由、8 直连源抓取、词详情装配 + **2026-09-11 SEO（`_canonical_lang_redirect` 301 收敛、`_lang_url`/`_request_lang` 裸 URL 主语言、`_term_meta_desc` 词条描述、站点描述常量、sitemap 裸 URL）** + 2026-09-05 SEO（词条 indexable 门槛传参、hreflang zh↔en、sitemap 主语言 en）+ 社区链接语言分流（_hf_models_for/_word_detail）+ **2026-09-07 P1/P2（/privacy 双语页、/privacy-policy 301、500 errorhandler、/api/event 与 /admin/login 按 IP 限流）** + 站点 logo 图标三件套（内联 base64 PNG：/favicon.ico、/favicon.png、/apple-touch-icon.png） | 39 个路由 view 函数 + 404/500 两个 errorhandler（`admin_sponsors_list` 等，见 api_routes.md）+ `_word_detail` + `_explain_fallback` + `_hf_models_for` + `_rate_limit_deny` | tracker, dims, terms, config, store, ratelimit, stream_utils, text_utils |
 | `config.py` | 197 | 配置集中地 + LLM 故障转移链 + 思考强度 + `ensure_data_dir()` + SEO 词条可索引阈值 `TERM_INDEX_MIN_NEWS`/`TERM_INDEX_MIN_HOT` + 2026-09-07 P1 公开端点限流 `EVENT_RATE_LIMIT`/`LOGIN_RATE_LIMIT` | `ensure_data_dir`, `llm_endpoint`, `llm_reasoning_params` | os |
 | `dims.py` | 1956 | RSS 事件层 + LLM 故障转移链打标/抽词 + 热词解释生成（09-02：链每轮复位/逐条校验/402 账户级；09-03：质量失败与 provider 故障分离 + 坏条目二次提示修正；09-04 需求 1：逐条流 id url 归一 + `_dedupe_news_titles` 标题级去重；需求 4：抽词/翻译提示词规则防中文公司专名拼音化——`_USER_PREFIX`/`_TRANSLATE_SYS_MSG` 模块常量；**2026-09-07 P0：news 视图内容池 `cache/news.json` 预装配，请求路径零 DB 读**） | `get_dims`, `get_news_cards`, `start_background_dims_refresher`, `enrich_with_signals`, `_llm_classify_batch`, `explain_terms` | config, requests, terms, news_store, text_utils |
 | `tracker.py` | 621 | HF 热词 + arXiv 论文（词池数据源）+ 社区链接语言分流（community_links/localize_model_cards） | `get_model_cards`, `get_term_detail`, `start_background_refresher` | requests |
@@ -85,6 +85,7 @@ aitrendwatch/
 | 改抽词/词典/词聚合/三榜打分 | `index/modules.md`（terms.py） | `terms.py` 对应函数 |
 | 理解模块结构/找某函数 | `index/modules.md` | 目标 `.py` 文件 |
 | 改前端页面/JS fetch | `index/frontend.md` | 目标 `templates/*.html` |
+| 改 meta 描述/标题/canonical/hreflang/sitemap | `index/frontend.md` §SEO + `index/api_routes.md` | `app.py` 描述常量 + `_term_meta_desc` + 各模板 head |
 | 理解请求链路/缓存/后台预热 | `index/architecture.md` | `app.py` + `tracker.py`/`dims.py`/`terms.py` |
 | 改配置/环境变量/降级开关 | `index/data_flow.md` §环境变量 | `config.py` |
 | 改 SQLite 表/统计逻辑 | `index/data_flow.md` §SQLite schema | `store.py`/`news_store.py`/`terms.py` |

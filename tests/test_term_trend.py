@@ -11,7 +11,7 @@ a) 单元（仅 import config/news_store/terms，临时 DB + env，仿
    - DB 不可用（连接异常 / 路径不存在）→ []，不抛。
 
 b) 渲染级（临时 DB + Flask test client，零 token 降级路径，key 置空）：
-   - 插词 + 插 ≥2 天 snapshots → GET /term/<词>?lang=zh 与 ?lang=en 均含
+   - 插词 + 插 ≥2 天 snapshots → GET /term/<词>?lang=zh 与裸 /term/<词>（en）均含
      趋势区块（.trend-block）与对应语言文案（近 7 天活跃度 / 7-day
      activity）+ MM-DD 柱标签 + title 精确值文案；
    - 不插 snapshots → 区块不出现；/api/word 顶层带 trend 数组；未命中词
@@ -336,7 +336,7 @@ class TermTrendRenderTests(unittest.TestCase):
         # title 精确值文案（双语各自成文）
         self.assertIn("2026-08-29：近 7 天 9 篇报道", html_zh)
 
-        en = self.client.get("/term/gpt-5?lang=en")
+        en = self.client.get("/term/gpt-5")
         self.assertEqual(en.status_code, 200)
         html_en = en.get_data(as_text=True)
         self.assertIn('class="trend-block"', html_en)
@@ -352,7 +352,8 @@ class TermTrendRenderTests(unittest.TestCase):
     def test_detail_page_hides_trend_block_without_snapshots(self):
         self._insert_term()
         for lang in ("zh", "en"):
-            resp = self.client.get(f"/term/gpt-5?lang={lang}")
+            url = "/term/gpt-5" if lang == "en" else "/term/gpt-5?lang=zh"
+            resp = self.client.get(url)
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             # 注意：模板 <style> 里恒有 .trend-block CSS 规则，负断言须查渲染出的

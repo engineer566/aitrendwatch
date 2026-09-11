@@ -101,13 +101,15 @@ class HfPageTest(unittest.TestCase):
                 r = self.client.get(f"/hf?sort={sort}")
             self.assertEqual(r.status_code, 200, sort)
             body = r.get_data(as_text=True)
-            self.assertIn(f"sort={sort}&lang=", body)  # 当前排序链接保持
+            # 英文（裸 URL 主语言）：排序链接不带 lang；语言切换链接带 lang=zh
+            self.assertIn(f'href="/hf?sort={sort}"', body)
+            self.assertIn(f'href="/hf?sort={sort}&amp;lang=zh"', body)
 
     def test_hf_page_english_and_lang_toggle_keeps_sort(self):
         models = [make_model("Alpha", likes=3)]
         with patch.object(app_module, "_hf_models_for",
                           return_value=(models, 0)):
-            r = self.client.get("/hf?sort=likes&lang=en")
+            r = self.client.get("/hf?sort=likes")
         body = r.get_data(as_text=True)
         self.assertEqual(r.status_code, 200)
         self.assertIn('<html lang="en">', body)
@@ -179,7 +181,10 @@ class HfPageTest(unittest.TestCase):
     def test_index_page_links_to_hf_page(self):
         source = (Path(app_module.__file__).with_name("templates")
                   .joinpath("index.html").read_text(encoding="utf-8"))
-        self.assertIn('href="/hf?lang=', source)
+        # 2026-09-11：英文 = 裸 URL 主语言，SSR 入口链接按语言取 lang_qs，
+        # JS updateHfLink() 同步为 "/hf"（en）/ "/hf?lang=zh"（zh）
+        self.assertIn('href="/hf{{ lang_qs }}"', source)
+        self.assertIn('LANG === "en" ? "/hf" : "/hf?lang=zh"', source)
 
     def test_index_hf_entry_lives_in_view_seg_not_header(self):
         """2026-09-05 需求：HF 入口从 header 小按钮迁到视图 seg 第三项（改名「开源」）。"""
@@ -205,8 +210,8 @@ class HfPageTest(unittest.TestCase):
         body = r.get_data(as_text=True)
         self.assertEqual(r.status_code, 200)
         self.assertIn('class="view-nav"', body)
-        self.assertIn('href="/?view=words&lang=zh"', body)
-        self.assertIn('href="/?view=news&lang=zh"', body)
+        self.assertIn('href="/?view=words&amp;lang=zh"', body)
+        self.assertIn('href="/?view=news&amp;lang=zh"', body)
         self.assertIn('aria-current="page"', body)   # 「开源」板块入口为当前项
         self.assertIn("🤗 开源", body)                # 2026-09-05 需求 2 改名
         self.assertNotIn("返回首页", body)            # 旧单按钮已移除
@@ -240,7 +245,7 @@ class HfPageTest(unittest.TestCase):
         with patch.object(app_module.tracker, "get_model_cards",
                           return_value=([make_model("Beta", likes=9)], 0)):
             zh = self.client.get("/hf?sort=trending&lang=zh").get_data(as_text=True)
-            en = self.client.get("/hf?sort=trending&lang=en").get_data(as_text=True)
+            en = self.client.get("/hf?sort=trending").get_data(as_text=True)
         self.assertIn("💬 知乎", zh)
         self.assertIn("💬 B站", zh)
         self.assertIn("💬 GitHub", zh)

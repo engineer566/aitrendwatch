@@ -11,17 +11,17 @@
 | 行号范围 | 分区（`# ----------` 注释段） |
 |----------|------------------------------|
 | 55–104 | 通用配置（UA/HEADERS/TIMEOUT/CACHE_TTL/`_cache`/`_cached`/`_set_cache`/`_detail_cached`/`_detail_set_cache`） |
-| 105–357 | SEO 辅助 + 词详情装配（`_explain_fallback`@106 解释模板兜底 / `_word_detail`@135——2026-09-05 P2：返回 dict 顶层附 `trend` 近 7 天活跃度序列；2026-09-05：`_hf_live` 内 community 按页面语言分流）+ stream/SSR 辅助（`_stream_number`@262 / `_initial_terms_for_ssr`@280 / `_initial_dimension_meta_for_ssr`@299）+ `SITE_PRIVACY_UPDATED`@356 |
-| 361–~577 | 各数据源抓取函数（8 个 `fetch_*`：baidu@361/bilibili@383/toutiao@403/hackernews@420/github@448/zhihu@478/douyin@502/weibo@524） |
-| ~580–~664 | 路由公共配置（`SOURCES`/`SOURCE_META`/region/ip 辅助：detect_region@578/_client_ip@598/_client_country@606/_rate_limit_deny@620（2026-09-07 P1 限流 429 响应）/get_source@628/get_source_timeout@643） |
-| 665–955 | 页面 + 词流路由（`index`@677 含 hreflang 传参 / `term_detail`@776 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@847 / `privacy`@862 + `/privacy-policy`@879 301（2026-09-07 P1）/ 404@885 / **500@899（2026-09-07 P2）** / `api_dims`@925 / `api_stream`@934） |
-| ~1000–~1100 | HuggingFace 独立排序页（`_hf_models_for`@1016——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub** / `hf_page`@1041 含 hreflang / `api_hf`@1077） |
-| ~1103–~1446 | 单词聚合 + 全站搜索 v2（`api_word`@1103 / `health`@1117 / `search_page`@1329 / `api_search_suggest`@1375 / `api_search_click`@1394 / `api_search`@1412） |
-| ~1447–~2666 | SEO 路由（`robots`@1447 / `sitemap`@1467——**主语言 en：只交 `?lang=en` 变体 + 达标词；2026-09-07 追加 /privacy** / 站点 logo 三件套（logo-icon-512.jpg 内联 base64：`favicon`@2576 32px / `favicon_png`@2585 192px / `apple_touch_icon`@2593 180px）/ `og_image`@2605） |
-| ~2667–~2697 | 赞助位点击跳转 `sponsor_click`@2669 + `admin_required`@2679 |
-| ~2698–~2778 | 管理后台（`admin_login`@2698——**2026-09-07 P1 POST 按 IP 限流** /logout@2722/home@2729 + sponsors list@2736/CRUD@2744-2763/stats@2772） |
-| ~2779–~2830 | 统一管理后台（`monitor`@2779 + `monitor/api*`@2785-2812） |
-| ~2831–2893 | 用户行为事件上报（`api_event`@2831 埋点 v3——**2026-09-07 P1 按 IP 限流** + `monitor_events_api`@2874）+ `__main__` 入口 |
+| 105–390 | SEO 描述常量 + 语言路由 + 词详情装配（`_explain_fallback`@106 解释模板兜底 / `_word_detail`@135——2026-09-05 P2：返回 dict 顶层附 `trend` 近 7 天活跃度序列；2026-09-05：`_hf_live` 内 community 按页面语言分流）+ stream/SSR 辅助（`_stream_number`@262 / `_initial_terms_for_ssr`@280 / `_initial_dimension_meta_for_ssr`@299）+ `SITE_PRIVACY_UPDATED`@381 + **2026-09-11 站点描述常量**（`SITE_DESC`@355 zh / `SITE_DESC_EN` / `SITE_TERMS_DESC` / `SITE_PRIVACY_DESC` / `SEARCH_DESC(_EN)`）+ **语言路由**（`_request_lang`@609 不再看 Accept-Language / `_lang_url`@621 英文裸 URL / `_qs`/`_with_query`/`_clip_desc` 辅助 / `before_request _canonical_lang_redirect`@672 把 `?lang=en` 与单页双语的 `/terms`、`/privacy` 的 `?lang=` 301 收敛到裸 URL）+ 词条描述装配 `_term_meta_desc`@870 |
+| 395–~600 | 各数据源抓取函数（8 个 `fetch_*`：baidu@386/bilibili@408/toutiao@428/hackernews@445/github@473/zhihu@503/douyin@527/weibo@549） |
+| ~605–~750 | 路由公共配置（`SOURCES`/`SOURCE_META`/region/ip 辅助：detect_region@603/_client_ip@689/_client_country@697/_rate_limit_deny@711（2026-09-07 P1 限流 429 响应）/get_source@719/get_source_timeout@734） |
+| 756–1040 | 页面 + 词流路由（`index`@768 含 hreflang 传参 / `term_detail`@920 含 **indexable 可索引门槛** + hreflang + 趋势上下文 / `terms`@985 / `privacy`@1000 + `privacy_policy_redirect`@1017 301（2026-09-07 P1）/ 404@1023 / **500@1037（2026-09-07 P2）** / `api_dims`@1063 / `api_stream`@1072） |
+| 1147–~1262 | HuggingFace 独立排序页（`_hf_models_for`@1154——**community 按页面语言分流（2026-09-05）：zh 知乎/B站/GitHub（中文名），en YouTube/Reddit/X/GitHub** / `hf_page`@1179 含 hreflang / `api_hf`@1217） |
+| ~1243–~1590 | 单词聚合 + 全站搜索 v2（`api_word`@1243 / `health`@1257 / `search_page`@1469 / `api_search_suggest`@1519 / `api_search_click`@1538 / `api_search`@1556） |
+| 1591–~2820 | SEO 路由（`robots`@1591 / `sitemap`@1611——**主语言 en：交裸 URL（`/`、`/hf`、`/term/<slug>`）+ 达标词；2026-09-11 起不再交 `?lang=en`（已 301）** / 站点 logo 三件套（logo-icon-512.jpg 内联 base64：`favicon`@2723 32px / `favicon_png`@2732 192px / `apple_touch_icon`@2740 180px）/ `og_image`@2753） |
+| ~2822–~2845 | 赞助位点击跳转 `sponsor_click`@2829 + `admin_required`@2839 |
+| ~2850–~2935 | 管理后台（`admin_login`@2858——**2026-09-07 P1 POST 按 IP 限流** /logout@2882/home@2889 + sponsors list@2896/CRUD@2904-2923/stats@2932） |
+| ~2937–~2985 | 统一管理后台（`monitor`@2939 + `monitor/api*`@2945-2972） |
+| 2991–3049 | 用户行为事件上报（`api_event`@2991 埋点 v3——**2026-09-07 P1 按 IP 限流** + `monitor_events_api`@3034）+ `__main__` 入口 |
 
 ### 公开函数（被路由/外部调用）
 | 函数 | 行号 | 职责 |
@@ -43,7 +43,7 @@
 | 39 个 view 函数 + 404/500 | 见 [api_routes.md](api_routes.md) | 路由处理 |
 
 ### 模块级常量
-`SOURCES`（source→fetcher 映射，`app.py:552`）、`SOURCE_META`（8 源元信息，`app.py:563`）、`WORD_STREAM_LIMIT=100`（`app.py:258`，2026-09-02 由 60 放宽，配合热窗新鲜度加权让今日热词稳定可见）、`SSR_INITIAL_LIMIT=20`（`app.py:276`）、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
+`SOURCES`（source→fetcher 映射，`app.py:580`）、`SOURCE_META`（8 源元信息，`app.py:591`）、`WORD_STREAM_LIMIT=100`（`app.py:259`，2026-09-02 由 60 放宽，配合热窗新鲜度加权让今日热词稳定可见）、`SSR_INITIAL_LIMIT=20`（`app.py:277`）、`UA`/`HEADERS`/`TIMEOUT=5`/`SOURCE_DEADLINE=25`/`CACHE_TTL=300`。
 
 ---
 
