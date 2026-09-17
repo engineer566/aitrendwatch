@@ -547,17 +547,42 @@ def _refresh_once(sort):
         _refresh_lock.release()
 
 
-def _bg_refresher():
-    """后台循环：启动立即预热一次，之后每 REFRESH_INTERVAL 秒一次。
+def _cache_age():
+    """terms.json 距上次成功预热的秒数；文件不存在/不可读返回无穷大。"""
+    try:
+        return time.time() - os.path.getmtime(CACHE_FILE)
+    except OSError:
+        return float("inf")
 
-    重试策略：某次预热失败 → 隔 RETRY_INTERVAL（5 分钟）后重试，而非干等
-    6 小时。任一 sort 成功即把该 sort 的文件缓存更新好；失败的 sort 在下个
-    重试点再来。所有 sort 都成功后，回到正常 REFRESH_INTERVAL（6 小时）周期。
-    """
-    # 首次立即预热（不等第一个周期），让服务起来后尽快有热缓存
+
+# worker 启动预热的新鲜度阈值：预热周期 6h，缓存半新（3h 内）则启动时不再
+# 立即预热（2026-09-17 事故：gunicorn 超时杀 worker → 新 worker import app
+# 无条件重跑抓取，churn 下反复全量抓 HF/arXiv，是风暴放大器之一）。
+BOOT_SKIP_MAX_AGE = 10800
+
+
+def _startup_refresh():
+    """worker 启动预热：磁盘缓存仍新鲜则跳过，否则各 sort 立即预热一次。"""
+    age = _cache_age()
+    if age < BOOT_SKIP_MAX_AGE:
+        print(f"[tracker] 启动预热跳过：terms.json 距上次成功预热 "
+              f"{age:.0f}s（< {BOOT_SKIP_MAX_AGE}s）", flush=True)
+        return
     for sort in ("trending", "top"):
         _refresh_once(sort)
 
+
+def _bg_refresher():
+    """后台循环：启动立即预热一次，之后每 REFRESH_INTERVAL 秒一次。
+
+    重试策略：某次预热失败 → 隔退避间隔重试（5min 起，连续失败按 ×3 指数
+    退避至 45min 封顶，全部成功后复位回 6h 周期），而非干等下一个周期。
+    （2026-09-17 事故：环境死亡期固定 5min 紧密重试是持续压力源。）
+    """
+    # 首次立即预热（不等第一个周期），让服务起来后尽快有热缓存
+    _startup_refresh()
+
+    consec_fails = 0
     next_wait = REFRESH_INTERVAL   # 距离下一次预热的睡眠时长
     while True:
         time.sleep(next_wait)
@@ -566,8 +591,13 @@ def _bg_refresher():
             ok = _refresh_once(sort)
             if not ok:
                 any_failed = True
-        # 有失败 → 缩短到重试间隔尽快重试；全部成功 → 回到正常周期
-        next_wait = RETRY_INTERVAL if any_failed else REFRESH_INTERVAL
+        if any_failed:
+            # 指数退避：5min → 15min → 45min 封顶，尽快重试且不打满主机
+            consec_fails += 1
+            next_wait = min(RETRY_INTERVAL * 3 ** (consec_fails - 1), 2700)
+        else:
+            consec_fails = 0
+            next_wait = REFRESH_INTERVAL
 
 
 def start_background_refresher():
