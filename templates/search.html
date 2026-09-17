@@ -24,8 +24,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 {% set is_en = lang == 'en' %}
-{% set search_desc = ('Search AI trends, models, and news on ' ~ site_name ~ '. Find HuggingFace models, arXiv papers, and AI industry updates.' if is_en else '在 ' ~ site_name ~ ' 搜索 AI 热点、模型与新闻。查找 HuggingFace 模型、arXiv 论文与 AI 行业动态。') %}
-<title>{% if q %}{{ 'Search «' if is_en else '搜索「' }}{{ q }}{{ '» ·' if is_en else '」·' }}{% endif %} {{ site_name }}</title>
+{% set lang_qs = '' if is_en else '?lang=zh' %}
+{% set lang_amp = '' if is_en else '&lang=zh' %}
+<title>{% if q %}{{ 'Search «' if is_en else '搜索「' }}{{ q }}{{ '» · ' if is_en else '」· ' }}{% endif %}{{ site_name }}</title>
 <meta name="description" content="{% if q %}{{ ('Search results for «' ~ q ~ '» – AI trends, models & news on ' ~ site_name) if is_en else ('「' ~ q ~ '」搜索结果 – ' ~ site_name ~ ' AI 热点、模型与新闻') }}{% else %}{{ search_desc }}{% endif %}">
 <link rel="icon" type="image/png" sizes="192x192" href="/favicon.png">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -36,14 +37,14 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{% if q %}{{ 'Search «' if is_en else '搜索「' }}{{ q }}{{ '» ·' if is_en else '」·' }}{% endif %} {{ site_name }}">
+<meta property="og:title" content="{% if q %}{{ 'Search «' if is_en else '搜索「' }}{{ q }}{{ '» · ' if is_en else '」· ' }}{% endif %}{{ site_name }}">
 <meta property="og:description" content="{% if q %}{{ ('Search results for «' ~ q ~ '» on ' ~ site_name) if is_en else ('「' ~ q ~ '」搜索结果 · ' ~ site_name) }}{% else %}{{ search_desc }}{% endif %}">
 <meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
 {% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image-v2.png">{% endif %}
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="{% if q %}{{ 'Search «' if is_en else '搜索「' }}{{ q }}{{ '» ·' if is_en else '」·' }}{% endif %} {{ site_name }}">
+<meta name="twitter:title" content="{% if q %}{{ 'Search «' if is_en else '搜索「' }}{{ q }}{{ '» · ' if is_en else '」· ' }}{% endif %}{{ site_name }}">
 <meta name="twitter:description" content="{% if q %}{{ ('Search results for «' ~ q ~ '» on ' ~ site_name) if is_en else ('「' ~ q ~ '」搜索结果 · ' ~ site_name) }}{% else %}{{ search_desc }}{% endif %}">
 {% else %}
 <meta name="robots" content="noindex,nofollow">
@@ -297,7 +298,7 @@
           <span class="result-score">{{ '相关度' if lang == 'zh' else 'score' }} {{ "%.1f"|format(wh._score) }}</span>
         </div>
         <div class="result-title">
-          <a href="/term/{{ wh.id|urlencode }}?lang={{ lang }}" data-q="{{ q }}" data-url="/term/{{ wh.id|urlencode }}?lang={{ lang }}">
+          <a href="/term/{{ wh.id|urlencode }}{{ lang_qs }}" data-q="{{ q }}" data-url="/term/{{ wh.id|urlencode }}{{ lang_qs }}">
             {% if wh._highlight_term %}{{ wh._highlight_term|safe }}{% else %}{{ wname }}{% endif %}
           </a>
         </div>
@@ -362,7 +363,7 @@
       {% if suggest %}
       <div class="suggest-chips">
         {% for s in suggest %}
-          <a href="/search?q={{ s.query|urlencode }}&lang={{ lang }}">{{ s.query }}</a>
+          <a href="/search?q={{ s.query|urlencode }}{{ lang_amp }}">{{ s.query }}</a>
         {% endfor %}
       </div>
       {% endif %}
@@ -398,7 +399,7 @@
   if (clearBtn) {
     clearBtn.addEventListener("click", () => {
       input.value = ""; input.focus();
-      window.location.href = "/search?lang=" + LANG;
+      window.location.href = LANG === "zh" ? "/search?lang=zh" : "/search";
     });
   }
 
@@ -406,9 +407,10 @@
   function submit(q) {
     q = (q || "").trim();
     if (!q) {
-      window.location.href = "/search?lang=" + LANG;
+      window.location.href = LANG === "zh" ? "/search?lang=zh" : "/search";
     } else {
-      window.location.href = "/search?q=" + encodeURIComponent(q) + "&lang=" + LANG;
+      window.location.href = "/search?q=" + encodeURIComponent(q)
+        + (LANG === "zh" ? "&lang=zh" : "");
     }
   }
   input.addEventListener("keydown", (e) => {

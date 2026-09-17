@@ -211,7 +211,7 @@ class TermExplanationTests(unittest.TestCase):
         self.assertIn('class="term-explain"', zh_html)
         self.assertIn("OpenAI 于 2025 年发布的旗舰多模态大模型", zh_html)
 
-        en_resp = client.get("/term/gpt-5?lang=en")
+        en_resp = client.get("/term/gpt-5")
         self.assertEqual(en_resp.status_code, 200)
         en_html = en_resp.get_data(as_text=True)
         self.assertIn('class="term-explain"', en_html)

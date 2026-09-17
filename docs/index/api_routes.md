@@ -6,7 +6,7 @@
 > 注：词维度重构（2026-08）后 `/api/trending` `/api/top` `/api/term/<name>` 三个旧
 > tracker JSON API 已删除（词聚合由 `/api/stream?view=words` 承担）。
 > 2026-09-05 SEO P1~P5：词条详情页加 indexable 可索引门槛；sitemap 主语言改英文
-> （只交 `?lang=en` 变体 + 达标词）；首页/词条/hf 页 head 输出 hreflang zh↔en。
+> （**2026-09-11 起交裸 URL** `/`、`/hf`、`/term/<slug>` + 达标词；`?lang=en` 已 301 收敛到裸 URL，不再提交）；首页/词条/hf 页 head 输出 hreflang zh↔en（x-default 指向裸 URL）。**语言路由**：英文 = 裸 URL 主语言，中文 = `?lang=zh`；`before_request _canonical_lang_redirect`（`app.py:672`）把 `?lang=en` 与单页双语页的 `?lang=` 301 收敛到裸 URL；`/api/*` 不在白名单（前端 JS 仍显式传 `lang=en`）。
 > 2026-09-07 MVP P0~P2：/privacy 双语页 + `/privacy-policy` 301 别名；500 errorhandler；
 > `/api/event` 与 `/admin/login` 按 IP 限流（429）；sitemap 收录 /privacy。
 
@@ -14,17 +14,17 @@
 
 | 路径 | 方法 | 函数 | 行号 | 功能 | 备注 |
 |------|------|------|------|------|------|
-| `/` | GET | `index` | `app.py:677` | 首页主单页（词视图为主 + 逐条新闻 tab） | 记 PV/visit/曝光，SSR 首批词卡，前端 JS 再拉 `/api/stream`；渲染参数含 hreflang（zh/en 变体 + x-default=en） |
-| `/hf` | GET | `hf_page` | `app.py:1041` | **HuggingFace 独立排序页（开源动向）**：按趋势分/点赞/下载量排序，每卡带 pipeline_tag 主徽标 + tags/官方/社区/论文 | 服务端渲染双语（zh/en），排序/语言切换零 fetch；数据复用 tracker 缓存；渲染参数含 hreflang |
-| `/term/<path:term_name>` | GET | `term_detail` | `app.py:776` | 通用热词聚合页（SEO 长尾）：相关报道聚合 + 词热度 + 近 7 天活跃度趋势迷你图；HF 词额外含官方/社区/arXiv 区块 | 进程内 TTL 缓存；未找到 → 404；**indexable 门槛**（2026-09-05 P1）：`term_row_indexable` 判定（news_cnt<`TERM_INDEX_MIN_NEWS`、hot<`TERM_INDEX_MIN_HOT` 或词池外 HF 回退 → 页面照常渲染但 meta robots=noindex）；渲染参数含 hreflang |
-| `/terms` | GET | `terms` | `app.py:847` | 服务条款页（中英双语） | 静态文案，`SITE_TERMS_UPDATED` 常量；单页内嵌双语，无 hreflang；页脚含 /privacy 互链 |
-| `/privacy` | GET | `privacy` | `app.py:862` | **隐私政策页（中英双语，2026-09-07 P1）**：覆盖自建埋点（IP/GeoIP/session_id/事件流/赞助位）与 GA/广告 Cookie、本地存储偏好、权利与联系 | `SITE_PRIVACY_UPDATED` 常量；canonical 固定裸 URL；SEO 可索引；联系位用 `CONTACT_EMAIL`（未配 → 占位文案） |
-| `/privacy-policy` | GET | `privacy_policy_redirect` | `app.py:879` | 常见拼写别名 → `/privacy`（301） | AdSense/审核方可能先试此 URL |
-| `/search` | GET | `search_page` | `app.py:1329` | 搜索结果页（独立页，热词命中卡置顶 + 高亮 + 历史归档标记；2026-09-04 需求 1：news 结果按归一化标题去重，镜像报道不双显） | `?q=` `?lang=zh/en` |
-| `/admin/login` | GET,POST | `admin_login` | `app.py:2698` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身，登录后默认跳 `/monitor`；POST 按 IP 限流（2026-09-07 P1：`LOGIN_RATE_LIMIT`/15 分，超限 429 + Retry-After） |
-| `/admin/logout` | GET | `admin_logout` | `app.py:2722` | 退出登录 | 清 session 回登录页 |
-| `/admin` | GET | `admin_home` | `app.py:2729` | ~~赞助位管理后台~~ → 重定向到 `/monitor#sponsors` | 需 admin，合并后统一入口 |
-| `/monitor` | GET | `monitor` | `app.py:2779` | **统一管理后台**（流量监控 + 赞助位管理 Tab 切换） | 需 admin |
+| `/` | GET | `index` | `app.py:768` | 首页主单页（词视图为主 + 逐条新闻 tab） | **英文裸 URL 规范页**（`?lang=en` → 301 到本 URL；中文 `?lang=zh`）；记 PV/visit/曝光，SSR 首批词卡，前端 JS 再拉 `/api/stream`；渲染参数含 hreflang（zh=`/?lang=zh`、en/x-default=`/`）与唯一定长 description |
+| `/hf` | GET | `hf_page` | `app.py:1179` | **HuggingFace 独立排序页（开源动向）**：按趋势分/点赞/下载量排序，每卡带 pipeline_tag 主徽标 + tags/官方/社区/论文 | **英文裸 URL 规范页**（`/hf?lang=en` → 301；中文 `/hf?lang=zh`）；排序/语言切换零 fetch；数据复用 tracker 缓存；渲染参数含 hreflang |
+| `/term/<path:term_name>` | GET | `term_detail` | `app.py:920` | 通用热词聚合页（SEO 长尾）：相关报道聚合 + 词热度 + 近 7 天活跃度趋势迷你图；HF 词额外含官方/社区/arXiv 区块 | **英文裸 URL 规范页**（`?lang=en` → 301；中文 `?lang=zh`）；description 由 `_term_meta_desc`（`app.py:870`）装配（词名 + 报道数 + 最新标题，逐词唯一）；进程内 TTL 缓存；未找到 → 404；**indexable 门槛**（2026-09-05 P1）：`term_row_indexable` 判定（news_cnt<`TERM_INDEX_MIN_NEWS`、hot<`TERM_INDEX_MIN_HOT` 或词池外 HF 回退 → 页面照常渲染但 meta robots=noindex）；渲染参数含 hreflang |
+| `/terms` | GET | `terms` | `app.py:985` | 服务条款页（中英双语） | 静态文案（`SITE_TERMS_DESC` 定长 description），`SITE_TERMS_UPDATED` 常量；单页内嵌双语、无 hreflang；**任何 `?lang=` → 301 裸 URL**（历史页脚链接带的 `?lang=en|zh` 会与裸 URL 重复 description）；页脚含 /privacy 互链 |
+| `/privacy` | GET | `privacy` | `app.py:1000` | **隐私政策页（中英双语，2026-09-07 P1）**：覆盖自建埋点（IP/GeoIP/session_id/事件流/赞助位）与 GA/广告 Cookie、本地存储偏好、权利与联系 | `SITE_PRIVACY_UPDATED` / `SITE_PRIVACY_DESC` 常量；canonical 固定裸 URL、**任何 `?lang=` → 301**；SEO 可索引；联系位用 `CONTACT_EMAIL`（未配 → 占位文案） |
+| `/privacy-policy` | GET | `privacy_policy_redirect` | `app.py:1017` | 常见拼写别名 → `/privacy`（301） | AdSense/审核方可能先试此 URL |
+| `/search` | GET | `search_page` | `app.py:1469` | 搜索结果页（独立页，热词命中卡置顶 + 高亮 + 历史归档标记；2026-09-04 需求 1：news 结果按归一化标题去重，镜像报道不双显） | `?q=` `?lang=zh/en` |
+| `/admin/login` | GET,POST | `admin_login` | `app.py:2858` | 管理员登录 | `ADMIN_TOKEN` 未设 → 404 隐身，登录后默认跳 `/monitor`；POST 按 IP 限流（2026-09-07 P1：`LOGIN_RATE_LIMIT`/15 分，超限 429 + Retry-After） |
+| `/admin/logout` | GET | `admin_logout` | `app.py:2882` | 退出登录 | 清 session 回登录页 |
+| `/admin` | GET | `admin_home` | `app.py:2889` | ~~赞助位管理后台~~ → 重定向到 `/monitor#sponsors` | 需 admin，合并后统一入口 |
+| `/monitor` | GET | `monitor` | `app.py:2939` | **统一管理后台**（流量监控 + 赞助位管理 Tab 切换） | 需 admin |
 
 ## 数据 API（JSON）
 
@@ -32,26 +32,26 @@
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/api/sources` | GET | `api_sources` | `app.py:746` | 所有源元信息（`SOURCE_META`） |
-| `/api/hot/<source>` | GET | `api_hot` | `app.py:751` | 单源热点（带硬性超时 `SOURCE_DEADLINE`） |
-| `/api/all` | GET | `api_all` | `app.py:756` | 并发聚合所有 8 源 |
+| `/api/sources` | GET | `api_sources` | `app.py:841` | 所有源元信息（`SOURCE_META`） |
+| `/api/hot/<source>` | GET | `api_hot` | `app.py:846` | 单源热点（带硬性超时 `SOURCE_DEADLINE`） |
+| `/api/all` | GET | `api_all` | `app.py:851` | 并发聚合所有 8 源 |
 
 ### 词维度层（词维度重构后主功能）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/api/dims` | GET | `api_dims` | `app.py:925` | 按 AI 维度分组的热点卡；`?dimension=` `?lang=zh/en` |
-| `/api/stream` | GET | `api_stream` | `app.py:934` | **统一卡片流**，前端主数据源；`?view=words\|news`（默认 words）+ `?lang=` `?sort=rise/hot/new`。words 视图词卡（热度=报道聚合+HF likes、上升=环比、最新=新奇度新词发现）；news 视图 model+news 逐条（2026-09-04 需求 1：id url 归一 + 标题级去重；**2026-09-07 P0 性能修复**：news 卡源改为读后台预装配的 `cache/news.json` 内容池，请求路径零 DB 读——修复线上 7-21s） |
-| `/api/word/<term>` | GET | `api_word` | `app.py:1103` | 单词聚合 JSON：词元信息 + 全量关联报道（≤50）+ trend 近 7 天活跃度序列；词卡「展开更多」与详情页共用 |
-| `/api/hf` | GET | `api_hf` | `app.py:1077` | **HuggingFace 模型排序 JSON**：`?sort=trending\|likes\|downloads` + `?lang=`；返回 `{ok, sort, lang, fetched_at, count, terms}`（每卡含 pipeline_tag/tags/likes/downloads/trending_score/community/papers） | 复用 tracker 文件缓存（`_hf_models_for`），秒回 |
+| `/api/dims` | GET | `api_dims` | `app.py:1063` | 按 AI 维度分组的热点卡；`?dimension=` `?lang=zh/en` |
+| `/api/stream` | GET | `api_stream` | `app.py:1072` | **统一卡片流**，前端主数据源；`?view=words\|news`（默认 words）+ `?lang=` `?sort=rise/hot/new`。words 视图词卡（热度=报道聚合+HF likes、上升=环比、最新=新奇度新词发现）；news 视图 model+news 逐条（2026-09-04 需求 1：id url 归一 + 标题级去重；**2026-09-07 P0 性能修复**：news 卡源改为读后台预装配的 `cache/news.json` 内容池，请求路径零 DB 读——修复线上 7-21s） |
+| `/api/word/<term>` | GET | `api_word` | `app.py:1243` | 单词聚合 JSON：词元信息 + 全量关联报道（≤50）+ trend 近 7 天活跃度序列；词卡「展开更多」与详情页共用 |
+| `/api/hf` | GET | `api_hf` | `app.py:1217` | **HuggingFace 模型排序 JSON**：`?sort=trending\|likes\|downloads` + `?lang=`；返回 `{ok, sort, lang, fetched_at, count, terms}`（每卡含 pipeline_tag/tags/likes/downloads/trending_score/community/papers） | 复用 tracker 文件缓存（`_hf_models_for`），秒回 |
 
 ### 全站搜索 v2
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/api/search` | GET | `api_search` | `app.py:1412` | 搜索 JSON（加权打分 + 高亮 + 历史归档计数；2026-09-04 需求 1：news 命中按归一化标题去重，镜像报道只留评分高者） |
-| `/api/search/suggest` | GET | `api_search_suggest` | `app.py:1375` | 搜索补全建议 |
-| `/api/search/click` | POST | `api_search_click` | `app.py:1394` | 搜索→点击埋点（漏斗数据源） |
+| `/api/search` | GET | `api_search` | `app.py:1556` | 搜索 JSON（加权打分 + 高亮 + 历史归档计数；2026-09-04 需求 1：news 命中按归一化标题去重，镜像报道只留评分高者） |
+| `/api/search/suggest` | GET | `api_search_suggest` | `app.py:1519` | 搜索补全建议 |
+| `/api/search/click` | POST | `api_search_click` | `app.py:1538` | 搜索→点击埋点（漏斗数据源） |
 
 ### 用户行为事件（埋点系统 v3）
 
@@ -63,44 +63,44 @@
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/health` | GET | `health` | `app.py:1117` | 健康检查 |
-| `/api/click/<path:slot_id>` | GET | `sponsor_click` | `app.py:2669` | 赞助位点击计数 + 302 跳转 |
-| `/admin/stats` | GET | `admin_stats` | `app.py:2772` | 赞助位 30 天统计（需 admin） |
-| `/admin/sponsors/list` | GET | `admin_sponsors_list` | `app.py:2736` | 赞助位列表 JSON（供合并后 monitor 页 AJAX 加载，需 admin） |
-| `/monitor/api` | GET | `monitor_api` | `app.py:2785` | 监控页数据（`?days=1..90`，需 admin） |
-| `/monitor/api/search` | GET | `monitor_search_api` | `app.py:2796` | 搜索词统计（热门搜索 Top-N + 近期搜索，需 admin） |
-| `/monitor/api/search/funnel` | GET | `monitor_search_funnel_api` | `app.py:2812` | 搜索→点击漏斗（需 admin） |
-| `/monitor/api/events` | GET | `monitor_events_api` | `app.py:2874` | 用户行为事件统计（近 N 天事件量/类型分布，需 admin） |
+| `/health` | GET | `health` | `app.py:1257` | 健康检查 |
+| `/api/click/<path:slot_id>` | GET | `sponsor_click` | `app.py:2829` | 赞助位点击计数 + 302 跳转 |
+| `/admin/stats` | GET | `admin_stats` | `app.py:2932` | 赞助位 30 天统计（需 admin） |
+| `/admin/sponsors/list` | GET | `admin_sponsors_list` | `app.py:2896` | 赞助位列表 JSON（供合并后 monitor 页 AJAX 加载，需 admin） |
+| `/monitor/api` | GET | `monitor_api` | `app.py:2932` | 监控页数据（`?days=1..90`，需 admin） |
+| `/monitor/api/search` | GET | `monitor_search_api` | `app.py:2956` | 搜索词统计（热门搜索 Top-N + 近期搜索，需 admin） |
+| `/monitor/api/search/funnel` | GET | `monitor_search_funnel_api` | `app.py:2972` | 搜索→点击漏斗（需 admin） |
+| `/monitor/api/events` | GET | `monitor_events_api` | `app.py:3034` | 用户行为事件统计（近 N 天事件量/类型分布，需 admin） |
 
 ### Admin 写操作（需 admin，POST）
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:2744` | 新建/更新赞助位 |
-| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:2754` | 上下架切换 |
-| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:2763` | 删除赞助位 |
+| `/admin/sponsors` | POST | `admin_upsert_sponsor` | `app.py:2904` | 新建/更新赞助位 |
+| `/admin/sponsors/<slot_id>/toggle` | POST | `admin_toggle_sponsor` | `app.py:2914` | 上下架切换 |
+| `/admin/sponsors/<slot_id>/delete` | POST | `admin_delete_sponsor` | `app.py:2923` | 删除赞助位 |
 
 ## SEO 路由
 
 | 路径 | 方法 | 函数 | 行号 | 功能 |
 |------|------|------|------|------|
-| `/robots.txt` | GET | `robots` | `app.py:1447` | 爬虫规则（SEO 关 → 禁止索引） |
-| `/sitemap.xml` | GET | `sitemap` | `app.py:1467` | 站点地图（**主语言 en，2026-09-05 P4**：首页 `/?lang=en`、词条 `/term/<slug>?lang=en`、`/hf?lang=en`、`/terms` 裸 URL；**2026-09-07**：追加 `/privacy` 裸 URL；词条仅达标词 `term_row_indexable`，上限 `SITEMAP_MAX_URLS`） |
-| `/favicon.ico` | GET | `favicon` | `app.py:2576` | favicon（站点 logo 32×32 PNG，源 `assets/logo-icon-512.jpg` 内联 base64） |
-| `/favicon.png` | GET | `favicon_png` | `app.py:2585` | 站点 logo 192×192 PNG（模板高优先级 icon + 首页 header logo） |
-| `/apple-touch-icon.png` | GET | `apple_touch_icon` | `app.py:2593` | Apple 触屏图标（logo 180×180 PNG） |
-| `/og-image.png` | GET | `og_image` | `app.py:2605` | Open Graph 分享图（动态生成，SEO 任务 11） |
+| `/robots.txt` | GET | `robots` | `app.py:1591` | 爬虫规则（SEO 关 → 禁止索引） |
+| `/sitemap.xml` | GET | `sitemap` | `app.py:1611` | 站点地图（**主语言 en = 裸 URL，2026-09-11**：首页 `/`、`/hf`、词条 `/term/<slug>`、`/terms`、`/privacy`；不再提交已 301 的 `?lang=en` 变体（2026-09-05 P4 的旧口径）；词条仅达标词 `term_row_indexable`，上限 `SITEMAP_MAX_URLS`） |
+| `/favicon.ico` | GET | `favicon` | `app.py:2723` | favicon（站点 logo 32×32 PNG，源 `assets/logo-icon-512.jpg` 内联 base64） |
+| `/favicon.png` | GET | `favicon_png` | `app.py:2732` | 站点 logo 192×192 PNG（模板高优先级 icon + 首页 header logo） |
+| `/apple-touch-icon.png` | GET | `apple_touch_icon` | `app.py:2740` | Apple 触屏图标（logo 180×180 PNG） |
+| `/og-image.png` | GET | `og_image` | `app.py:2753` | Open Graph 分享图（动态生成，SEO 任务 11） |
 
 ## 错误处理
 
 | 类型 | 函数 | 行号 | 功能 |
 |------|------|------|------|
-| 404 | `not_found` | `app.py:885` | 简单 HTML + `noindex`，防爬虫索引不存在的 term 页 |
-| 500 | `internal_error` | `app.py:899` | **（2026-09-07 P2）** 记录完整堆栈；`/api/*` 或 `Accept: application/json` → JSON `{ok:false}`，页面 → noindex HTML |
+| 404 | `not_found` | `app.py:1023` | 简单 HTML + `noindex`，防爬虫索引不存在的 term 页 |
+| 500 | `internal_error` | `app.py:1037` | **（2026-09-07 P2）** 记录完整堆栈；`/api/*` 或 `Accept: application/json` → JSON `{ok:false}`，页面 → noindex HTML |
 
 ## 鉴权机制
 
-- `admin_required` 装饰器（`app.py:2679`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
+- `admin_required` 装饰器（`app.py:2839`）：`ADMIN_TOKEN` 未设 → 所有 `/admin/*` 返回 404（隐身）。
 - token 来源优先级：`Authorization: Bearer` → `?token=` → `session["admin_token"]`。
 - `hmac.compare_digest` 防时序攻击；未登录页面请求 → 跳登录页（带 next），API 请求 → 401。
 - 登录 POST 另有按 IP 的固定窗口限流（见 `/admin/login` 行）。

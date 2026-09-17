@@ -1,5 +1,13 @@
 {% set page_lang = default_lang or 'zh' %}
 {% set is_en = page_lang == 'en' %}
+{# SEO 2026-09-11：标题单点收口（SSR 与 JS 同源，避免 JS 把关键词标题覆盖成
+   短标题）；英文 ≤60 字符、中文 ~50 字符，超出会被 Bing/Google 在 SERP 截断。
+   英文为裸 URL 主语言 → 裸 URL 不带 lang 参数，中文变体显式带 lang=zh。 #}
+{% set page_title_en = site_name ~ ' · AI Trend Aggregator: HuggingFace & arXiv News' %}
+{% set page_title_zh = site_name ~ ' · AI 热点聚合 · HuggingFace 模型榜与 arXiv 论文' %}
+{% set page_title = page_title_en if is_en else page_title_zh %}
+{% set lang_qs = '' if is_en else '?lang=zh' %}
+{% set lang_amp = '' if is_en else '&lang=zh' %}
 {# P3 热度口径文案（SSR 静态标注用；JS 路径用下方 I18N 字典同文案 key） #}
 {% set hot_note_zh = '词热度 = 近 7 天相关报道热度分（时间加权）+ HuggingFace 点赞数' %}
 {% set hot_note_en = 'Word hotness = heat scores of related reports in last 7 days (recency-weighted) + HuggingFace likes' %}
@@ -47,7 +55,7 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}</title>
+<title>{{ page_title }}</title>
 <meta name="description" content="{{ site_desc }}">
 <link rel="icon" type="image/png" sizes="192x192" href="/favicon.png">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -63,14 +71,14 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ site_name }}">
-<meta property="og:title" content="{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}">
+<meta property="og:title" content="{{ page_title }}">
 <meta property="og:description" content="{{ site_desc }}">
 <meta property="og:locale" content="{{ 'en_US' if is_en else 'zh_CN' }}">
 {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
 {% if base_url %}<meta property="og:image" content="{{ base_url }}/og-image-v2.png">{% endif %}
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="{{ site_name }} · {{ 'AI Trend Aggregator – HuggingFace Models, arXiv Papers & AI News' if is_en else 'AI 热点聚合 · HuggingFace 模型趋势、arXiv 论文与 AI 新闻' }}">
+<meta name="twitter:title" content="{{ page_title }}">
 <meta name="twitter:description" content="{{ site_desc }}">
 {% if base_url %}<meta name="twitter:image" content="{{ base_url }}/og-image-v2.png">{% endif %}
 {% else %}
@@ -421,7 +429,7 @@
       <button data-view="news">{{ '📰 News feed' if is_en else '📰 逐条新闻' }}</button>
       {# 「开源」板块入口：现指向独立 SSR 页 /hf（HF 趋势/点赞/下载榜）；#}
       {# 2026-09-05 需求 2 改名自「HF 榜」——板块语义，GitHub 榜加入后入口升级双标；↗ 角标暗示离开当前视图，文案/标题由 updateHfLink() 随 LANG 同步 #}
-      <a class="seg-link" id="hf-link" href="/hf?lang={{ page_lang }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 {{ 'Open Source' if is_en else '开源' }}<span class="seg-ext">↗</span></a>
+      <a class="seg-link" id="hf-link" href="/hf{{ lang_qs }}" title="{{ 'HuggingFace open-source model leaderboard' if is_en else 'HuggingFace 开源模型榜' }}">🤗 {{ 'Open Source' if is_en else '开源' }}<span class="seg-ext">↗</span></a>
     </div>
     <div class="seg" id="sort-seg">
       <button class="active" data-sort="rise">{{ '📈 Trending' if is_en else '📈 上升最快' }}</button>
@@ -441,7 +449,7 @@
   <div class="word-head">
     <span class="rank {{ loop.index0 < 3 and 'top' or '' }} num">{{ loop.index }}</span>
     <span class="cat-badge">🔤 {{ dim_labels.get(dim, dim) if is_en else dim }}</span>
-    <span class="word-name"><a href="/term/{{ t.id|urlencode }}?{{ ssr_term_qs }}"><span class="{{ 'en' if is_en else 'zh' }}">{{ t.term_display or t.display_zh or t.term }}</span></a></span>
+    <span class="word-name"><a href="/term/{{ t.id|urlencode }}{{ ssr_term_qs }}"><span class="{{ 'en' if is_en else 'zh' }}">{{ t.term_display or t.display_zh or t.term }}</span></a></span>
     <span class="head-right"><span>{{ t.news_cnt }} {{ 'reports' if is_en else '篇报道' }} · {{ t.published or '' }}</span></span>
   </div>
   <div class="term-meta">
@@ -503,13 +511,13 @@
   News: OpenAI/TechCrunch/HF/arXiv/QbitAI etc. official RSS · Hacker News + Reddit community heat · DeepSeek tagging (links go to official sources)<br>
   Categories: Model Releases / Product Launches / Research Papers / Funding / Industry News / Other<br>
   🔥 {{ hot_note_en }}<br>
-  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=en" class="footer-link">Terms of Service</a> · <a href="/privacy?lang=en" class="footer-link">Privacy Policy</a></span>
+  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">Terms of Service</a> · <a href="/privacy" class="footer-link">Privacy Policy</a></span>
   {% else %}
   统一卡片流：HuggingFace 模型榜（趋势/赞/下载）· arXiv 相关论文 · 知乎/B站/GitHub 社区讨论<br>
   新闻热点：OpenAI/TechCrunch/HF/arXiv/量子位 等官方 RSS · Hacker News + Reddit 社区热度 · DeepSeek 维度打标（链接均指向官方原文）<br>
   分类：模型与技术 / 产品与应用 / 研究与论文 / 商业与投融资 / 政策与行业 / 其他<br>
   🔥 热度口径：{{ hot_note_zh }}<br>
-  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=zh" class="footer-link">服务条款</a> · <a href="/privacy?lang=zh" class="footer-link">隐私政策</a></span>
+  <span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">服务条款</a> · <a href="/privacy" class="footer-link">隐私政策</a></span>
   {% endif %}
 </footer>
 
@@ -595,6 +603,12 @@ let currentSort = "rise";    // rise / hot / new
 let currentView = "words";   // words（热词，默认）/ news（逐条新闻）
 // v2: 搜索已独立为 /search 页面，首页不再持有本地 query 状态
 let LANG = {{ page_lang | tojson }};   // zh | en（SSR 注入默认，可被 localStorage / ?lang= 覆盖）
+// 页面标题按语言取（与 SSR <title>/og:title 同一份字符串）：切换语言时不改
+// 关键词覆盖，Google 渲染 JS 后取的 document.title 与 SSR 一致。
+const PAGE_TITLES = {
+  zh: {{ page_title_zh | tojson }},
+  en: {{ page_title_en | tojson }},
+};
 let dimensionList = [];      // 后端下发的维度顺序
 
 // 卡片身份与后端保持同一口径：同一词/同一官方链接只渲染一次。
@@ -642,8 +656,10 @@ try {
   if (!viewFromURL && (v === "words" || v === "news")) currentView = v;
 } catch (e) {}
 function syncURL() {
+  // 英文是裸 URL 主语言（显式 lang=en 变体会 301 收敛到裸 URL）：英文不写
+  // lang，避免地址栏停在一个会跳转的 URL 上；中文显式 lang=zh。
   const p = new URLSearchParams();
-  p.set("lang", LANG);
+  if (LANG === "zh") p.set("lang", "zh");
   if (currentView !== "words") p.set("view", currentView);
   if (currentCat !== "all") p.set("cat", currentCat);
   if (currentSort !== "rise") p.set("sort", currentSort);
@@ -712,14 +728,18 @@ function updateHfLink() {
   // 跟随前端 LANG（URL ?lang= / localStorage 覆盖后的实际显示语言），
   // 避免链接停留在 SSR 默认语言导致点击跳到错误的语言页面。
   // 「开源」入口是 seg 第三项（跨页跳转 /hf），文案与 ↗ 角标也随语言同步。
-  hfLink.href = "/hf?lang=" + LANG;
+  // 英文 = 裸 URL 主语言，中文才带 lang=zh。
+  hfLink.href = LANG === "en" ? "/hf" : "/hf?lang=zh";
   hfLink.title = LANG === "en"
     ? "HuggingFace open-source model leaderboard"
     : "HuggingFace 开源模型榜";
   hfLink.innerHTML = t("view_hf") + '<span class="seg-ext">↗</span>';
 }
 function localizeStatic() {
-  document.title = `{{ site_name }} · ${t("site_subtitle")}`;
+  // 标题与 SSR 同源（PAGE_TITLES）：不再回落成 `站名 · AI Trend Aggregator`
+  // 这类无关键词短标题——Google 渲染 JS 后取到的是 document.title，
+  // 短标题会丢掉 HuggingFace / arXiv 等关键词。
+  document.title = PAGE_TITLES[LANG] || PAGE_TITLES.zh;
   langBtn.title = LANG === "en" ? "Switch language" : "切换语言";
   themeBtn.title = LANG === "en" ? "Toggle theme" : "切换深浅色";
   searchInput.placeholder = t("search_ph");
@@ -734,7 +754,7 @@ function localizeStatic() {
   });
   if (demoPill) demoPill.textContent = t("demo_pill");
   const f = document.querySelector("footer");
-  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}<br>${t("footer_l4")}<br><span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms?lang=${LANG}" class="footer-link">${t("footer_terms")}</a> · <a href="/privacy?lang=${LANG}" class="footer-link">${t("footer_privacy")}</a></span>`;
+  if (f) f.innerHTML = `${t("footer_l1")}<br>${t("footer_l2")}<br>${t("footer_l3")}<br>${t("footer_l4")}<br><span class="footer-links">© <span id="footer-year"></span> {{ site_name }} · <a href="/terms" class="footer-link">${t("footer_terms")}</a> · <a href="/privacy" class="footer-link">${t("footer_privacy")}</a></span>`;
   const yEl = document.getElementById("footer-year");
   if (yEl) yEl.textContent = new Date().getFullYear();
 }
@@ -782,7 +802,9 @@ function goSearch(q) {
   if (!q) return;   // 空 query 不跳转，停留在首页
   Analytics.track("search", {query: q, lang: LANG});
   Analytics.flush();   // 即将跳转，立即 flush
-  window.location.href = "/search?q=" + encodeURIComponent(q) + "&lang=" + LANG;
+  // 英文（裸 URL 主语言）不带 lang；中文显式带，保证搜索页语言一致
+  window.location.href = "/search?q=" + encodeURIComponent(q)
+    + (LANG === "zh" ? "&lang=zh" : "");
 }
 searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
@@ -1087,12 +1109,15 @@ function termHref(term) {
   // 返回恢复滚动需要原榜单状态：词链接带上当前非默认 view/sort/cat，
   // 词条页 home_url 再原样回显，否则返回时榜单重置为默认 Trending，
   // 保存的 scrollY 像素落在不同排序的列表上（位置错乱）。
+  // 英文（裸 URL 主语言）不写 lang，也不留裸 "?"（`/term/x?` 会被爬虫当成
+  // 与 `/term/x` 不同的 URL，又制造一组重复 description）。
   const p = new URLSearchParams();
-  p.set("lang", LANG);
+  if (LANG === "zh") p.set("lang", "zh");
   if (currentView !== "words") p.set("view", currentView);
   if (currentSort !== "rise") p.set("sort", currentSort);
   if (currentCat !== "all") p.set("cat", currentCat);
-  return `/term/${escapeTerm(term)}?${p.toString()}`;
+  const qs = p.toString();
+  return `/term/${escapeTerm(term)}${qs ? "?" + qs : ""}`;
 }
 
 function renderWordCard(w, i) {

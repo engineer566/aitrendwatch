@@ -1,12 +1,15 @@
-"""P4 双语去重 + 主语言=英文：hreflang zh↔en + x-default→en 渲染与 sitemap en 显式变体。
+"""P4 双语去重 + 主语言=英文：hreflang zh↔en + x-default→en 渲染与 sitemap 主语言 URL。
 
 背景：zh/en 两语言此前各自 self-canonical，页面 head 无 hreflang 互指，
 Google 把两语言当无关联的独立页（重复内容）。本分支目标：
 
 - 可索引页（首页 / /term 词条页 / /hf）head 紧跟 canonical 输出三行
   ``link rel=alternate hreflang=zh/en/x-default``（x-default → en 主语言）；
-- sitemap 只提交英文显式变体（?lang=en）——首页 `/?lang=en`、/hf 页
-  `/hf?lang=en`、词条 `/term/<display>?lang=en`；/terms 单页双语保持裸 URL。
+- **2026-09-11 起英文是裸 URL**（`/`、`/hf`、`/term/<display>`）：显式
+  `?lang=en` 变体 301 收敛到裸 URL——此前裸 URL 与 `?lang=en` 是两份逐字节
+  相同的 HTML（同 title / 同 description），BWT 因此报「重复 meta
+  description」；中文仍在 `?lang=zh`。
+- sitemap 提交裸 URL 主语言集合；/terms 与 /privacy 单页双语保持裸 URL。
 - BASE_URL 未设 → hreflang 不输出、sitemap 空 urlset（行为不变）。
 
 测试为渲染级：临时 DB + Flask test client（仿 tests/test_jsonld.py），
@@ -30,8 +33,11 @@ BASE = "https://example.test"
 
 
 def _hf_href(path, lang):
-    """与路由 _abs(_lang_url(...)) 同口径的期望绝对 URL。"""
-    return f"{BASE}{path}?lang={lang}"
+    """与路由 _abs(_lang_url(...)) 同口径的期望绝对 URL。
+
+    英文是裸 URL 主语言（`/?lang=en` 301 → `/`），故 en 变体不带 lang 参数。
+    """
+    return f"{BASE}{path}" if lang == "en" else f"{BASE}{path}?lang=zh"
 
 
 class HreflangEnRenderTest(unittest.TestCase):
@@ -178,28 +184,29 @@ class HreflangEnRenderTest(unittest.TestCase):
 
     # ---------- tests ----------
 
-    def test_sitemap_lists_only_primary_language_en_urls(self):
-        """sitemap 只交英文显式变体：首页 /?lang=en、词条 /term/<display>?lang=en；
-        无裸词条 URL、无 lang=zh。"""
+    def test_sitemap_lists_bare_primary_language_urls(self):
+        """sitemap 交主语言（英文）裸 URL：首页 `/`、/hf、词条 `/term/<display>`；
+        不交已 301 的 `?lang=en` 变体，也不交 zh 变体。"""
         self._insert_term()
         self._insert_cards()
         resp = self.client.get("/sitemap.xml")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
-        self.assertIn(f"<loc>{BASE}/?lang=en</loc>", body)  # 首页主语言变体
-        self.assertNotIn(f"<loc>{BASE}/</loc>", body)        # 无裸首页
+        self.assertIn(f"<loc>{BASE}/</loc>", body)           # 首页主语言裸 URL
         self.assertIn(f"<loc>{BASE}/terms</loc>", body)      # /terms 单页双语裸 URL
-        self.assertIn(f"<loc>{BASE}/hf?lang=en</loc>", body)
-        self.assertIn(f"<loc>{BASE}/term/GLM-5.3-Flash?lang=en</loc>", body)
-        self.assertNotIn(f"<loc>{BASE}/term/GLM-5.3-Flash</loc>", body)  # 无裸词条
+        self.assertIn(f"<loc>{BASE}/privacy</loc>", body)
+        self.assertIn(f"<loc>{BASE}/hf</loc>", body)
+        self.assertIn(f"<loc>{BASE}/term/GLM-5.3-Flash</loc>", body)
+        self.assertNotIn("?lang=en", body)                   # 显式 en 变体已 301，不再提交
         self.assertNotIn("lang=zh", body)                    # 不交 zh 变体
 
     def test_term_detail_head_has_hreflang_zh_en_xdefault(self):
-        """/term/<slug>?lang=zh 与 ?lang=en 均输出 hreflang 三行（互指相同）。"""
+        """裸 /term/<slug>（en）与 /term/<slug>?lang=zh 均输出 hreflang 三行（互指相同）。"""
         self._insert_term()
         self._insert_cards()
         for lang in ("zh", "en"):
-            resp = self.client.get(f"/term/glm-5.3-flash?lang={lang}")
+            url = "/term/glm-5.3-flash" + ("" if lang == "en" else "?lang=zh")
+            resp = self.client.get(url)
             self.assertEqual(resp.status_code, 200, lang)
             body = resp.get_data(as_text=True)
             self._assert_hreflang(body, "/term/GLM-5.3-Flash")
@@ -208,9 +215,9 @@ class HreflangEnRenderTest(unittest.TestCase):
                           body, lang)
 
     def test_homepage_head_has_hreflang_zh_en_xdefault(self):
-        """首页 ?lang=zh 与 ?lang=en 均输出 hreflang 三行（/ 变体）。"""
+        """首页 `/`（en）与 `/?lang=zh` 均输出 hreflang 三行（/ 变体）。"""
         for lang in ("zh", "en"):
-            resp = self.client.get(f"/?lang={lang}")
+            resp = self.client.get("/" if lang == "en" else "/?lang=zh")
             self.assertEqual(resp.status_code, 200, lang)
             body = resp.get_data(as_text=True)
             self._assert_hreflang(body, "/")
@@ -218,10 +225,10 @@ class HreflangEnRenderTest(unittest.TestCase):
                           body, lang)
 
     def test_hf_page_head_has_hreflang_zh_en_xdefault(self):
-        """/hf?lang=zh 与 ?lang=en 均输出 hreflang 三行（/hf 变体）。"""
+        """/hf（en）与 /hf?lang=zh 均输出 hreflang 三行（/hf 变体）。"""
         for lang in ("zh", "en"):
             with patch.object(self.app, "_hf_models_for", return_value=([], 0)):
-                resp = self.client.get(f"/hf?lang={lang}")
+                resp = self.client.get("/hf" if lang == "en" else "/hf?lang=zh")
             self.assertEqual(resp.status_code, 200, lang)
             body = resp.get_data(as_text=True)
             self._assert_hreflang(body, "/hf")
