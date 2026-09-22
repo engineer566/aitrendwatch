@@ -235,15 +235,17 @@ class DisplaySurfaceCaseTests(unittest.TestCase):
         self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
         self.assertEqual(self._term_display("gpt-6-astra"), "GPT-6 Astra")
 
-    # ---- 9. 词典外词小写 canonical 脏 display 修正（databricks/simon-willison）----
+    # ---- 9. 词典外词小写 canonical 脏 display 修正（databricks/vector-institute）----
 
     def test_lowercase_canon_legacy_display_replaced_by_pretty(self):
-        # 早期写库缺陷：display 直接落小写 canonical（'databricks'/'simon-willison'），
+        # 早期写库缺陷：display 直接落小写 canonical（'databricks'/'vector-institute'），
         # 词又不在标题中（来自正文/作者/域名）→ 表面无源。此类 old 全小写脏值
-        # 不应永远占位，回落词典/美化兜底（Databricks / Simon Willison）。
+        # 不应永远占位，回落词典/美化兜底（Databricks / Vector Institute）。
+        # （2026-09-12 起历史用例 simon-willison 属媒体名称表 _MEDIA_NAMES，
+        # 标题未命中即被聚合门槛剔除并清行，改用 vector-institute 承接同场景。）
         conn = sqlite3.connect(self.db_path)
         for term, dirty in (("databricks", "databricks"),
-                            ("simon-willison", "simon-willison")):
+                            ("vector-institute", "vector-institute")):
             conn.execute("INSERT INTO terms (term, display, origin) "
                          "VALUES (?,?,?)", (term, dirty, "news"))
         conn.commit()
@@ -253,12 +255,13 @@ class DisplaySurfaceCaseTests(unittest.TestCase):
             self._card("https://db.example/1",
                        "Governance beyond security: knowledge & ontology on the lakehouse",
                        ["databricks"]),
-            self._card("https://sw.example/1",
-                       "August newsletter is out", ["simon-willison"]),
+            self._card("https://vi.example/1",
+                       "August newsletter is out", ["vector-institute"]),
         ])
         self.terms.refresh_words([], [], fetched_at=self.FIXED_TS)
         self.assertEqual(self._term_display("databricks"), "Databricks")
-        self.assertEqual(self._term_display("simon-willison"), "Simon Willison")
+        self.assertEqual(self._term_display("vector-institute"),
+                         "Vector Institute")
 
     def test_legacy_upper_display_kept_when_no_surface(self):
         # 词典外词历史 display 含大写（曾由 surface/翻译给出）且本轮无表面 →
