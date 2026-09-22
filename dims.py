@@ -1152,6 +1152,14 @@ def _llm_apply_output(batch, pby, only_bad=False):
                     kws.append(ck)
         if not kws and terms_mod:
             kws = terms_mod.extract_keywords_dict(it["title"])
+        # 2026-09-12（媒体名称排除）：出处名不作为关键词——LLM 会把输入行
+        # 「| 源名」后缀与 summary 引用的出处抽成热词（生产事故：Mit Technology
+        # Review / 少数派 高居热词榜前列）。标题例外：媒体名本身是标题主题时保留
+        # （与 terms 聚合门槛同口径，filter 内部判定）。
+        if terms_mod and kws:
+            kws = terms_mod.filter_media_keywords(
+                kws, it["title"], it.get("title_zh") or "",
+                it.get("title_en") or "")
         # 需求 5：硬编码大小写校验——关键词必须与原文大小写完全一致
         # （命中原文表面形式则取原文确切大小写；未命中保持 canonical）。
         if terms_mod:
@@ -1180,6 +1188,10 @@ def _llm_apply_output(batch, pby, only_bad=False):
 # 产品专名保持中文原词（"Qujing Tech"/"Thundercomm" 一类英文形态即中文标题里的
 # 公司名被 LLM 拼音化/英文化而来）；仅当该官方英文名/英文拼写出现在标题原文时
 # 才用英文关键词。提为模块常量便于无 key 单测直接断言规则文案。
+# 2026-09-12（媒体名称排除）：⑧ keywords 禁抽媒体/出处名称——输入行「| 源名」
+# 后缀与 summary 引用的出处不是热词（生产事故：Mit Technology Review / 少数派
+# 高居热词榜前列）；名称本身是标题主题时例外。硬门槛在 terms._MEDIA_NAMES
+# （聚合层标题例外过滤 + 存量僵尸词清除），本规则是源头减量（提示词是软约束）。
 _USER_PREFIX = (
     "对以下AI事件分类并产出中英双标题+双摘要，输出JSON数组，每项"
     '{"idx","dimension","title_zh","title_en","summary_zh","summary_en","keywords"}。规则：\n'
@@ -1205,6 +1217,10 @@ _USER_PREFIX = (
     "中文标题里的公司/机构/产品专名保持中文原词（如 创通联达、中科创达），"
     "仅当标题原文本身含官方英文名/英文拼写时才用英文；"
     "严禁把中文专名拼音化或自译成英文关键词。"
+    "媒体/出处名称不是热词：输入行末尾「|」后是报道来源名，来源名与 summary "
+    "里引用的出处（如 MIT Technology Review、TechCrunch、The Verge、WIRED、"
+    "少数派、量子位等信息源）一律不要抽成关键词，"
+    "除非该名称本身就是标题的主题（如「MIT Technology Review 发布年度报告」）。"
     "禁止抽取泛化词（AI、模型、技术、公司、行业、数据、产品等单独出现时）、"
     "纯形容词/动词、以及无检索价值的碎片词；无合适词给空数组。\n"
     "- 数组长度必须与输入条数一致，idx 从 0 开始逐条对应；"
