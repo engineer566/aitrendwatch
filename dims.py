@@ -92,6 +92,58 @@ DIMS_CACHE_TTL = 7200           # 文件缓存兜底有效期：2 小时
 # mtime 感知收敛（与 dims.json 同机制）。
 NEWS_STREAM_CACHE_FILE = os.path.join(CACHE_DIR, "news.json")
 
+# ---------- 环境级 DNS 死亡熔断（2026-09-17 生产 DNS 风暴事故）----------
+# 宿主机资源耗尽时容器 DNS（dockerd 内嵌 127.0.0.11）最先饿死，requests 全部
+# 卡在 getaddrinfo 上慢速失败。刷新管线（36 RSS 源 + 每卡 HN/Reddit 信号 +
+# 全部 LLM 批次）若不感知「环境已死」，会逐批次×3档×3次重试空转几十分钟，
+# 持跨进程刷新锁白耗 CPU/内存；且 worker 被 gunicorn 60s 超时 SIGKILL 后，
+# 新 worker import app 又立即重跑整轮 → 风暴自我放大。此处按「本轮累计
+# 环境级 DNS 失败次数」熔断：达阈值即中止剩余抓取/信号/LLM 批次，整轮按
+# 失败计、由后台循环指数退避重试。
+_NET_DEAD_MARKERS = (
+    "NameResolutionError",
+    "Temporary failure in name resolution",
+    "Failed to resolve",
+)
+_NET_DEAD_LIMIT = 6   # 单轮累计阈值：RSS/信号/LLM 三层共享计数
+_net_dead_lock = threading.Lock()
+_net_dead_consec = 0
+
+
+def _is_net_dead(exc):
+    """判断异常是否为环境级 DNS 解析失败（getaddrinfo 失败，非目标站点故障）。"""
+    s = f"{type(exc).__name__}: {exc}"
+    return any(m in s for m in _NET_DEAD_MARKERS)
+
+
+def _net_dead_note(exc):
+    """网络层捕获到异常时登记；若属环境级 DNS 失败返回 True（达阈值）。
+
+    返回 False = 非 DNS 失败或尚未达阈值（调用方按原逻辑继续）；
+    返回 True = 本轮已判定环境死亡，调用方应中止剩余批次/整轮。
+    """
+    global _net_dead_consec
+    if not _is_net_dead(exc):
+        return False
+    with _net_dead_lock:
+        _net_dead_consec += 1
+        return _net_dead_consec >= _NET_DEAD_LIMIT
+
+
+def _net_dead_tripped():
+    with _net_dead_lock:
+        return _net_dead_consec >= _NET_DEAD_LIMIT
+
+
+def _net_dead_reset():
+    global _net_dead_consec
+    with _net_dead_lock:
+        _net_dead_consec = 0
+
+
+class _NetDeadError(RuntimeError):
+    """环境级 DNS 失败熔断：中止本轮刷新（保留旧缓存，由后台退避重试）。"""
+
 _file_cache = {}
 _file_cache_lock = threading.Lock()
 _file_cache_loaded = False
@@ -457,7 +509,11 @@ def _parse_rss(xml_text, src):
 
 
 def fetch_one_rss(src):
-    """抓单个 RSS 源，失败返回 []（不抛——网络不可达的源静默跳过）。"""
+    """抓单个 RSS 源，失败返回 []（不抛——网络不可达的源静默跳过）。
+
+    例外：环境级 DNS 失败累计达阈值时抛 _NetDeadError（2026-09-17 事故），
+    由 fetch_all_rss 上抛中止整轮，避免 36 个源逐个慢速超时空转。
+    """
     try:
         r = requests.get(src["feed"], headers=HEADERS, timeout=TIMEOUT)
         r.raise_for_status()
@@ -466,7 +522,9 @@ def fetch_one_rss(src):
         # em-dash ——（\xe2\x80\x94）会被解成 â€"（mojibake）。
         # RSS/Atom 正文均为 UTF-8，按 UTF-8 解 r.content 最稳。
         return _parse_rss(r.content.decode("utf-8", errors="replace"), src)
-    except Exception:
+    except Exception as e:
+        if _net_dead_note(e):
+            raise _NetDeadError(f"环境级 DNS 失败，中止 RSS 抓取（{e}）")
         return []
 
 
@@ -573,8 +631,8 @@ def _hn_points(title, url=None):
             if my_words and len(my_words & h_words) >= 2:
                 best_rel = max(best_rel, pts)
         return best_rel if best_rel > 0 else best_soft
-    except Exception:
-        pass
+    except Exception as e:
+        _net_dead_note(e)  # 环境级 DNS 失败登记（enrich_with_signals 据此中止）
     return 0
 
 
@@ -619,7 +677,8 @@ def _reddit_points(title, dimension):
                 best_score = max(best_score, d.get("score", 0) or 0)
                 best_comm = max(best_comm, d.get("num_comments", 0) or 0)
             return best_score, best_comm
-        except Exception:
+        except Exception as e:
+            _net_dead_note(e)  # 环境级 DNS 失败登记（enrich_with_signals 据此中止）
             break
     return 0, 0
 
@@ -787,11 +846,19 @@ def enrich_with_signals(items):
         for fut in as_completed(futs):
             try:
                 i, hn, rs, rc = fut.result()
+            except _NetDeadError:
+                # 环境级 DNS 失败：取消排队任务并中止整轮信号聚合（462 卡 ×
+                # 每卡挂 40s+ 的 DNS 超时是风暴期线程/内存堆积的放大器）。
+                ex.shutdown(wait=False, cancel_futures=True)
+                raise
             except Exception:
                 continue
             items[i]["hn_points"] = hn
             items[i]["reddit_score"] = rs
             items[i]["reddit_comments"] = rc
+            if _net_dead_tripped():
+                ex.shutdown(wait=False, cancel_futures=True)
+                raise _NetDeadError("环境级 DNS 失败，中止 HN/Reddit 信号聚合")
     return items
 
 
@@ -1178,6 +1245,10 @@ def _llm_classify_batch(batch):
     外文 slot 由 LLM 翻译——中文版把英文源翻中文，英文版把中文源翻英文。
     dimension 仍是中文枚举 key（canonical），前端按语言取 label。
     """
+    # ---- 入口快速失败：环境级 DNS 已熔断时不再发起任何调用（2026-09-17 事故）----
+    if _net_dead_tripped():
+        raise _NetDeadError("环境级 DNS 失败已熔断，跳过本批 LLM 打标")
+
     # ---- 定位当前可用档：无 key 的档顺链跳过（永久条件，不烧 10 次重试）----
     while True:
         model, url, key, idx = _active_llm()
@@ -1284,6 +1355,10 @@ def _llm_classify_batch(batch):
                     requests.exceptions.ReadTimeout,
                     requests.exceptions.JSONDecodeError,
                     _LLMTransientError) as e:
+                if _net_dead_note(e):
+                    # 环境级 DNS 失败：不再空转剩余重试（2026-09-17 事故）
+                    raise _NetDeadError(
+                        f"环境级 DNS 失败，中止 LLM 调用重试（{e}）")
                 last_err = e
                 continue  # 瞬态错误，重试
             except requests.exceptions.HTTPError as e:
@@ -1386,8 +1461,14 @@ def _llm_classify_batch(batch):
     except (requests.exceptions.RequestException, _LLMTransientError) as e:
         # provider 可用性失败（429/5xx 重试耗尽、连接/超时、key 无效等永久 4xx）
         print(f"[dims][llm] 批次失败: {type(e).__name__}: {e}", flush=True)
+        if _net_dead_note(e):
+            # 环境级 DNS 失败达阈值：整轮中止（2026-09-17 事故——DNS 死亡时
+            # 逐批次×3档×3次空转几十分钟，持刷新锁白耗主机资源）。
+            raise _NetDeadError(f"环境级 DNS 失败，中止本轮 LLM 打标（{e}）")
         _llm_failure()
         raise
+    except _NetDeadError:
+        raise  # _post 重试内已判定环境死亡：直接透传，不降级不重试
     except Exception as e:
         # 未知异常（如内部 bug）：打印后直接抛，不污染故障转移计数
         print(f"[dims][llm] 批次异常: {type(e).__name__}: {e}", flush=True)
@@ -1452,6 +1533,8 @@ def enrich_with_llm(items):
             sub = batch[sub_start:sub_start + SUB]
             try:
                 _llm_classify_batch(sub)
+            except _NetDeadError:
+                raise  # 环境级 DNS 失败：中止整轮（不降级不重试，2026-09-17 事故）
             except _LLMQualityError:
                 # 质量失败：classify 内已对坏条目做过 LLM_REPAIR_ROUNDS 轮二次提示
                 # 修正，仍失败的条目直接降级（回显兜底），不再重复重试。
@@ -1466,8 +1549,13 @@ def enrich_with_llm(items):
     # 主循环后重试：GLM 429 多为散落单发，主循环内链可能已因累计失败逃到
     # deepseek——重试能找回这批翻译；仍失败则保持降级（不再逐批计故障转移）。
     for start in range(0, len(retry_items), LLM_BATCH):
+        if _net_dead_tripped():
+            print("[dims][llm] 环境级 DNS 失败，跳过末尾重试集", flush=True)
+            break
         try:
             _llm_classify_batch(retry_items[start:start + LLM_BATCH])
+        except _NetDeadError:
+            raise
         except Exception:
             pass
     return items
@@ -1529,6 +1617,10 @@ def _translate_terms(chinese_terms):
         except (requests.exceptions.RequestException, _LLMTransientError) as e:
             print(f"[dims][llm] 热词翻译失败: {type(e).__name__}: {e}",
                   flush=True)
+            if _net_dead_note(e):
+                print("[dims][llm] 环境级 DNS 失败，中止剩余翻译批次",
+                      flush=True)
+                break  # 保留已翻译的部分结果，未翻词下轮重试
             _llm_failure()
         except Exception as e:
             # 解析/质量类失败：走高阈值质量熔断，不快速换档（2026-09-03）
@@ -1609,6 +1701,10 @@ def explain_terms(contexts):
         except (requests.exceptions.RequestException, _LLMTransientError) as e:
             print(f"[dims][llm] 热词解释失败: {type(e).__name__}: {e}",
                   flush=True)
+            if _net_dead_note(e):
+                print("[dims][llm] 环境级 DNS 失败，中止剩余解释批次",
+                      flush=True)
+                break  # 解释是增益资产，保留部分结果即可（2026-09-17 事故）
             _llm_failure()
             consec_fails += 1
             if consec_fails >= EXPLAIN_CONSECUTIVE_FAIL_LIMIT:
@@ -1863,6 +1959,8 @@ def _dims_refresh_once():
     try:
         try:
             with _cross_proc_lock(DIMS_REFRESH_LOCKFILE):
+                # 环境级 DNS 失败计数按轮复位（2026-09-17 事故熔断）
+                _net_dead_reset()
                 # 每轮刷新起始把故障转移链复位回链首（GLM 低价档）——故障转移
                 # 只限当轮逃生，防 GLM 一时不稳后整日钉死最贵档（2026-09-02
                 # DeepSeek 用量事故：两 worker 全逃逸、4 轮全量打 DeepSeek）。
@@ -1938,6 +2036,30 @@ def _seconds_until_next_refresh_hour():
         return DIMS_REFRESH_INTERVAL
 
 
+def _dims_cache_age():
+    """dims.json 距上次成功刷新的秒数；文件不存在/不可读返回无穷大。"""
+    try:
+        return time.time() - os.path.getmtime(DIMS_CACHE_FILE)
+    except OSError:
+        return float("inf")
+
+
+# worker 启动预热的新鲜度阈值：dims 定点 6 小时一档，缓存半新（3h 内）则
+# 启动时不再立即全量预热（2026-09-17 事故：gunicorn 超时杀 worker → 新
+# worker import app 无条件重跑整轮管线，churn 下每两三分钟一轮，是风暴放大器）。
+DIMS_BOOT_SKIP_MAX_AGE = 10800
+
+
+def _startup_refresh_once():
+    """worker 启动预热：磁盘缓存仍新鲜则跳过，否则立即全量预热一次。"""
+    age = _dims_cache_age()
+    if age < DIMS_BOOT_SKIP_MAX_AGE:
+        print(f"[dims] 启动预热跳过：dims.json 距上次成功刷新 "
+              f"{age:.0f}s（< {DIMS_BOOT_SKIP_MAX_AGE}s）", flush=True)
+        return True
+    return _dims_refresh_once()
+
+
 def _bg_dims_refresher():
     """后台循环：启动立即预热一次，之后在定点时刻（DIMS_REFRESH_HOURS）刷新。
 
@@ -1947,18 +2069,24 @@ def _bg_dims_refresher():
     - 6 小时一档压在硬盘缓存 TTL 内，规则前缀跨次复用命中缓存（命中价远低于未命中）。
     定点时刻 4 个 worker 同时醒，fcntl 跨进程锁保证只有一个真抓取。
 
-    失败重试：某次刷新失败 → 隔 DIMS_RETRY_INTERVAL（5 分钟）重试，而非干等到
-    下一个定点；成功后回到定点调度。
+    失败重试：某次刷新失败 → 隔退避间隔重试（5min 起，连续失败按 ×3 指数
+    退避至 45min 封顶，成功后复位），而非干等到下一个定点（2026-09-17 事故：
+    环境死亡期固定 5min 重试是持续压力源）。
     """
-    _dims_refresh_once()
+    _startup_refresh_once()
+    consec_fails = 0
     while True:
         next_wait = _seconds_until_next_refresh_hour()
         time.sleep(next_wait)
         ok = _dims_refresh_once()
-        if not ok:
-            # 失败 → 快速重试间隔，成功后回到定点调度
-            time.sleep(DIMS_RETRY_INTERVAL)
-            _dims_refresh_once()
+        if ok:
+            consec_fails = 0
+            continue
+        consec_fails += 1
+        # 指数退避：5min → 15min → 45min 封顶；单次重试后回到定点调度
+        backoff = min(DIMS_RETRY_INTERVAL * 3 ** (consec_fails - 1), 2700)
+        time.sleep(backoff)
+        _dims_refresh_once()
 
 
 def start_background_dims_refresher():
