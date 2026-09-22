@@ -374,6 +374,62 @@ _TERM_STOPWORDS = {
     "tech",                     # 科技/技术
 }
 
+# ---------- 媒体/出处名称表（canonical 键，标题例外）----------
+# 媒体名称不是 AI 趋势本身：LLM 抽词的输入行带「| 源名」后缀，summary 又常引用
+# 出处（"MIT Technology Review reports..."），LLM 会把出处名抽成关键词，在热词榜
+# 挤占真实趋势词（2026-09 生产事故：Mit Technology Review / 少数派 高居热词榜前列）。
+# 规则（2026-09-12 需求：排除媒体名称）：媒体名称不进词池/词-新闻关联，除非它
+# 出现在报道标题里——标题里的媒体名通常是报道主题本身（如「MIT Technology
+# Review 发布 2026 AI 现状报告」）才有趋势含义；summary/来源位里的只是出处。
+# 键必须是 normalize_term() 输出的 canonical 形式（先 normalize_term 再放入）。
+# 刻意不收录的两类：① 公司/产品名（OpenAI/DeepMind/英伟达等）是合法热词；
+# ② 与真实技术概念同形的词（latent-space 既是播客也是 ML 概念），避免误伤。
+_MEDIA_NAMES = {
+    # —— 项目自有 RSS 源中的媒体（各源报道普遍引用自身，必然污染）——
+    "mit-techreview", "mit-technology-review", "mit-tech-review",
+    "technology-review", "technologyreview",
+    "techcrunch", "techcrunch-ai", "tech-crunch",
+    "venturebeat", "venturebeat-ai",
+    "the-gradient",
+    "the-verge",
+    "wired",
+    "ars-technica", "arstechnica",
+    "ai-news",
+    "marktechpost",
+    "unite-ai",
+    "aws-ml-blog",
+    "simon-willison", "ethan-mollick", "sebastian-raschka",
+    "ieee-spectrum",
+    "mit-news",
+    "zdnet",
+    "the-decoder",
+    "the-rundown", "the-rundown-ai",
+    "arxiv",
+    "量子位", "qbitai",
+    "infoq", "infoq中文", "infoq-中文",
+    "极客公园", "geekpark",
+    "少数派", "sspai",
+    # —— 其他常见 AI/科技媒体（LLM 从 summary 引用或自身知识抽出的出处名）——
+    "the-information",
+    "bloomberg",
+    "reuters",
+    "cnbc",
+    "forbes",
+    "financial-times",
+    "new-york-times", "the-new-york-times",
+    "washington-post",
+    "the-guardian", "guardian",
+    "机器之心", "synced",
+    "新智元",
+    "36氪", "36kr",
+    "爱范儿", "ifanr",
+    "appso",
+    "雷峰网", "leiphone",
+    "technode",
+    "scmp",
+    "rest-of-world",
+}
+
 # ---------- 热词解释词典（canonical → 中/英解释）----------
 # 供热词详情页展示「这是什么」的静态文案；canonical 键与 _LEXICON 对齐。
 # 覆盖词典主要词条（头部模型/产品全量 + 技术概念尽量全），未收录词解释为空串。
@@ -632,6 +688,54 @@ def is_stopword(term):
     return bool(canon) and canon in _TERM_STOPWORDS
 
 
+def is_media_name(term):
+    """媒体/出处名称判断：词形归一化后是否落在媒体名称表。
+
+    媒体名称不作为热词（2026-09-12 需求）：出处位（「| 源名」后缀、summary
+    引用）里的媒体名没有趋势含义；只有出现在报道标题里才保留（标题例外，
+    见 _media_name_title_hit）。入参可为任意词形（内部先 normalize_term）。
+    """
+    canon = normalize_term(term)
+    return bool(canon) and canon in _MEDIA_NAMES
+
+
+def _media_name_title_hit(canon, titles):
+    """媒体名称标题例外判定：canonical 的已知表面形态是否出现在任一标题里。
+
+    标题里的媒体名视为报道主题本身（保留）；titles 是标题字段（title/
+    title_zh/title_en）列表，空/全空 → False（无标题上下文一律排除——
+    出处位的媒体名没有趋势含义）。
+    """
+    if not titles:
+        return False
+    surfaces = _term_surfaces(canon)
+    for t in titles:
+        if t and _title_matches_term(str(t), surfaces):
+            return True
+    return False
+
+
+def filter_media_keywords(canons, *texts):
+    """媒体名称过滤收口（供 dims LLM 抽词回填等调用方使用）。
+
+    canons 为 canonical 键序列（或任意词形，内部归一），texts 为标题上下文
+    （原标题 + 译文标题）。返回剔除媒体名称后的列表（保持原顺序）：媒体名
+    仅在出现在任一标题文本里时保留（标题例外），其余一律剔除；非媒体名
+    原样保留。terms_mod 导入失败时调用方跳过本过滤（降级安全）。
+    """
+    titles = [t for t in texts if t]
+    out = []
+    for c in canons or ():
+        c = str(c or "").strip()
+        if not c:
+            continue
+        canon = normalize_term(c)
+        if canon in _MEDIA_NAMES and not _media_name_title_hit(canon, titles):
+            continue
+        out.append(c)
+    return out
+
+
 def _ci_surface_in_text(surface, text):
     """大小写不敏感定位表面形式在原文中的确切片段（None=未命中）。
 
@@ -849,8 +953,12 @@ def _title_matches_patterns(titles, pats):
     return False
 
 
-def _keyword_canons(value):
-    """Decode old/new ``news_cards.keywords`` values to canonical keys."""
+def _keyword_canons(value, titles=None):
+    """Decode old/new ``news_cards.keywords`` values to canonical keys.
+
+    titles 为该行的标题字段列表（title/title_zh/title_en），供媒体名称的
+    标题例外判定；缺省（无标题上下文）时媒体名称一律剔除。
+    """
     raw = value
     if isinstance(value, str):
         try:
@@ -862,11 +970,19 @@ def _keyword_canons(value):
             raw = re.split(r"[,|]", value)
     if not isinstance(raw, (list, tuple, set)):
         return set()
-    # 停用词（低价值通用词）在此统一剔除：LLM 抽出的 "AI"/"模型" 等即使已写入
-    # news_cards.keywords，也不会进入词池聚合与词-新闻关联（refresh_words 与
-    # get_term_news 共用本函数）。
-    return {canon for canon in (normalize_term(k) for k in raw)
-            if canon and not is_stopword(canon)}
+    # 停用词（低价值通用词）与媒体名称（出处名）在此统一剔除：LLM 抽出的
+    # "AI"/"模型" 等即使已写入 news_cards.keywords，也不会进入词池聚合与
+    # 词-新闻关联（refresh_words 与 get_term_news 共用本函数）。媒体名称走
+    # 标题例外：出现在标题里才算报道主题（如「MIT Technology Review 发布
+    # 年度 AI 报告」），summary/来源位里的只是出处（2026-09-12 需求）。
+    canons = set()
+    for canon in (normalize_term(k) for k in raw):
+        if not canon or is_stopword(canon):
+            continue
+        if canon in _MEDIA_NAMES and not _media_name_title_hit(canon, titles):
+            continue
+        canons.add(canon)
+    return canons
 
 
 def _news_row_canons(row):
@@ -877,14 +993,17 @@ def _news_row_canons(row):
     the fallback path, so historical cards contribute to both word counts
     and detail-page results consistently.
     """
-    kws = _keyword_canons(row["keywords"])
+    titles = [str(row[f] or "") for f in ("title", "title_zh", "title_en")]
+    kws = _keyword_canons(row["keywords"], titles)
     if kws:
         return kws
-    text = " ".join(str(row[f] or "") for f in
-                    ("title", "title_zh", "title_en"))
+    text = " ".join(titles)
     # extract_keywords_dict 现在返回与原文大小写一致的表面形式；
     # 词聚合键仍需 canonical（大小写无关归并），此处归一回 canonical 键。
-    return {c for c in (normalize_term(k) for k in extract_keywords_dict(text)) if c}
+    # 词典抽词只会命中 _LEXICON（媒体名称不在词典），防御性同口径过滤。
+    return {c for c in (normalize_term(k) for k in extract_keywords_dict(text))
+            if c and (c not in _MEDIA_NAMES
+                      or _media_name_title_hit(c, titles))}
 
 
 # display_overrides（来自 terms_canonical.json，最高优先级）。模块级常量：
@@ -1602,7 +1721,12 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
         # 自由孪生归并输家（"aiagent"，其紧凑组代表键是 kept 的 "ai-agent"）。
         # 快照先迁移到代表键（同 cycle 数值相加，rise 环比历史连续），物理行在
         # 主循环写完后删除（此时代表行已存在，解释列可顺带迁移，见下）。
+        # 2026-09-12（媒体名称排除）：存量媒体词行（如 Mit Technology Review /
+        # 少数派）在本轮聚合中未获标题例外（n in _MEDIA_NAMES 且 not in kept）
+        # 时整行清除（含快照）——它们此后不再进入词池，残留行只会留下一个
+        # cur_hot=0 的僵尸词条（详情页/搜索仍可见），清除才符合「排除」语义。
         dead = []
+        media_purge = []
         try:
             gid_rep = {}
             for k in kept:
@@ -1614,6 +1738,9 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 if n in kept and n != raw:
                     dead.append((raw, n))          # 折叠残留行
                 elif n not in kept:
+                    if n in _MEDIA_NAMES:
+                        media_purge.append(raw)    # 媒体词未获标题例外 → 清除
+                        continue
                     g = _compact_group_key(n)
                     r = gid_rep.get(g)
                     if r is not None and r != n:
@@ -1636,6 +1763,7 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                 conn.execute("DELETE FROM term_snapshots WHERE term=?", (raw,))
         except Exception:
             dead = []
+            media_purge = []
         for canon, a in kept.items():
             o = old_view.get(canon) or {}
             is_hf = canon in hf_terms
@@ -1810,6 +1938,15 @@ def _refresh_words_inner(all_cards, model_cards, fetched_at,
                                ELSE explain_updated_at END
                        WHERE term=?""",
                     (raw, raw, raw, rep))
+                conn.execute("DELETE FROM terms WHERE term=?", (raw,))
+        except Exception:
+            pass
+        # 2026-09-12（媒体名称排除）：清除未获标题例外的存量媒体词行（含快照）。
+        # 无需迁移任何列——媒体词退出词池后不应留下任何可被详情页/搜索看到的
+        # 僵尸词条；若日后真有标题例外语境，会作为新词重新入池。
+        try:
+            for raw in media_purge:
+                conn.execute("DELETE FROM term_snapshots WHERE term=?", (raw,))
                 conn.execute("DELETE FROM terms WHERE term=?", (raw,))
         except Exception:
             pass
@@ -2167,8 +2304,10 @@ def get_term_news(term, limit=50, lang="zh"):
         for r in rows:
             # Known aliases (GPT5, GPT 5, 智能体, …) are handled by
             # _term_surfaces, including the canonical spelling itself.
-            keywords_match = canon in _keyword_canons(r["keywords"])
             titles = [str(r[f] or "") for f in title_fields]
+            # 媒体名称走标题例外：出处位（keywords 里有、标题里没有）的
+            # 媒体名不构成词-新闻关联（与 refresh_words 聚合同口径）。
+            keywords_match = canon in _keyword_canons(r["keywords"], titles)
             title_match = any(_title_matches_term(t, surfaces) for t in titles)
             if keywords_match or title_match:
                 # 同标题转载/镜像（不同 URL 同一篇报道）按归一化标题去重：
